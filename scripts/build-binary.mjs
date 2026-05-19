@@ -9,7 +9,7 @@
  */
 
 import { execSync } from "child_process";
-import { mkdirSync, cpSync, existsSync } from "fs";
+import { mkdirSync, cpSync, existsSync, writeFileSync } from "fs";
 import { join } from "path";
 
 const ROOT = new URL("..", import.meta.url).pathname;
@@ -66,7 +66,6 @@ function buildBinary(target) {
     private: true,
     dependencies: { "node-pty": "^1.1.0", "ws": "^8.20.0" }
   }, null, 2);
-  const { writeFileSync } = await import("fs");
   writeFileSync(join(outDir, "package.json"), ptyPkg);
 
   // Build the entry point binary
