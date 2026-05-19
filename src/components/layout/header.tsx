@@ -1,7 +1,7 @@
 "use client";
 
 import { useTheme } from "next-themes";
-import { LayoutDashboard, Moon, Sun, Briefcase, Home, Search, Sparkles } from "lucide-react";
+import { LayoutDashboard, Moon, Sun, Briefcase, Home, Search, Sparkles, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { WidgetSettings } from "@/components/layout/widget-settings";
 import { AppearancePicker } from "@/components/layout/appearance-picker";
@@ -10,6 +10,8 @@ import { useCommandPalette } from "@/components/command-palette-context";
 import { useAIChat } from "@/components/ai-chat-context";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
+import SettingsPanel from "@/components/settings-panel";
 
 const profileIcons: Record<string, typeof Briefcase> = {
   briefcase: Briefcase,
@@ -22,6 +24,7 @@ export function Header() {
   const { openSearch } = useCommandPalette();
   const { toggle: toggleAI, isOpen: aiOpen } = useAIChat();
   const [mounted, setMounted] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   useEffect(() => setMounted(true), []);
 
@@ -111,6 +114,15 @@ export function Header() {
           </button>
           <AppearancePicker />
           <WidgetSettings />
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 w-8 p-0"
+            onClick={() => setSettingsOpen(true)}
+            title="Settings"
+          >
+            <Settings className="h-4 w-4" />
+          </Button>
           {mounted && (
             <Button
               variant="ghost"
@@ -127,6 +139,11 @@ export function Header() {
           )}
         </div>
       </div>
+      <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden p-0">
+          <SettingsPanel />
+        </DialogContent>
+      </Dialog>
     </header>
   );
 }

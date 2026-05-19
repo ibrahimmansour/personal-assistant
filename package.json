@@ -9,7 +9,9 @@
     "build": "next build",
     "start": "NODE_TLS_REJECT_UNAUTHORIZED=0 node server/pty-server.mjs & NODE_TLS_REJECT_UNAUTHORIZED=0 next start --port 4444",
     "postinstall": "chmod +x node_modules/node-pty/prebuilds/darwin-arm64/spawn-helper 2>/dev/null || true",
-    "lint": "eslint"
+    "lint": "eslint",
+    "build:binary": "node scripts/build-binary.mjs",
+    "build:binary:all": "node scripts/build-binary.mjs --all"
   },
   "dependencies": {
     "@base-ui/react": "^1.3.0",

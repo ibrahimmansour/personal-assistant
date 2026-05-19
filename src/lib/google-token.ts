@@ -6,13 +6,14 @@
 import { readFile, writeFile, mkdir } from "fs/promises";
 import { join } from "path";
 import { homedir } from "os";
+import { getConfigEnv } from "@/lib/config";
 
 const DATA_DIR = join(homedir(), ".personal-assistant");
 const TOKENS_FILE = join(DATA_DIR, "google-tokens.json");
 
-const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "";
-const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || "";
-const GOOGLE_REDIRECT_URI = process.env.GOOGLE_REDIRECT_URI || "http://localhost:4444/api/google/auth/callback";
+async function getGoogleClientId() { return getConfigEnv("GOOGLE_CLIENT_ID"); }
+async function getGoogleClientSecret() { return getConfigEnv("GOOGLE_CLIENT_SECRET"); }
+async function getGoogleRedirectUri() { return getConfigEnv("GOOGLE_REDIRECT_URI") || "http://localhost:4444/api/google/auth/callback"; }
 
 interface GoogleTokens {
   access_token: string;
@@ -22,15 +23,15 @@ interface GoogleTokens {
   scope: string;
 }
 
-export function getAuthUrl(): string {
+export async function getAuthUrl(): Promise<string> {
   const scopes = [
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/gmail.send",
     "https://www.googleapis.com/auth/calendar.readonly",
   ];
   const params = new URLSearchParams({
-    client_id: GOOGLE_CLIENT_ID,
-    redirect_uri: GOOGLE_REDIRECT_URI,
+    client_id: await getGoogleClientId(),
+    redirect_uri: await getGoogleRedirectUri(),
     response_type: "code",
     scope: scopes.join(" "),
     access_type: "offline",
@@ -45,9 +46,9 @@ export async function exchangeCode(code: string): Promise<GoogleTokens> {
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       code,
-      client_id: GOOGLE_CLIENT_ID,
-      client_secret: GOOGLE_CLIENT_SECRET,
-      redirect_uri: GOOGLE_REDIRECT_URI,
+      client_id: await getGoogleClientId(),
+      client_secret: await getGoogleClientSecret(),
+      redirect_uri: await getGoogleRedirectUri(),
       grant_type: "authorization_code",
     }),
   });
@@ -76,8 +77,8 @@ async function refreshAccessToken(refreshToken: string): Promise<GoogleTokens> {
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       refresh_token: refreshToken,
-      client_id: GOOGLE_CLIENT_ID,
-      client_secret: GOOGLE_CLIENT_SECRET,
+      client_id: await getGoogleClientId(),
+      client_secret: await getGoogleClientSecret(),
       grant_type: "refresh_token",
     }),
   });
@@ -171,6 +172,8 @@ export async function googleFetch(url: string, options?: RequestInit): Promise<a
   return res.json();
 }
 
-export function isConfigured(): boolean {
-  return Boolean(GOOGLE_CLIENT_ID && GOOGLE_CLIENT_SECRET);
+export async function isConfigured(): Promise<boolean> {
+  const clientId = await getGoogleClientId();
+  const clientSecret = await getGoogleClientSecret();
+  return Boolean(clientId && clientSecret);
 }

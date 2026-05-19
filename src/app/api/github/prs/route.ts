@@ -1,21 +1,13 @@
 import { NextRequest } from "next/server";
 import { execFile } from "child_process";
 import { promisify } from "util";
+import { getConfigEnv } from "@/lib/config";
 
 const execFileAsync = promisify(execFile);
 
-// SAP GitHub Enterprise config
-const SAP_GITHUB_API = process.env.GITHUB_API_URL || "https://github.wdf.sap.corp/api/v3";
-const SAP_GITHUB_TOKEN = process.env.GITHUB_TOKEN || "";
-const SAP_GITHUB_USERNAME = process.env.GITHUB_USERNAME || "D067576";
-
-// GitHub.com config
-const GITHUB_COM_API = "https://api.github.com";
-const GITHUB_COM_USERNAME = process.env.GITHUB_COM_USERNAME || "Ibrahimmansour";
-
 async function getGithubComToken(): Promise<string> {
-  // Try env var first
-  if (process.env.GITHUB_COM_TOKEN) return process.env.GITHUB_COM_TOKEN;
+  const token = await getConfigEnv("GITHUB_COM_TOKEN");
+  if (token) return token;
   // Fall back to gh CLI
   try {
     const { stdout } = await execFileAsync("gh", ["auth", "token"], {
@@ -30,17 +22,18 @@ async function getGithubComToken(): Promise<string> {
 function getConfig(profile: string) {
   if (profile === "private") {
     return {
-      api: GITHUB_COM_API,
-      username: GITHUB_COM_USERNAME,
+      api: "https://api.github.com",
+      getUsername: () => getConfigEnv("GITHUB_COM_USERNAME"),
       getToken: getGithubComToken,
     };
   }
   return {
-    api: SAP_GITHUB_API,
-    username: SAP_GITHUB_USERNAME,
+    api: "", // resolved async below
+    getUsername: () => getConfigEnv("GITHUB_USERNAME"),
     getToken: async () => {
-      if (!SAP_GITHUB_TOKEN) throw new Error("GITHUB_TOKEN environment variable is not set");
-      return SAP_GITHUB_TOKEN;
+      const token = await getConfigEnv("GITHUB_TOKEN");
+      if (!token) throw new Error("GITHUB_TOKEN not configured. Go to Settings to add it.");
+      return token;
     },
   };
 }
@@ -88,11 +81,12 @@ export async function GET(request: NextRequest) {
   try {
     const config = getConfig(profile);
     const token = await config.getToken();
-    const username = config.username;
+    const username = await config.getUsername();
+    const api = profile === "private" ? config.api : (await getConfigEnv("GITHUB_API_URL") || "https://github.wdf.sap.corp/api/v3");
 
     // Fetch only PRs authored by me
     const authoredRes = await githubFetch(
-      config.api,
+      api,
       token,
       `/search/issues?q=author:${username}+type:pr+sort:updated&per_page=25`
     );
@@ -103,7 +97,7 @@ export async function GET(request: NextRequest) {
     const prDetails = await Promise.allSettled(
       allPRs.map((pr: any) => {
         const repo = extractRepoName(pr.repository_url);
-        return githubFetch(config.api, token, `/repos/${repo}/pulls/${pr.number}`);
+        return githubFetch(api, token, `/repos/${repo}/pulls/${pr.number}`);
       })
     );
 
