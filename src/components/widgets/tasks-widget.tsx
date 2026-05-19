@@ -69,7 +69,7 @@ const priorityCycle: Task["priority"][] = ["low", "medium", "high"];
 
 // ─── Embedded OpenCode Terminal Panel ─────────────────────────────────────────
 
-const WS_URL = "ws://localhost:4445";
+const WS_URL = typeof window !== "undefined" ? `ws://${window.location.hostname}:4445` : "ws://localhost:4445";
 
 function resolveColor(cssValue: string, fallback: string): string {
   if (!cssValue) return fallback;

@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 import { TerminalSquare, X } from "lucide-react";
 import { useEffect, useRef, useState, useCallback } from "react";
 
-const WS_URL = "ws://localhost:4445";
+const WS_URL = typeof window !== "undefined" ? `ws://${window.location.hostname}:4445` : "ws://localhost:4445";
 
 // ─── Color helpers (shared with terminal-widget) ─────────────────────────────
 
