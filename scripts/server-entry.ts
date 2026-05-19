@@ -5,7 +5,6 @@
 import { spawn } from "child_process";
 import { dirname, join } from "path";
 import { existsSync } from "fs";
-import { WebSocketServer } from "ws";
 
 const BINARY_DIR = dirname(process.execPath);
 const SERVER_DIR = join(BINARY_DIR, "server");
@@ -37,42 +36,32 @@ function startNext() {
   return child;
 }
 
-// Start PTY WebSocket server (inline, simplified)
+// Start PTY server as a separate Node.js process (node-pty requires native bindings)
 function startPtyServer() {
-  try {
-    // node-pty may not be available in all environments
-    const pty = require("node-pty");
-    const wss = new WebSocketServer({ port: PTY_PORT });
-
-    wss.on("connection", (ws) => {
-      const shell = process.env.SHELL || "/bin/zsh";
-      const ptyProcess = pty.spawn(shell, [], {
-        name: "xterm-256color",
-        cols: 80,
-        rows: 24,
-        cwd: process.env.HOME || "/",
-        env: process.env,
-      });
-
-      ptyProcess.onData((data: string) => ws.send(data));
-      ws.on("message", (msg: Buffer) => {
-        const str = msg.toString();
-        try {
-          const parsed = JSON.parse(str);
-          if (parsed.type === "resize") {
-            ptyProcess.resize(parsed.cols, parsed.rows);
-            return;
-          }
-        } catch {}
-        ptyProcess.write(str);
-      });
-      ws.on("close", () => ptyProcess.kill());
-    });
-
-    console.log(`PTY server listening on port ${PTY_PORT}`);
-  } catch (e) {
-    console.warn("PTY server not available (node-pty missing):", (e as Error).message);
+  const ptyScript = join(BINARY_DIR, "pty-server.mjs");
+  if (!existsSync(ptyScript)) {
+    console.warn("PTY server script not found at", ptyScript);
+    return;
   }
+
+  const child = spawn("node", [ptyScript], {
+    env: {
+      ...process.env,
+      PTY_PORT: String(PTY_PORT),
+    },
+    stdio: "inherit",
+  });
+
+  child.on("error", (err) => {
+    console.warn(`PTY server failed to start: ${err.message}`);
+    console.warn("Install node-pty: cd ~/.personal-assistant/bin && npm init -y && npm install node-pty ws");
+  });
+
+  child.on("exit", (code) => {
+    if (code !== 0) {
+      console.warn(`PTY server exited with code ${code}`);
+    }
+  });
 }
 
 console.log(`Starting Personal Assistant on port ${PORT}...`);

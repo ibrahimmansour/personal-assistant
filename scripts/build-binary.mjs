@@ -57,6 +57,18 @@ function buildBinary(target) {
     cpSync(join(ROOT, "public"), join(outDir, "server/public"), { recursive: true });
   }
 
+  // Copy PTY server script (runs as separate node process)
+  cpSync(join(ROOT, "server/pty-server.mjs"), join(outDir, "pty-server.mjs"));
+
+  // Create a package.json for installing node-pty on the target
+  const ptyPkg = JSON.stringify({
+    name: "personal-assistant-pty",
+    private: true,
+    dependencies: { "node-pty": "^1.1.0", "ws": "^8.20.0" }
+  }, null, 2);
+  const { writeFileSync } = await import("fs");
+  writeFileSync(join(outDir, "package.json"), ptyPkg);
+
   // Build the entry point binary
   const outBin = join(outDir, "personal-assistant");
   console.log(`\n🔨 Compiling binary for ${target}...\n`);

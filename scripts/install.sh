@@ -27,6 +27,23 @@ chmod +x "$INSTALL_DIR/personal-assistant"
 
 echo "==> Binary installed to $INSTALL_DIR/personal-assistant"
 
+# Install node-pty native dependencies
+echo "==> Installing PTY dependencies (node-pty)..."
+if ! command -v node &>/dev/null; then
+  echo "ERROR: Node.js is required. Install it: curl -fsSL https://deb.nodesource.com/setup_20.x | sudo bash - && sudo apt-get install -y nodejs"
+  exit 1
+fi
+
+# Ensure build tools are available for native compilation
+if ! command -v make &>/dev/null; then
+  echo "==> Installing build-essential for native module compilation..."
+  sudo apt-get install -y build-essential python3 2>/dev/null || true
+fi
+
+cd "$INSTALL_DIR"
+npm install --omit=dev 2>&1 | tail -5
+echo "    node-pty installed"
+
 # Create systemd service
 SYSTEMD_DIR="$HOME/.config/systemd/user"
 mkdir -p "$SYSTEMD_DIR"
