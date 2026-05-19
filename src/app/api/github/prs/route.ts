@@ -15,7 +15,7 @@ async function getGithubComToken(): Promise<string> {
     });
     return stdout.trim();
   } catch {
-    throw new Error("No GitHub.com token. Set GITHUB_COM_TOKEN or run `gh auth login`.");
+    return "";
   }
 }
 
@@ -32,8 +32,7 @@ function getConfig(profile: string) {
     getUsername: () => getConfigEnv("GITHUB_USERNAME"),
     getToken: async () => {
       const token = await getConfigEnv("GITHUB_TOKEN");
-      if (!token) throw new Error("GITHUB_TOKEN not configured. Go to Settings to add it.");
-      return token;
+      return token || "";
     },
   };
 }
@@ -82,6 +81,11 @@ export async function GET(request: NextRequest) {
     const config = getConfig(profile);
     const token = await config.getToken();
     const username = await config.getUsername();
+
+    if (!token || !username) {
+      return Response.json({ prs: [], message: "GitHub not configured. Go to Settings to add your token and username." });
+    }
+
     const api = profile === "private" ? config.api : (await getConfigEnv("GITHUB_API_URL") || "https://github.wdf.sap.corp/api/v3");
 
     // Fetch only PRs authored by me
