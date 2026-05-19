@@ -1,7 +1,14 @@
 {
-  "name": "personal-assistant",
+  "name": "personal-assistant-dashboard",
   "version": "0.1.0",
-  "private": true,
+  "private": false,
+  "description": "A widget-based personal dashboard with email, calendar, tasks, GitHub PRs, Jira, terminal, and more",
+  "bin": {
+    "personal-assistant-dashboard": "./bin/cli.js"
+  },
+  "files": [
+    "bin/cli.js"
+  ],
   "scripts": {
     "dev": "NODE_TLS_REJECT_UNAUTHORIZED=0 node server/dev-launcher.mjs",
     "dev:next": "NODE_TLS_REJECT_UNAUTHORIZED=0 next dev --port 4444",
