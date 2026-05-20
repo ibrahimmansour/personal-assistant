@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { Settings, Save, Eye, EyeOff, CheckCircle, GitBranch, Mail, Cloud, Brain, MapPin, TicketCheck } from "lucide-react";
+import { useState, useEffect, useCallback, FormEvent } from "react";
+import { Settings, Save, Eye, EyeOff, CheckCircle, GitBranch, Mail, Cloud, Brain, MapPin, TicketCheck, Shield } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface AppConfig {
