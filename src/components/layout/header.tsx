@@ -140,7 +140,7 @@ export function Header() {
         </div>
       </div>
       <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden p-0">
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto p-0">
           <SettingsPanel />
         </DialogContent>
       </Dialog>
