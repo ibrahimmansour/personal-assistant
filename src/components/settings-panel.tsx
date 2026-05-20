@@ -1,8 +1,10 @@
 "use client";
 
 import { useState, useEffect, useCallback, FormEvent } from "react";
-import { Settings, Save, Eye, EyeOff, CheckCircle, GitBranch, Mail, Cloud, Brain, MapPin, TicketCheck, Shield, Download, RefreshCw } from "lucide-react";
+import { Settings, Save, Eye, EyeOff, CheckCircle, GitBranch, Mail, Cloud, Brain, MapPin, TicketCheck, Shield, Download, RefreshCw, LayoutGrid, RotateCcw, Lock, LockOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useDashboard } from "@/components/dashboard-context";
+import { Switch } from "@/components/ui/switch";
 
 interface AppConfig {
   github: { token: string; username: string; apiUrl: string };
@@ -169,7 +171,57 @@ export default function SettingsPanel() {
         Settings are stored in ~/.personal-assistant/config.json
       </p>
 
+      <WidgetsSection />
+
       <ChangePasswordSection />
+    </div>
+  );
+}
+
+function WidgetsSection() {
+  const { widgets, toggleWidget, resetLayout, autoArrange, layoutLocked, toggleLayoutLock } = useDashboard();
+
+  return (
+    <div className="space-y-3 pt-4 border-t border-border">
+      <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+        <LayoutGrid className="h-4 w-4" />
+        Widgets
+      </div>
+      <div className="space-y-2 pl-6">
+        {widgets.map((widget) => (
+          <div key={widget.id} className="flex items-center justify-between py-1">
+            <span className="text-sm">{widget.title}</span>
+            <Switch
+              checked={widget.visible}
+              onCheckedChange={() => toggleWidget(widget.id)}
+            />
+          </div>
+        ))}
+      </div>
+      <div className="flex items-center gap-2 pl-6 pt-2">
+        <button
+          onClick={toggleLayoutLock}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border border-border hover:bg-muted transition-colors"
+        >
+          {layoutLocked ? <Lock className="h-3 w-3" /> : <LockOpen className="h-3 w-3" />}
+          {layoutLocked ? "Unlock layout" : "Lock layout"}
+        </button>
+        <button
+          onClick={autoArrange}
+          disabled={layoutLocked}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border border-border hover:bg-muted transition-colors disabled:opacity-50"
+        >
+          <LayoutGrid className="h-3 w-3" />
+          Auto-arrange
+        </button>
+        <button
+          onClick={resetLayout}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border border-border hover:bg-muted transition-colors"
+        >
+          <RotateCcw className="h-3 w-3" />
+          Reset
+        </button>
+      </div>
     </div>
   );
 }

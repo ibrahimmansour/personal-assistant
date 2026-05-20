@@ -3,7 +3,6 @@
 import { useTheme } from "next-themes";
 import { LayoutDashboard, Moon, Sun, Briefcase, Home, Search, Sparkles, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { WidgetSettings } from "@/components/layout/widget-settings";
 import { AppearancePicker } from "@/components/layout/appearance-picker";
 import { useProfile, profiles, type ProfileId } from "@/components/profile-context";
 import { useCommandPalette } from "@/components/command-palette-context";
@@ -113,16 +112,13 @@ export function Header() {
             </kbd>
           </button>
           <AppearancePicker />
-          <WidgetSettings />
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-8 w-8 p-0"
+          <button
+            className="inline-flex items-center justify-center h-8 w-8 p-0 rounded-md text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
             onClick={() => setSettingsOpen(true)}
             title="Settings"
           >
             <Settings className="h-4 w-4" />
-          </Button>
+          </button>
           {mounted && (
             <Button
               variant="ghost"
