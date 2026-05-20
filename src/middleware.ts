@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { isValidSession, isAuthEnabled, isPasswordConfigured } from "@/lib/auth";
+import { isValidSession, isPasswordConfigured } from "@/lib/auth";
+
+export const runtime = "nodejs";
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
