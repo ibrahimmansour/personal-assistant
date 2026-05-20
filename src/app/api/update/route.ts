@@ -43,6 +43,16 @@ async function getLatestRelease(): Promise<{ tag: string; version: string; url: 
   }
 }
 
+function isNewerVersion(latest: string, current: string): boolean {
+  const l = latest.split(".").map(Number);
+  const c = current.split(".").map(Number);
+  for (let i = 0; i < 3; i++) {
+    if ((l[i] || 0) > (c[i] || 0)) return true;
+    if ((l[i] || 0) < (c[i] || 0)) return false;
+  }
+  return false;
+}
+
 export async function GET() {
   const current = await getCurrentVersion();
   const latest = await getLatestRelease();
@@ -50,7 +60,7 @@ export async function GET() {
   return Response.json({
     current,
     latest: latest?.version || null,
-    updateAvailable: latest ? latest.version !== current : false,
+    updateAvailable: latest ? isNewerVersion(latest.version, current) : false,
     releaseUrl: latest?.url || null,
   });
 }
