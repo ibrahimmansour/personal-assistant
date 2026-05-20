@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, FormEvent } from "react";
-import { Settings, Save, Eye, EyeOff, CheckCircle, GitBranch, Mail, Cloud, Brain, MapPin, TicketCheck, Shield } from "lucide-react";
+import { Settings, Save, Eye, EyeOff, CheckCircle, GitBranch, Mail, Cloud, Brain, MapPin, TicketCheck, Shield, Download, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface AppConfig {
@@ -168,6 +168,196 @@ export default function SettingsPanel() {
       <p className="text-xs text-muted-foreground">
         Settings are stored in ~/.personal-assistant/config.json
       </p>
+
+      <ChangePasswordSection />
+    </div>
+  );
+}
+
+function ChangePasswordSection() {
+  const [current, setCurrent] = useState("");
+  const [newPw, setNewPw] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    setError("");
+    setSuccess(false);
+
+    if (newPw.length < 4) {
+      setError("New password must be at least 4 characters");
+      return;
+    }
+    if (newPw !== confirm) {
+      setError("Passwords do not match");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await fetch("/api/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "change-password", password: current, newPassword: newPw }),
+      });
+      if (res.ok) {
+        setSuccess(true);
+        setCurrent("");
+        setNewPw("");
+        setConfirm("");
+        setTimeout(() => setSuccess(false), 3000);
+      } else {
+        const data = await res.json();
+        setError(data.error || "Failed to change password");
+      }
+    } catch {
+      setError("Something went wrong");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="space-y-3 pt-4 border-t border-border">
+      <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+        <Shield className="h-4 w-4" />
+        Security
+      </div>
+      <form onSubmit={handleSubmit} className="space-y-2 pl-6">
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-muted-foreground w-28 shrink-0">Current</label>
+          <input
+            type="password"
+            value={current}
+            onChange={(e) => setCurrent(e.target.value)}
+            className="flex-1 rounded-md border border-input bg-background px-3 py-1.5 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-muted-foreground w-28 shrink-0">New password</label>
+          <input
+            type="password"
+            value={newPw}
+            onChange={(e) => setNewPw(e.target.value)}
+            className="flex-1 rounded-md border border-input bg-background px-3 py-1.5 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-muted-foreground w-28 shrink-0">Confirm</label>
+          <input
+            type="password"
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+            className="flex-1 rounded-md border border-input bg-background px-3 py-1.5 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+        </div>
+        {error && <p className="text-xs text-destructive pl-28 ml-2">{error}</p>}
+        {success && <p className="text-xs text-green-600 dark:text-green-400 pl-28 ml-2">Password changed successfully</p>}
+        <div className="pl-28 ml-2 pt-1">
+          <button
+            type="submit"
+            disabled={loading || !current || !newPw || !confirm}
+            className="px-4 py-1.5 rounded-md text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            {loading ? "Changing..." : "Change Password"}
+          </button>
+        </div>
+      </form>
+
+      <UpdateSection />
+    </div>
+  );
+}
+
+function UpdateSection() {
+  const [status, setStatus] = useState<{ current: string; latest: string | null; updateAvailable: boolean } | null>(null);
+  const [updating, setUpdating] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const [message, setMessage] = useState("");
+
+  const checkForUpdates = async () => {
+    setChecking(true);
+    try {
+      const res = await fetch("/api/update");
+      const data = await res.json();
+      setStatus(data);
+    } catch {
+      setMessage("Failed to check for updates");
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  useEffect(() => { checkForUpdates(); }, []);
+
+  const handleUpdate = async () => {
+    setUpdating(true);
+    setMessage("");
+    try {
+      const res = await fetch("/api/update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "update" }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setMessage("Update installed! Restarting... page will reload in a few seconds.");
+        setTimeout(() => window.location.reload(), 5000);
+      } else {
+        setMessage(`Update failed: ${data.error}`);
+      }
+    } catch {
+      setMessage("Update failed. Check server logs.");
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  return (
+    <div className="space-y-3 border-t border-border pt-6">
+      <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+        <Download className="h-4 w-4" />
+        Updates
+      </div>
+      <div className="pl-6 space-y-2">
+        <div className="flex items-center gap-3 text-sm">
+          <span className="text-muted-foreground">Current:</span>
+          <span className="font-mono">{status?.current || "..."}</span>
+          {status?.latest && (
+            <>
+              <span className="text-muted-foreground">Latest:</span>
+              <span className="font-mono">{status.latest}</span>
+            </>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={checkForUpdates}
+            disabled={checking}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border border-border hover:bg-muted transition-colors disabled:opacity-50"
+          >
+            <RefreshCw className={cn("h-3.5 w-3.5", checking && "animate-spin")} />
+            {checking ? "Checking..." : "Check for updates"}
+          </button>
+          {status?.updateAvailable && (
+            <button
+              onClick={handleUpdate}
+              disabled={updating}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
+            >
+              <Download className="h-3.5 w-3.5" />
+              {updating ? "Updating..." : `Update to ${status.latest}`}
+            </button>
+          )}
+          {status && !status.updateAvailable && status.latest && (
+            <span className="text-xs text-green-600 dark:text-green-400">Up to date</span>
+          )}
+        </div>
+        {message && <p className="text-xs text-muted-foreground">{message}</p>}
+      </div>
     </div>
   );
 }
