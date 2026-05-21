@@ -36,7 +36,7 @@ import {
 
 const PORT = parseInt(process.env.PORT || "4446", 10);
 const AUTH_TOKEN = process.env.AUTH_TOKEN || "";
-const DEFAULT_CWD = process.env.DEFAULT_CWD || process.cwd();
+const DEFAULT_CWD = process.env.DEFAULT_CWD || process.env.HOME || process.cwd();
 
 // Prevent unhandled errors from crashing the process
 process.on("uncaughtException", (err) => {
@@ -119,8 +119,11 @@ wss.on("connection", (ws, req) => {
           const abortController = new AbortController();
           activeAbortController = abortController;
 
+          const cwd = msg.cwd || DEFAULT_CWD;
+          console.log(`[relay] Query cwd: ${cwd}, model: ${msg.model || "default"}, sessionId: ${msg.sessionId || "new"}`);
+
           const options = {
-            cwd: msg.cwd || DEFAULT_CWD,
+            cwd,
             abortController,
             permissionMode: "bypassPermissions",
             allowDangerouslySkipPermissions: true,

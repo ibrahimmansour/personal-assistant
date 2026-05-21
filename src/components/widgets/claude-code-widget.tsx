@@ -1154,7 +1154,7 @@ export function ClaudeCodeWidget() {
                 <textarea
                   ref={inputRef}
                   className="flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring min-h-[38px] max-h-[120px]"
-                  placeholder="Ask Claude... (/ for commands)"
+                  placeholder={activeFolder ? "Ask Claude... (/ for commands)" : "Select a folder first..."}
                   value={input}
                   onChange={(e) => {
                     handleInputChange(e);
