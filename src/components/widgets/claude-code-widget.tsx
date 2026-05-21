@@ -538,11 +538,9 @@ export function ClaudeCodeWidget() {
             </div>
             {/* Model selector */}
             <DropdownMenu>
-              <DropdownMenuTrigger>
-                <Button variant="outline" size="sm" className="h-7 text-xs gap-1">
+              <DropdownMenuTrigger className="inline-flex shrink-0 items-center justify-center rounded-md border border-input bg-background px-2 h-7 text-xs gap-1 hover:bg-accent hover:text-accent-foreground">
                   {MODELS.find((m) => m.id === selectedModel)?.label || "Model"}
                   <ChevronDown className="h-3 w-3" />
-                </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 {MODELS.map((m) => (

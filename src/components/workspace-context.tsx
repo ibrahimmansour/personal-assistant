@@ -99,7 +99,7 @@ export interface WorkspaceState {
 
 const ALL_WIDGET_IDS = [
   "clock", "weather", "reminders", "calendar", "tasks", "email",
-  "github-prs", "jira", "notes", "terminal", "bookmarks", "files",
+  "github-prs", "jira", "notes", "terminal", "bookmarks", "files", "claude-code",
 ];
 
 const ALL_WIDGET_IDS_PRIVATE = ALL_WIDGET_IDS.filter((id) => id !== "jira");
@@ -107,8 +107,8 @@ const ALL_WIDGET_IDS_PRIVATE = ALL_WIDGET_IDS.filter((id) => id !== "jira");
 function getDefaultWorkspaces(profile: ProfileId): Workspace[] {
   const allIds = profile === "private" ? ALL_WIDGET_IDS_PRIVATE : ALL_WIDGET_IDS;
   const devIds = profile === "private"
-    ? ["terminal", "files", "github-prs", "notes"]
-    : ["terminal", "files", "github-prs", "jira"];
+    ? ["terminal", "files", "github-prs", "notes", "claude-code"]
+    : ["terminal", "files", "github-prs", "jira", "claude-code"];
 
   return [
     {
@@ -217,7 +217,7 @@ const defaultCollapsed: CollapsedSections = {
 
 // ─── Persistence ─────────────────────────────────────────────────────────────
 
-const WORKSPACE_VERSION = 3;
+const WORKSPACE_VERSION = 4;
 
 function wsStorageKey(profile: ProfileId) {
   return `workspace-state-${profile}`;
