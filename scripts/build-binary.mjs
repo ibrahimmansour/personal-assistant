@@ -60,11 +60,15 @@ function buildBinary(target) {
   // Copy PTY server script (runs as separate node process)
   cpSync(join(ROOT, "server/pty-server.mjs"), join(outDir, "pty-server.mjs"));
 
+  // Copy Claude relay server
+  mkdirSync(join(outDir, "server/claude-relay"), { recursive: true });
+  cpSync(join(ROOT, "server/claude-relay/relay.mjs"), join(outDir, "server/claude-relay/relay.mjs"));
+
   // Create a package.json for installing node-pty on the target
   const ptyPkg = JSON.stringify({
     name: "personal-assistant-pty",
     private: true,
-    dependencies: { "node-pty": "^1.1.0", "ws": "^8.20.0" }
+    dependencies: { "node-pty": "^1.1.0", "ws": "^8.20.0", "@anthropic-ai/claude-agent-sdk": "^0.3.146" }
   }, null, 2);
   writeFileSync(join(outDir, "package.json"), ptyPkg);
 
