@@ -315,7 +315,10 @@ export function ClaudeCodeWidget() {
         for (const m of sessionMessages) {
           const mType = m.type as string;
           if (mType === "user" || mType === "assistant") {
-            let content = "";
+            let textContent = "";
+            let hasToolUse = false;
+            let hasToolResult = false;
+            let hasUserText = false;
             
             // Try message.content[] blocks (standard format)
             const rawMsg = m.message as { content?: unknown[]; role?: string } | undefined;
@@ -323,39 +326,55 @@ export function ClaudeCodeWidget() {
               for (const block of rawMsg.content) {
                 const b = block as Record<string, unknown>;
                 if (b.type === "text" && b.text) {
-                  content += b.text;
+                  textContent += b.text;
+                  if (mType === "user") hasUserText = true;
                 } else if (b.type === "tool_use") {
-                  content += `\n\`\`\`\nTool: ${b.name}\n${JSON.stringify(b.input, null, 2)}\n\`\`\`\n`;
-                } else if (b.type === "tool_result") {
-                  const resultContent = b.content;
-                  if (typeof resultContent === "string") {
-                    content += resultContent;
-                  } else if (Array.isArray(resultContent)) {
-                    for (const rc of resultContent) {
-                      if ((rc as Record<string, unknown>).type === "text") {
-                        content += (rc as Record<string, unknown>).text;
-                      }
-                    }
+                  hasToolUse = true;
+                  // Show tool calls as formatted blocks for assistant messages
+                  if (mType === "assistant") {
+                    textContent += `\n\`\`\`\nTool: ${b.name}\n${JSON.stringify(b.input, null, 2)}\n\`\`\`\n`;
                   }
+                } else if (b.type === "tool_result") {
+                  hasToolResult = true;
+                  // Skip tool results entirely — they're internal API responses
                 }
               }
             }
             
+            // For user messages that only contain tool_result blocks, skip them
+            if (mType === "user" && hasToolResult && !hasUserText) {
+              continue;
+            }
+            
             // Try direct prompt field (user messages from CLI)
-            if (!content && m.prompt) {
-              content = m.prompt as string;
+            if (!textContent && m.prompt) {
+              textContent = m.prompt as string;
             }
             
             // Try message as string directly
-            if (!content && typeof m.message === "string") {
-              content = m.message;
+            if (!textContent && typeof m.message === "string") {
+              textContent = m.message;
             }
 
-            if (content) {
+            // Skip assistant messages that only have tool_use with no text explanation
+            if (mType === "assistant" && hasToolUse && !textContent.replace(/\n```\nTool:[\s\S]*?```\n/g, "").trim()) {
+              // Still show it but mark as tool call
+              if (textContent) {
+                converted.push({
+                  id: (m.uuid as string) || Math.random().toString(36).slice(2) + Date.now().toString(36),
+                  role: "assistant",
+                  content: textContent,
+                  timestamp: (m.timestamp as string) || new Date().toISOString(),
+                });
+              }
+              continue;
+            }
+
+            if (textContent) {
               converted.push({
                 id: (m.uuid as string) || Math.random().toString(36).slice(2) + Date.now().toString(36),
                 role: mType as "user" | "assistant",
-                content,
+                content: textContent,
                 timestamp: (m.timestamp as string) || new Date().toISOString(),
               });
             }
