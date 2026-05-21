@@ -33,6 +33,7 @@ import {
   Check,
   Layers,
   Monitor,
+  Bot,
 } from "lucide-react";
 import {
   useWorkspace,
@@ -70,6 +71,7 @@ const widgetIcons: Record<WidgetType, React.ComponentType<{ className?: string }
   terminal: TerminalSquare,
   bookmarks: Bookmark,
   files: FolderOpen,
+  "claude-code": Bot,
 };
 
 const workspaceIcons: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -117,6 +119,7 @@ const widgetTitles: Record<WidgetType, string> = {
   terminal: "Terminal",
   bookmarks: "Bookmarks",
   files: "Files",
+  "claude-code": "Claude Code",
 };
 
 // ─── Component ──────────────────────────────────────────────────────────────

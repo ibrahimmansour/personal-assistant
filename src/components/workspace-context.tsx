@@ -41,6 +41,7 @@ export const widgetCategoryMap: Record<WidgetType, WidgetCategory> = {
   terminal: "tools",
   bookmarks: "tools",
   files: "tools",
+  "claude-code": "development",
 };
 
 /** Custom view type for workspaces that render a dedicated UI instead of the widget grid */

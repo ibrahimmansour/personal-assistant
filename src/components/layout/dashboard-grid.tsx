@@ -29,6 +29,7 @@ import { NotesWidget } from "@/components/widgets/notes-widget";
 import { TerminalWidget } from "@/components/widgets/terminal-widget";
 import { BookmarksWidget } from "@/components/widgets/bookmarks-widget";
 import { FilesWidget } from "@/components/widgets/files-widget";
+import { ClaudeCodeWidget } from "@/components/widgets/claude-code-widget";
 
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
@@ -46,6 +47,7 @@ const widgetComponents: Record<WidgetType, React.ComponentType> = {
   terminal: TerminalWidget,
   bookmarks: BookmarksWidget,
   files: FilesWidget,
+  "claude-code": ClaudeCodeWidget,
 };
 
 export function DashboardGrid() {

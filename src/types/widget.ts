@@ -19,7 +19,8 @@ export type WidgetType =
   | "notes"
   | "terminal"
   | "bookmarks"
-  | "files";
+  | "files"
+  | "claude-code";
 
 export interface DashboardState {
   widgets: WidgetConfig[];

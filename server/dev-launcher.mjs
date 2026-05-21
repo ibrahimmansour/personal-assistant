@@ -40,6 +40,9 @@ function start(label, cmd, args, opts = {}) {
 // Start PTY server
 start("pty", "node", [path.join(ROOT, "server", "pty-server.mjs")]);
 
+// Start Claude Code relay server
+start("claude-relay", "node", [path.join(ROOT, "server", "claude-relay", "relay.mjs")]);
+
 // Start Next.js (this one is the "main" process — wait for it)
 const next = start("next", "npx", ["next", "dev", "--port", "4444"]);
 
