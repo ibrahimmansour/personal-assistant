@@ -17,6 +17,8 @@ import {
   Wifi,
   WifiOff,
   Settings,
+  FolderOpen,
+  FolderPlus,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState, useEffect, useRef, useCallback } from "react";
@@ -55,8 +57,9 @@ interface RelayConfig {
 }
 
 const MODELS = [
-  { id: "sonnet", label: "Sonnet" },
-  { id: "opus", label: "Opus" },
+  { id: "sonnet", label: "Sonnet 4.6" },
+  { id: "opus", label: "Opus 4.7" },
+  { id: "haiku", label: "Haiku 4.5" },
 ];
 
 // ─── Claude Icon ─────────────────────────────────────────────────────────────
@@ -181,12 +184,32 @@ export function ClaudeCodeWidget() {
   const [configLabel, setConfigLabel] = useState("");
   const [configCwd, setConfigCwd] = useState("");
 
+  // Folder state
+  const [folders, setFolders] = useState<string[]>([]);
+  const [activeFolder, setActiveFolder] = useState<string>("");
+  const [showFolderInput, setShowFolderInput] = useState(false);
+  const [newFolderPath, setNewFolderPath] = useState("");
+  
+  // Slash command state
+  const [showSlashMenu, setShowSlashMenu] = useState(false);
+  const [slashFilter, setSlashFilter] = useState("");
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const streamingTextRef = useRef("");
 
   // Load relay configs — default to local relay server
   useEffect(() => {
+    // Load saved folders from localStorage
+    try {
+      const saved = localStorage.getItem("claude-code-folders");
+      if (saved) {
+        const parsed = JSON.parse(saved) as string[];
+        setFolders(parsed);
+        if (parsed.length > 0) setActiveFolder(parsed[0]);
+      }
+    } catch {}
+
     fetch("/api/claude-code")
       .then((r) => r.json())
       .then((d) => {
@@ -194,6 +217,13 @@ export function ClaudeCodeWidget() {
         setConfigs(cfgs);
         if (cfgs.length > 0) {
           connectToRelay(cfgs[0]);
+          // If folders empty, initialize with defaultCwd from config
+          if (!folders.length && cfgs[0].defaultCwd) {
+            const initialFolder = cfgs[0].defaultCwd;
+            setFolders([initialFolder]);
+            setActiveFolder(initialFolder);
+            localStorage.setItem("claude-code-folders", JSON.stringify([initialFolder]));
+          }
         } else {
           // Auto-connect to local relay server (started alongside dev server)
           const localConfig: RelayConfig = { url: `ws://${window.location.hostname}:4446`, label: "Local" };
@@ -206,6 +236,16 @@ export function ClaudeCodeWidget() {
         connectToRelay(localConfig);
       });
   }, []);
+
+  // Refresh sessions when active folder changes
+  useEffect(() => {
+    if (!connected || !activeFolder) return;
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify({ type: "list-sessions", dir: activeFolder }));
+    setActiveSessionId(null);
+    setMessages([]);
+  }, [activeFolder, connected]);
 
   // Auto-scroll
   useEffect(() => {
@@ -229,8 +269,9 @@ export function ClaudeCodeWidget() {
     ws.onopen = () => {
       setConnected(true);
       setError(null);
-      // Request sessions list
-      ws.send(JSON.stringify({ type: "list-sessions", dir: config.defaultCwd }));
+      // Request sessions list using active folder or config default
+      const dir = activeFolder || config.defaultCwd;
+      if (dir) ws.send(JSON.stringify({ type: "list-sessions", dir }));
     };
 
     ws.onmessage = (event) => {
@@ -329,9 +370,8 @@ export function ClaudeCodeWidget() {
         setStreaming(false);
         if (msg.sessionId) setActiveSessionId(msg.sessionId as string);
         // Refresh session list
-        const config = configs[activeConfigIdx];
-        if (config && wsRef.current?.readyState === WebSocket.OPEN) {
-          wsRef.current.send(JSON.stringify({ type: "list-sessions", dir: config.defaultCwd }));
+        if (wsRef.current?.readyState === WebSocket.OPEN) {
+          wsRef.current.send(JSON.stringify({ type: "list-sessions", dir: activeFolder || configs[activeConfigIdx]?.defaultCwd }));
         }
         break;
       }
@@ -381,7 +421,7 @@ export function ClaudeCodeWidget() {
       type: "query",
       prompt: content,
       sessionId: activeSessionId || undefined,
-      cwd: config?.defaultCwd,
+      cwd: activeFolder || config?.defaultCwd,
       model: selectedModel,
     }));
   };
@@ -393,11 +433,10 @@ export function ClaudeCodeWidget() {
   const loadSession = (sessionId: string) => {
     setActiveSessionId(sessionId);
     setMessages([]);
-    const config = configs[activeConfigIdx];
     wsRef.current?.send(JSON.stringify({
       type: "get-messages",
       sessionId,
-      dir: config?.defaultCwd,
+      dir: activeFolder || configs[activeConfigIdx]?.defaultCwd,
     }));
   };
 
@@ -409,12 +448,11 @@ export function ClaudeCodeWidget() {
   };
 
   const renameSession = (sessionId: string, title: string) => {
-    const config = configs[activeConfigIdx];
     wsRef.current?.send(JSON.stringify({
       type: "rename-session",
       sessionId,
       title,
-      dir: config?.defaultCwd,
+      dir: activeFolder || configs[activeConfigIdx]?.defaultCwd,
     }));
   };
 
@@ -446,9 +484,105 @@ export function ClaudeCodeWidget() {
     navigator.clipboard.writeText(content);
   };
 
+  // Slash commands
+  const SLASH_COMMANDS = [
+    { cmd: "/clear", desc: "Clear current conversation" },
+    { cmd: "/new", desc: "Start a new session" },
+    { cmd: "/model", desc: "Switch model (sonnet, opus, haiku)" },
+    { cmd: "/compact", desc: "Compact conversation context" },
+    { cmd: "/help", desc: "Show available commands" },
+  ];
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const val = e.target.value;
+    setInput(val);
+    if (val.startsWith("/") && !val.includes(" ")) {
+      setShowSlashMenu(true);
+      setSlashFilter(val.slice(1));
+    } else {
+      setShowSlashMenu(false);
+    }
+  };
+
+  const executeSlashCommand = (cmd: string) => {
+    setShowSlashMenu(false);
+    switch (cmd) {
+      case "/clear":
+        setMessages([]);
+        setStreamingText("");
+        setInput("");
+        break;
+      case "/new":
+        newSession();
+        setInput("");
+        break;
+      case "/model": {
+        // Cycle through models
+        const idx = MODELS.findIndex((m) => m.id === selectedModel);
+        const next = MODELS[(idx + 1) % MODELS.length];
+        setSelectedModel(next.id);
+        setInput("");
+        setMessages((prev) => [...prev, {
+          id: Math.random().toString(36).slice(2) + Date.now().toString(36),
+          role: "assistant",
+          content: `Switched to ${next.label}`,
+          timestamp: new Date().toISOString(),
+        }]);
+        break;
+      }
+      case "/compact":
+        setInput("");
+        // Send compact prompt directly
+        if (wsRef.current?.readyState === WebSocket.OPEN) {
+          const compactPrompt = "Please compact the conversation so far into a concise summary, then continue from there.";
+          setMessages((prev) => [...prev, {
+            id: Math.random().toString(36).slice(2) + Date.now().toString(36),
+            role: "user",
+            content: compactPrompt,
+            timestamp: new Date().toISOString(),
+          }]);
+          setStreaming(true);
+          setStreamingText("");
+          streamingTextRef.current = "";
+          wsRef.current.send(JSON.stringify({
+            type: "query",
+            prompt: compactPrompt,
+            sessionId: activeSessionId || undefined,
+            cwd: activeFolder || configs[activeConfigIdx]?.defaultCwd,
+            model: selectedModel,
+          }));
+        }
+        break;
+      case "/help":
+        setInput("");
+        setMessages((prev) => [...prev, {
+          id: Math.random().toString(36).slice(2) + Date.now().toString(36),
+          role: "assistant",
+          content: SLASH_COMMANDS.map((c) => `\`${c.cmd}\` — ${c.desc}`).join("\n"),
+          timestamp: new Date().toISOString(),
+        }]);
+        break;
+    }
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (showSlashMenu && e.key === "Tab") {
+      e.preventDefault();
+      const filtered = SLASH_COMMANDS.filter((c) => c.cmd.includes("/" + slashFilter));
+      if (filtered.length === 1) {
+        executeSlashCommand(filtered[0].cmd);
+      }
+      return;
+    }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
+      if (showSlashMenu) {
+        const filtered = SLASH_COMMANDS.filter((c) => c.cmd.includes("/" + slashFilter));
+        if (filtered.length > 0 && input.startsWith("/")) {
+          executeSlashCommand(filtered[0].cmd);
+          return;
+        }
+      }
       sendMessage();
     }
   };
@@ -475,6 +609,82 @@ export function ClaudeCodeWidget() {
         {/* ─── Session Sidebar ─────────────────────────────────── */}
         {sidebarOpen && (
           <div className="w-56 border-r border-border flex flex-col shrink-0">
+            {/* Folder switcher */}
+            <div className="p-2 border-b border-border">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Folder</span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-5 w-5"
+                  onClick={() => setShowFolderInput(!showFolderInput)}
+                  title="Add folder"
+                >
+                  <FolderPlus className="h-3 w-3" />
+                </Button>
+              </div>
+              {folders.length > 0 && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger className="w-full flex items-center gap-1.5 rounded-md border border-input bg-background px-2 h-7 text-xs hover:bg-accent hover:text-accent-foreground">
+                    <FolderOpen className="h-3 w-3 shrink-0 text-muted-foreground" />
+                    <span className="flex-1 truncate text-left">{activeFolder.split("/").pop() || activeFolder}</span>
+                    <ChevronDown className="h-3 w-3 shrink-0" />
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="w-52">
+                    {folders.map((f) => (
+                      <DropdownMenuItem
+                        key={f}
+                        onClick={() => setActiveFolder(f)}
+                        className={cn(activeFolder === f && "bg-accent")}
+                      >
+                        <FolderOpen className="h-3 w-3 mr-1.5" />
+                        <span className="truncate">{f.split("/").pop() || f}</span>
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+              {showFolderInput && (
+                <div className="flex gap-1 mt-1.5">
+                  <Input
+                    className="h-6 text-xs flex-1"
+                    placeholder="/path/to/project"
+                    value={newFolderPath}
+                    onChange={(e) => setNewFolderPath(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && newFolderPath.trim()) {
+                        const path = newFolderPath.trim();
+                        const updated = [...folders.filter((f) => f !== path), path];
+                        setFolders(updated);
+                        setActiveFolder(path);
+                        localStorage.setItem("claude-code-folders", JSON.stringify(updated));
+                        setNewFolderPath("");
+                        setShowFolderInput(false);
+                      }
+                    }}
+                  />
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 shrink-0"
+                    onClick={() => {
+                      if (newFolderPath.trim()) {
+                        const path = newFolderPath.trim();
+                        const updated = [...folders.filter((f) => f !== path), path];
+                        setFolders(updated);
+                        setActiveFolder(path);
+                        localStorage.setItem("claude-code-folders", JSON.stringify(updated));
+                        setNewFolderPath("");
+                        setShowFolderInput(false);
+                      }
+                    }}
+                  >
+                    <Check className="h-3 w-3" />
+                  </Button>
+                </div>
+              )}
+            </div>
+            {/* Sessions header */}
             <div className="p-2 border-b border-border flex items-center justify-between">
               <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Sessions</span>
               <div className="flex gap-1">
@@ -697,15 +907,32 @@ export function ClaudeCodeWidget() {
 
           {/* Input */}
           {connected && (
-            <div className="p-3 border-t border-border shrink-0">
+            <div className="p-3 border-t border-border shrink-0 relative">
+              {/* Slash command menu */}
+              {showSlashMenu && (
+                <div className="absolute bottom-full left-3 right-3 mb-1 rounded-md border border-border bg-popover shadow-md z-10 max-h-40 overflow-y-auto">
+                  {SLASH_COMMANDS
+                    .filter((c) => c.cmd.includes("/" + slashFilter))
+                    .map((c) => (
+                      <div
+                        key={c.cmd}
+                        className="px-3 py-1.5 text-xs cursor-pointer hover:bg-accent flex justify-between items-center"
+                        onClick={() => executeSlashCommand(c.cmd)}
+                      >
+                        <span className="font-mono font-medium">{c.cmd}</span>
+                        <span className="text-muted-foreground ml-2">{c.desc}</span>
+                      </div>
+                    ))}
+                </div>
+              )}
               <div className="flex gap-2 items-end">
                 <textarea
                   ref={inputRef}
                   className="flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring min-h-[38px] max-h-[120px]"
-                  placeholder="Ask Claude..."
+                  placeholder="Ask Claude... (/ for commands)"
                   value={input}
                   onChange={(e) => {
-                    setInput(e.target.value);
+                    handleInputChange(e);
                     e.target.style.height = "auto";
                     e.target.style.height = Math.min(e.target.scrollHeight, 120) + "px";
                   }}
