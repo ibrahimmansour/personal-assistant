@@ -21,7 +21,9 @@ import {
   FolderPlus,
   GitBranch,
   GitFork,
+  Terminal,
 } from "lucide-react";
+import { TerminalPanel } from "@/components/terminal-panel";
 import { cn } from "@/lib/utils";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
@@ -189,6 +191,7 @@ export function ClaudeCodeWidget() {
   const [selectedModel, setSelectedModel] = useState(MODELS[0].id);
   const [error, setError] = useState<string | null>(null);
   const [showConfig, setShowConfig] = useState(false);
+  const [showTerminal, setShowTerminal] = useState(false);
   const [configUrl, setConfigUrl] = useState("");
   const [configToken, setConfigToken] = useState("");
   const [configLabel, setConfigLabel] = useState("");
@@ -985,6 +988,9 @@ export function ClaudeCodeWidget() {
                 ))}
               </DropdownMenuContent>
             </DropdownMenu>
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setShowTerminal(!showTerminal)} title="Open session in terminal">
+              <Terminal className="h-3.5 w-3.5" />
+            </Button>
             <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setShowConfig(!showConfig)}>
               <Settings className="h-3.5 w-3.5" />
             </Button>
@@ -1178,6 +1184,17 @@ export function ClaudeCodeWidget() {
             </div>
           )}
         </div>
+        {showTerminal && (
+          <div className="w-[45%] border-l border-border shrink-0">
+            <TerminalPanel
+              cwd={activeFolder}
+              command={activeSessionId ? `claude --resume ${activeSessionId}` : "claude"}
+              label="Claude CLI"
+              onClose={() => setShowTerminal(false)}
+              className="h-full"
+            />
+          </div>
+        )}
       </div>
     </WidgetWrapper>
   );
