@@ -37,6 +37,14 @@ const PORT = parseInt(process.env.PORT || "4446", 10);
 const AUTH_TOKEN = process.env.AUTH_TOKEN || "";
 const DEFAULT_CWD = process.env.DEFAULT_CWD || process.cwd();
 
+// Prevent unhandled errors from crashing the process
+process.on("uncaughtException", (err) => {
+  console.error("[claude-relay] uncaughtException:", err.message);
+});
+process.on("unhandledRejection", (err) => {
+  console.error("[claude-relay] unhandledRejection:", err);
+});
+
 const wss = new WebSocketServer({ port: PORT });
 
 console.log(`Claude Code relay server listening on ws://0.0.0.0:${PORT}`);
@@ -102,6 +110,10 @@ wss.on("connection", (ws, req) => {
             const q = query({ prompt: msg.prompt, options });
             activeQuery = q;
 
+            let lastSendTime = 0;
+            let pendingMessage = null;
+            let flushTimer = null;
+
             for await (const message of q) {
               if (abortController.signal.aborted) break;
 
@@ -110,8 +122,30 @@ wss.on("connection", (ws, req) => {
                 sessionId = message.session_id;
               }
 
-              send({ type: "message", data: message });
+              // Throttle: send at most every 50ms to avoid overwhelming the browser
+              const now = Date.now();
+              if (now - lastSendTime >= 50) {
+                send({ type: "message", data: message });
+                lastSendTime = now;
+                pendingMessage = null;
+              } else {
+                pendingMessage = message;
+                if (!flushTimer) {
+                  flushTimer = setTimeout(() => {
+                    if (pendingMessage) {
+                      send({ type: "message", data: pendingMessage });
+                      lastSendTime = Date.now();
+                      pendingMessage = null;
+                    }
+                    flushTimer = null;
+                  }, 50);
+                }
+              }
             }
+
+            // Flush any remaining message
+            if (flushTimer) clearTimeout(flushTimer);
+            if (pendingMessage) send({ type: "message", data: pendingMessage });
 
             send({ type: "done", sessionId: sessionId || "" });
           } catch (err) {

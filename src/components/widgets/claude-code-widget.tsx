@@ -274,7 +274,7 @@ export function ClaudeCodeWidget() {
             }
             if (content) {
               converted.push({
-                id: (m as { uuid?: string }).uuid || crypto.randomUUID(),
+                id: (m as { uuid?: string }).uuid || Math.random().toString(36).slice(2) + Date.now().toString(36),
                 role: m.type as "user" | "assistant",
                 content,
                 timestamp: new Date().toISOString(),
@@ -317,7 +317,7 @@ export function ClaudeCodeWidget() {
           setMessages((prev) => [
             ...prev,
             {
-              id: crypto.randomUUID(),
+              id: Math.random().toString(36).slice(2) + Date.now().toString(36),
               role: "assistant",
               content: finalText,
               timestamp: new Date().toISOString(),
@@ -369,7 +369,7 @@ export function ClaudeCodeWidget() {
     // Add user message locally
     setMessages((prev) => [
       ...prev,
-      { id: crypto.randomUUID(), role: "user", content, timestamp: new Date().toISOString() },
+      { id: Math.random().toString(36).slice(2) + Date.now().toString(36), role: "user", content, timestamp: new Date().toISOString() },
     ]);
 
     setStreaming(true);
