@@ -26,6 +26,7 @@
  */
 
 import { WebSocketServer } from "ws";
+import { execSync } from "child_process";
 import {
   query,
   listSessions,
@@ -50,6 +51,30 @@ const wss = new WebSocketServer({ port: PORT });
 console.log(`Claude Code relay server listening on ws://0.0.0.0:${PORT}`);
 if (AUTH_TOKEN) console.log("Authentication enabled");
 console.log(`Default CWD: ${DEFAULT_CWD}`);
+
+function parseWorktrees(output) {
+  const worktrees = [];
+  let current = {};
+  for (const line of output.split("\n")) {
+    if (line.startsWith("worktree ")) {
+      if (current.path) worktrees.push(current);
+      current = { path: line.slice(9) };
+    } else if (line.startsWith("HEAD ")) {
+      current.head = line.slice(5);
+    } else if (line.startsWith("branch ")) {
+      current.branch = line.slice(7).replace("refs/heads/", "");
+    } else if (line === "bare") {
+      current.bare = true;
+    } else if (line === "detached") {
+      current.detached = true;
+    } else if (line === "") {
+      if (current.path) worktrees.push(current);
+      current = {};
+    }
+  }
+  if (current.path) worktrees.push(current);
+  return worktrees;
+}
 
 wss.on("connection", (ws, req) => {
   // Auth check
@@ -206,6 +231,74 @@ wss.on("connection", (ws, req) => {
             dir: msg.dir || DEFAULT_CWD,
           });
           send({ type: "renamed", sessionId: msg.sessionId, title: msg.title });
+          break;
+        }
+
+        case "list-worktrees": {
+          const dir = msg.dir || DEFAULT_CWD;
+          try {
+            const output = execSync("git worktree list --porcelain", { cwd: dir, encoding: "utf-8" });
+            const worktrees = parseWorktrees(output);
+            send({ type: "worktrees", worktrees, dir });
+          } catch (err) {
+            send({ type: "error", error: `Not a git repo or git not available: ${err.message}` });
+          }
+          break;
+        }
+
+        case "add-worktree": {
+          const dir = msg.dir || DEFAULT_CWD;
+          const { branch, path: wtPath, newBranch } = msg;
+          if (!wtPath) {
+            send({ type: "error", error: "Missing path for worktree" });
+            break;
+          }
+          try {
+            let cmd = `git worktree add "${wtPath}"`;
+            if (newBranch) {
+              cmd += ` -b "${newBranch}"`;
+            } else if (branch) {
+              cmd += ` "${branch}"`;
+            }
+            execSync(cmd, { cwd: dir, encoding: "utf-8", stdio: "pipe" });
+            // Return updated list
+            const output = execSync("git worktree list --porcelain", { cwd: dir, encoding: "utf-8" });
+            const worktrees = parseWorktrees(output);
+            send({ type: "worktree-added", worktrees, path: wtPath });
+          } catch (err) {
+            send({ type: "error", error: `Failed to add worktree: ${err.message}` });
+          }
+          break;
+        }
+
+        case "remove-worktree": {
+          const dir = msg.dir || DEFAULT_CWD;
+          const { path: wtPath, force } = msg;
+          if (!wtPath) {
+            send({ type: "error", error: "Missing path for worktree removal" });
+            break;
+          }
+          try {
+            const cmd = force ? `git worktree remove --force "${wtPath}"` : `git worktree remove "${wtPath}"`;
+            execSync(cmd, { cwd: dir, encoding: "utf-8", stdio: "pipe" });
+            const output = execSync("git worktree list --porcelain", { cwd: dir, encoding: "utf-8" });
+            const worktrees = parseWorktrees(output);
+            send({ type: "worktree-removed", worktrees });
+          } catch (err) {
+            send({ type: "error", error: `Failed to remove worktree: ${err.message}` });
+          }
+          break;
+        }
+
+        case "list-branches": {
+          const dir = msg.dir || DEFAULT_CWD;
+          try {
+            const output = execSync("git branch -a --format='%(refname:short)'", { cwd: dir, encoding: "utf-8" });
+            const branches = output.trim().split("\n").filter(Boolean);
+            send({ type: "branches", branches });
+          } catch (err) {
+            send({ type: "error", error: `Failed to list branches: ${err.message}` });
+          }
           break;
         }
 

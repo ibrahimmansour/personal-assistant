@@ -19,6 +19,8 @@ import {
   Settings,
   FolderOpen,
   FolderPlus,
+  GitBranch,
+  GitFork,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState, useEffect, useRef, useCallback } from "react";
@@ -54,6 +56,14 @@ interface RelayConfig {
   token?: string;
   defaultCwd?: string;
   label: string;
+}
+
+interface Worktree {
+  path: string;
+  branch?: string;
+  head?: string;
+  bare?: boolean;
+  detached?: boolean;
 }
 
 const MODELS = [
@@ -189,6 +199,13 @@ export function ClaudeCodeWidget() {
   const [activeFolder, setActiveFolder] = useState<string>("");
   const [showFolderInput, setShowFolderInput] = useState(false);
   const [newFolderPath, setNewFolderPath] = useState("");
+  
+  // Worktree state
+  const [worktrees, setWorktrees] = useState<Worktree[]>([]);
+  const [showWorktreePanel, setShowWorktreePanel] = useState(false);
+  const [newWorktreeBranch, setNewWorktreeBranch] = useState("");
+  const [newWorktreePath, setNewWorktreePath] = useState("");
+  const [branches, setBranches] = useState<string[]>([]);
   
   // Slash command state
   const [showSlashMenu, setShowSlashMenu] = useState(false);
@@ -449,6 +466,34 @@ export function ClaudeCodeWidget() {
           )
         );
         break;
+
+      case "worktrees":
+        setWorktrees((msg.worktrees as Worktree[]) || []);
+        break;
+
+      case "worktree-added":
+        setWorktrees((msg.worktrees as Worktree[]) || []);
+        // Switch to the new worktree folder and load its sessions
+        if (msg.path) {
+          const wtPath = msg.path as string;
+          setActiveFolder(wtPath);
+          // Add to folders if not already there
+          setFolders((prev) => {
+            const updated = prev.includes(wtPath) ? prev : [...prev, wtPath];
+            localStorage.setItem("claude-code-folders", JSON.stringify(updated));
+            return updated;
+          });
+        }
+        setShowWorktreePanel(false);
+        break;
+
+      case "worktree-removed":
+        setWorktrees((msg.worktrees as Worktree[]) || []);
+        break;
+
+      case "branches":
+        setBranches((msg.branches as string[]) || []);
+        break;
     }
   }, [configs, activeConfigIdx, activeSessionId]);
 
@@ -485,6 +530,45 @@ export function ClaudeCodeWidget() {
 
   const abortQuery = () => {
     wsRef.current?.send(JSON.stringify({ type: "abort" }));
+  };
+
+  const fetchWorktrees = () => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+    wsRef.current.send(JSON.stringify({ type: "list-worktrees", dir: activeFolder || configs[activeConfigIdx]?.defaultCwd }));
+    wsRef.current.send(JSON.stringify({ type: "list-branches", dir: activeFolder || configs[activeConfigIdx]?.defaultCwd }));
+  };
+
+  const addWorktree = () => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+    if (!newWorktreePath) return;
+    wsRef.current.send(JSON.stringify({
+      type: "add-worktree",
+      dir: activeFolder || configs[activeConfigIdx]?.defaultCwd,
+      path: newWorktreePath,
+      newBranch: newWorktreeBranch || undefined,
+    }));
+    setNewWorktreePath("");
+    setNewWorktreeBranch("");
+  };
+
+  const removeWorktree = (path: string) => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+    wsRef.current.send(JSON.stringify({
+      type: "remove-worktree",
+      dir: activeFolder || configs[activeConfigIdx]?.defaultCwd,
+      path,
+      force: true,
+    }));
+  };
+
+  const switchToWorktree = (wt: Worktree) => {
+    setActiveFolder(wt.path);
+    setFolders((prev) => {
+      const updated = prev.includes(wt.path) ? prev : [...prev, wt.path];
+      localStorage.setItem("claude-code-folders", JSON.stringify(updated));
+      return updated;
+    });
+    setShowWorktreePanel(false);
   };
 
   const loadSession = (sessionId: string) => {
@@ -750,6 +834,78 @@ export function ClaudeCodeWidget() {
                   >
                     <Check className="h-3 w-3" />
                   </Button>
+                </div>
+              )}
+            </div>
+            {/* Worktree section */}
+            <div className="p-2 border-b border-border">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Worktrees</span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-5 w-5"
+                  onClick={() => {
+                    fetchWorktrees();
+                    setShowWorktreePanel(!showWorktreePanel);
+                  }}
+                  title="Manage worktrees"
+                >
+                  <GitFork className="h-3 w-3" />
+                </Button>
+              </div>
+              {showWorktreePanel && (
+                <div className="space-y-1.5">
+                  {worktrees.length > 0 && (
+                    <div className="space-y-0.5 max-h-32 overflow-y-auto">
+                      {worktrees.map((wt) => (
+                        <div
+                          key={wt.path}
+                          className={cn(
+                            "flex items-center gap-1.5 text-[11px] px-1.5 py-1 rounded cursor-pointer group",
+                            activeFolder === wt.path ? "bg-accent text-accent-foreground" : "hover:bg-muted"
+                          )}
+                          onClick={() => switchToWorktree(wt)}
+                        >
+                          <GitBranch className="h-3 w-3 shrink-0 text-muted-foreground" />
+                          <span className="flex-1 truncate">{wt.branch || wt.path.split("/").pop()}</span>
+                          {!wt.bare && worktrees.length > 1 && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-4 w-4 opacity-0 group-hover:opacity-100 shrink-0"
+                              onClick={(e) => { e.stopPropagation(); removeWorktree(wt.path); }}
+                            >
+                              <Trash2 className="h-2.5 w-2.5 text-destructive" />
+                            </Button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="space-y-1 pt-1 border-t border-border">
+                    <Input
+                      className="h-6 text-xs"
+                      placeholder="Path (e.g. ../my-feature)"
+                      value={newWorktreePath}
+                      onChange={(e) => setNewWorktreePath(e.target.value)}
+                    />
+                    <Input
+                      className="h-6 text-xs"
+                      placeholder="New branch name (optional)"
+                      value={newWorktreeBranch}
+                      onChange={(e) => setNewWorktreeBranch(e.target.value)}
+                    />
+                    <Button
+                      size="sm"
+                      className="h-6 text-[10px] w-full"
+                      onClick={addWorktree}
+                      disabled={!newWorktreePath}
+                    >
+                      <Plus className="h-3 w-3 mr-1" />
+                      Add Worktree
+                    </Button>
+                  </div>
                 </div>
               )}
             </div>
