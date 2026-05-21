@@ -69,6 +69,15 @@ import {
   Loader2,
   ArrowDownAZ,
   ArrowUpAZ,
+  Database,
+  Table2,
+  Columns3,
+  Eye as EyeIcon2,
+  Zap,
+  Sparkles,
+  Wand2,
+  AlertCircle,
+  CheckCircle2,
 } from "lucide-react";
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { createPortal } from "react-dom";
@@ -76,6 +85,8 @@ import { useTheme } from "next-themes";
 import { codeToHtml, type BundledLanguage } from "shiki";
 import { useWidgetNavFor } from "@/components/widget-nav-context";
 import { TerminalPanel } from "@/components/terminal-panel";
+import Editor from "@monaco-editor/react";
+import ReactMarkdown from "react-markdown";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -260,6 +271,7 @@ function FileContextMenu({
   onCopyPath,
   onCopyRelativePath,
   onToggleBookmark,
+  onCleanup,
   isBookmarked,
 }: {
   state: ContextMenuState;
@@ -271,6 +283,7 @@ function FileContextMenu({
   onCopyPath: (entry: FileEntry) => void;
   onCopyRelativePath: (entry: FileEntry) => void;
   onToggleBookmark: (entry: FileEntry) => void;
+  onCleanup: (entry: FileEntry) => void;
   isBookmarked: boolean;
 }) {
   const menuRef = useRef<HTMLDivElement>(null);
@@ -327,6 +340,12 @@ function FileContextMenu({
       </div>
       {item(<FilePlus className="h-3.5 w-3.5 shrink-0" />, "New File Here", () => onNewFile(inDir))}
       {item(<FolderPlus className="h-3.5 w-3.5 shrink-0" />, "New Folder Here", () => onNewFolder(inDir))}
+      {state.entry.isDirectory && (
+        <>
+          <div className="border-t border-border my-1" />
+          {item(<Sparkles className="h-3.5 w-3.5 shrink-0 text-primary" />, "Clean up with AI", () => onCleanup(state.entry))}
+        </>
+      )}
       <div className="border-t border-border my-1" />
       {item(<ClipboardCopy className="h-3.5 w-3.5 shrink-0" />, "Copy Path", () => onCopyPath(state.entry))}
       {item(<Copy className="h-3.5 w-3.5 shrink-0" />, "Copy Relative Path", () => onCopyRelativePath(state.entry))}
@@ -471,6 +490,10 @@ interface SearchResultEntry extends FileEntry {
   score: number;
   matchLine?: string;
   matchLineNumber?: number;
+  /** AI search: short reason why this file was suggested */
+  reason?: string;
+  /** AI search: model's confidence in this result */
+  confidence?: "high" | "medium" | "low";
 }
 
 interface DirListing {
@@ -994,6 +1017,266 @@ function ProjectActionsPanel({
   );
 }
 
+// ─── Cleanup Assistant Panel (AI) ────────────────────────────────────────────
+
+interface CleanupItem {
+  name: string;
+  path: string;
+  reason: string;
+  defaultChecked: boolean;
+}
+
+interface CleanupCategory {
+  category: string;
+  description: string;
+  items: CleanupItem[];
+}
+
+interface CleanupResponse {
+  categories: CleanupCategory[];
+  folder: string;
+  totalItems: number;
+  bytesSaved?: number;
+  note?: string;
+  error?: string;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+}
+
+function CleanupAssistantPanel({
+  folderPath,
+  onClose,
+  onDeleted,
+}: {
+  folderPath: string;
+  onClose: () => void;
+  onDeleted: () => void;
+}) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [data, setData] = useState<CleanupResponse | null>(null);
+  // Map of path → checked
+  const [selected, setSelected] = useState<Record<string, boolean>>({});
+  const [deleting, setDeleting] = useState(false);
+  const [deleteResult, setDeleteResult] = useState<string | null>(null);
+
+  // Fetch suggestions when folder changes
+  useEffect(() => {
+    let cancelled = false;
+
+    const run = async () => {
+      // Reset all state up-front, then fetch
+      setLoading(true);
+      setError(null);
+      setData(null);
+      setSelected({});
+      setDeleteResult(null);
+
+      try {
+        const res = await fetch("/api/files-ai", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "cleanup-suggest", path: folderPath }),
+        });
+        const json: CleanupResponse = await res.json();
+        if (cancelled) return;
+        if (json.error) {
+          setError(json.error);
+        } else {
+          setData(json);
+          // Pre-select items where defaultChecked is true
+          const initial: Record<string, boolean> = {};
+          for (const cat of json.categories || []) {
+            for (const it of cat.items) {
+              initial[it.path] = it.defaultChecked;
+            }
+          }
+          setSelected(initial);
+        }
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load");
+      }
+      if (!cancelled) setLoading(false);
+    };
+
+    run();
+    return () => { cancelled = true; };
+  }, [folderPath]);
+
+  const toggle = (p: string) => setSelected((s) => ({ ...s, [p]: !s[p] }));
+
+  const allItems = useMemo(() => {
+    if (!data) return [] as CleanupItem[];
+    return data.categories.flatMap((c) => c.items);
+  }, [data]);
+
+  const selectedCount = useMemo(() => {
+    return Object.values(selected).filter(Boolean).length;
+  }, [selected]);
+
+  const toggleCategory = (cat: CleanupCategory, value: boolean) => {
+    setSelected((s) => {
+      const next = { ...s };
+      for (const it of cat.items) next[it.path] = value;
+      return next;
+    });
+  };
+
+  const performDelete = async () => {
+    const paths = Object.entries(selected)
+      .filter(([, v]) => v)
+      .map(([p]) => p);
+    if (paths.length === 0) return;
+    if (!window.confirm(`Delete ${paths.length} item${paths.length === 1 ? "" : "s"}? This cannot be undone.`)) return;
+
+    setDeleting(true);
+    setDeleteResult(null);
+    let succeeded = 0;
+    let failed = 0;
+    for (const p of paths) {
+      try {
+        const res = await fetch("/api/files", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "delete", path: p }),
+        });
+        const j = await res.json();
+        if (j.deleted) succeeded++;
+        else failed++;
+      } catch {
+        failed++;
+      }
+    }
+    setDeleting(false);
+    setDeleteResult(
+      failed === 0
+        ? `Deleted ${succeeded} item${succeeded === 1 ? "" : "s"}.`
+        : `Deleted ${succeeded}, failed ${failed}.`
+    );
+    if (succeeded > 0) onDeleted();
+  };
+
+  const homeShort = folderPath.replace(/^\/Users\/[^/]+/, "~");
+
+  return (
+    <div className="shrink-0 max-h-[60%] flex flex-col border border-primary/30 rounded-md overflow-hidden bg-primary/5">
+      <div className="flex items-center justify-between px-2 py-1 bg-primary/10 border-b border-primary/20 shrink-0">
+        <span className="text-[10px] font-medium flex items-center gap-1.5 text-primary min-w-0">
+          <Sparkles className="h-3 w-3 shrink-0" />
+          <span className="truncate">Clean up: {homeShort}</span>
+        </span>
+        <button
+          onClick={onClose}
+          className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-muted transition-colors shrink-0"
+        >
+          <X className="h-3 w-3" />
+        </button>
+      </div>
+
+      <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin">
+        {loading && (
+          <div className="flex items-center gap-2 text-[11px] text-muted-foreground p-3">
+            <div className="h-3 w-3 border-[1.5px] border-muted-foreground/30 border-t-primary rounded-full animate-spin" />
+            Analyzing folder…
+          </div>
+        )}
+
+        {error && (
+          <div className="flex items-start gap-1.5 text-[11px] text-red-500 p-3">
+            <AlertCircle className="h-3 w-3 shrink-0 mt-0.5" />
+            <span>{error}</span>
+          </div>
+        )}
+
+        {!loading && !error && data && data.categories.length === 0 && (
+          <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground p-3">
+            <CheckCircle2 className="h-3 w-3 shrink-0 text-green-500" />
+            <span>{data.note || "Nothing obvious to clean up here."}</span>
+          </div>
+        )}
+
+        {!loading && !error && data && data.categories.length > 0 && (
+          <div className="py-1">
+            {data.categories.map((cat) => {
+              const allChecked = cat.items.every((it) => selected[it.path]);
+              const noneChecked = cat.items.every((it) => !selected[it.path]);
+              return (
+                <div key={cat.category} className="border-b border-border/50 last:border-b-0">
+                  <div className="flex items-start gap-2 px-2 py-1 bg-muted/30">
+                    <input
+                      type="checkbox"
+                      checked={allChecked}
+                      ref={(el) => { if (el) el.indeterminate = !allChecked && !noneChecked; }}
+                      onChange={(e) => toggleCategory(cat, e.target.checked)}
+                      className="mt-0.5 cursor-pointer accent-primary"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-[11px] font-medium text-foreground">{cat.category}</div>
+                      <div className="text-[10px] text-muted-foreground/80">{cat.description}</div>
+                    </div>
+                    <span className="text-[9px] text-muted-foreground/60 shrink-0 mt-0.5">
+                      {cat.items.length}
+                    </span>
+                  </div>
+                  {cat.items.map((it) => (
+                    <label
+                      key={it.path}
+                      className="flex items-start gap-2 px-3 py-0.5 hover:bg-muted/40 cursor-pointer transition-colors"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={!!selected[it.path]}
+                        onChange={() => toggle(it.path)}
+                        className="mt-1 cursor-pointer accent-primary shrink-0"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[11px] truncate font-mono">{it.name}</div>
+                        <div className="text-[10px] text-muted-foreground/70 italic">{it.reason}</div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Footer / actions */}
+      {!loading && !error && data && allItems.length > 0 && (
+        <div className="shrink-0 border-t border-primary/20 bg-muted/20 px-2 py-1.5 flex items-center gap-2">
+          <span className="text-[10px] text-muted-foreground flex-1 min-w-0 truncate">
+            {selectedCount === 0
+              ? "Select items to delete"
+              : `${selectedCount} selected${data.bytesSaved ? ` · saves up to ${formatBytes(data.bytesSaved)}` : ""}`}
+          </span>
+          {deleteResult && (
+            <span className="text-[10px] text-green-500 truncate">{deleteResult}</span>
+          )}
+          <button
+            onClick={performDelete}
+            disabled={selectedCount === 0 || deleting}
+            className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+          >
+            {deleting ? (
+              <div className="h-2.5 w-2.5 border-[1.5px] border-red-500/30 border-t-red-500 rounded-full animate-spin" />
+            ) : (
+              <Trash2 className="h-2.5 w-2.5" />
+            )}
+            Delete selected
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 // ─── File Tabs ───────────────────────────────────────────────────────────────
 
 function FileTabs({
@@ -1370,6 +1653,80 @@ function HighlightedCode({ code, extension }: { code: string; extension: string 
     <div
       className="shiki-preview text-[10px] leading-relaxed [&_pre]:!bg-transparent [&_pre]:!p-0 [&_pre]:!m-0 [&_code]:!text-[10px] [&_code]:!leading-relaxed overflow-x-auto"
       dangerouslySetInnerHTML={{ __html: html }}
+    />
+  );
+}
+
+// ─── Monaco language map ──────────────────────────────────────────────────────
+
+const monacoLangMap: Record<string, string> = {
+  ".js": "javascript", ".mjs": "javascript", ".cjs": "javascript",
+  ".ts": "typescript", ".tsx": "typescriptreact", ".jsx": "javascriptreact",
+  ".json": "json", ".py": "python", ".rb": "ruby", ".go": "go",
+  ".rs": "rust", ".java": "java", ".c": "c", ".cpp": "cpp",
+  ".h": "c", ".hpp": "cpp", ".swift": "swift", ".kt": "kotlin",
+  ".css": "css", ".scss": "scss", ".html": "html", ".xml": "xml",
+  ".sh": "shell", ".bash": "shell", ".zsh": "shell",
+  ".sql": "sql", ".md": "markdown", ".yaml": "yaml", ".yml": "yaml",
+  ".toml": "toml", ".vue": "vue", ".svelte": "svelte",
+  ".graphql": "graphql", ".dockerfile": "dockerfile",
+  ".ini": "ini", ".csv": "plaintext", ".txt": "plaintext",
+  ".log": "plaintext", ".env": "plaintext", ".gitignore": "plaintext",
+};
+
+// ─── Monaco Editor Component ─────────────────────────────────────────────────
+
+function MonacoEditorPanel({
+  content,
+  extension,
+  filePath,
+  onSave,
+  readOnly,
+}: {
+  content: string;
+  extension: string;
+  filePath?: string;
+  onSave?: (content: string) => void;
+  readOnly?: boolean;
+}) {
+  const { resolvedTheme } = useTheme();
+  const language = monacoLangMap[extension] || "plaintext";
+  const monacoTheme = resolvedTheme === "light" ? "light" : "vs-dark";
+
+  return (
+    <Editor
+      height="100%"
+      language={language}
+      value={content}
+      theme={monacoTheme}
+      path={filePath}
+      options={{
+        readOnly: readOnly ?? false,
+        minimap: { enabled: true },
+        fontSize: 12,
+        lineNumbers: "on",
+        wordWrap: "on",
+        scrollBeyondLastLine: false,
+        automaticLayout: true,
+        tabSize: 2,
+        renderWhitespace: "selection",
+        bracketPairColorization: { enabled: true },
+        guides: { bracketPairs: true, indentation: true },
+        smoothScrolling: true,
+        cursorBlinking: "smooth",
+        cursorSmoothCaretAnimation: "on",
+        folding: true,
+        links: true,
+        padding: { top: 8 },
+      }}
+      onMount={(editor, monaco) => {
+        // Cmd+S / Ctrl+S to save
+        if (onSave) {
+          editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
+            onSave(editor.getValue());
+          });
+        }
+      }}
     />
   );
 }
@@ -2842,6 +3199,1280 @@ function DualPaneExplorer({
   );
 }
 
+// ─── VS Code Full Layout ─────────────────────────────────────────────────────
+
+type VscodeSidebarPanel = "explorer" | "scripts" | "sourceControl" | "search" | "database";
+
+interface VscodeOpenFile {
+  name: string;
+  path: string;
+  extension: string;
+  content: string;
+  dirty: boolean;
+}
+
+// ─── Database Explorer Panel ─────────────────────────────────────────────────
+
+interface DbConnectionInfo {
+  id: string;
+  label: string;
+  host: string;
+  port: number;
+  database: string;
+  username: string;
+  password: string;
+  ssl: boolean;
+}
+
+interface DbColumn {
+  name: string;
+  type: string;
+  nullable: boolean;
+  default: string | null;
+  maxLength: number | null;
+}
+
+interface DbTable {
+  name: string;
+  type: "table" | "view";
+}
+
+// ─── DB Preview Table ────────────────────────────────────────────────────────
+
+function DbPreviewTable({ content }: { content: string }) {
+  const data = useMemo(() => {
+    try { return JSON.parse(content); }
+    catch { return null; }
+  }, [content]);
+
+  if (!data || !data.__dbPreview) {
+    return <div className="p-4 text-muted-foreground text-sm">Invalid preview data</div>;
+  }
+
+  const { columns, rows, table, rowCount } = data as { columns: string[]; rows: Record<string, unknown>[]; table: string; rowCount: number };
+
+  return (
+    <div className="flex flex-col h-full overflow-hidden">
+      <div className="shrink-0 flex items-center gap-2 px-3 py-1.5 bg-muted/30 border-b border-border">
+        <Table2 className="h-3.5 w-3.5 text-green-500" />
+        <span className="text-[11px] font-medium">{table}</span>
+        <span className="text-[10px] text-muted-foreground">({rowCount} rows)</span>
+      </div>
+      <div className="flex-1 min-h-0 overflow-auto">
+        <table className="w-full text-[11px] border-collapse">
+          <thead className="sticky top-0 bg-muted/80 backdrop-blur-sm">
+            <tr>
+              {columns.map((col) => (
+                <th key={col} className="text-left px-2 py-1 border-b border-border font-medium text-foreground whitespace-nowrap">
+                  {col}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, i) => (
+              <tr key={i} className="hover:bg-muted/40 transition-colors border-b border-border/50">
+                {columns.map((col) => (
+                  <td key={col} className="px-2 py-0.5 whitespace-nowrap max-w-[200px] truncate font-mono text-[10px]" title={String(row[col] ?? "")}>
+                    {row[col] === null ? <span className="text-muted-foreground/40 italic">NULL</span> : String(row[col])}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {rows.length === 0 && (
+          <div className="text-center text-muted-foreground text-xs py-8">No rows</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── DB Query Editor ─────────────────────────────────────────────────────────
+
+function DbQueryEditor({
+  connId,
+  initialSql,
+  onSqlChange,
+}: {
+  connId: string;
+  initialSql: string;
+  onSqlChange: (sql: string) => void;
+}) {
+  const { resolvedTheme } = useTheme();
+  const [sql, setSql] = useState(initialSql);
+  const [results, setResults] = useState<{ columns: string[]; rows: Record<string, unknown>[]; rowCount: number; command: string; duration: number } | null>(null);
+  const [queryError, setQueryError] = useState<string | null>(null);
+  const [running, setRunning] = useState(false);
+
+  const runQuery = useCallback(async (queryText?: string) => {
+    const toRun = queryText || sql;
+    if (!toRun.trim()) return;
+    setRunning(true); setQueryError(null); setResults(null);
+    try {
+      const res = await fetch("/api/database", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "query", id: connId, sql: toRun }),
+      });
+      const data = await res.json();
+      if (data.error) setQueryError(data.error);
+      else setResults(data);
+    } catch (err) {
+      setQueryError(err instanceof Error ? err.message : "Query failed");
+    }
+    setRunning(false);
+  }, [sql, connId]);
+
+  const handleSqlChange = useCallback((value: string) => {
+    setSql(value);
+    onSqlChange(value);
+  }, [onSqlChange]);
+
+  const [aiPrompt, setAiPrompt] = useState("");
+  const [aiLoading, setAiLoading] = useState(false);
+  const aiAbortRef = useRef<AbortController | null>(null);
+
+  const generateSql = useCallback(async () => {
+    if (!aiPrompt.trim()) return;
+    aiAbortRef.current?.abort();
+    const controller = new AbortController();
+    aiAbortRef.current = controller;
+    setAiLoading(true);
+    try {
+      const res = await fetch("/api/database", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "generate-sql", id: connId, prompt: aiPrompt }),
+        signal: controller.signal,
+      });
+      const data = await res.json();
+      if (data.sql) {
+        setSql(data.sql);
+        onSqlChange(data.sql);
+        setAiPrompt("");
+      } else if (data.error) {
+        setQueryError(data.error);
+      }
+    } catch (err) {
+      if ((err as Error).name !== "AbortError") {
+        setQueryError(err instanceof Error ? err.message : "AI generation failed");
+      }
+    }
+    setAiLoading(false);
+  }, [aiPrompt, connId, onSqlChange]);
+
+  const stopGenerate = useCallback(() => {
+    aiAbortRef.current?.abort();
+    setAiLoading(false);
+  }, []);
+
+  return (
+    <div className="flex flex-col h-full overflow-hidden">
+      {/* AI Natural Language Input */}
+      <div className="shrink-0 flex items-center gap-1.5 px-2 py-1.5 bg-muted/30 border-b border-border">
+        <Zap className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+        <input
+          type="text"
+          value={aiPrompt}
+          onChange={(e) => setAiPrompt(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); generateSql(); } }}
+          placeholder="Ask in natural language... (e.g. &quot;show all users created this week&quot;)"
+          className="flex-1 text-[11px] bg-transparent border-none outline-none placeholder:text-muted-foreground/50"
+        />
+        {aiLoading ? (
+          <button
+            onClick={stopGenerate}
+            className="flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded bg-red-500/10 text-red-600 dark:text-red-400 hover:bg-red-500/20 border border-red-500/20 transition-colors"
+          >
+            <Ban className="h-3 w-3" />
+            Stop
+          </button>
+        ) : (
+          <button
+            onClick={generateSql}
+            disabled={!aiPrompt.trim()}
+            className="flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 border border-amber-500/20 transition-colors disabled:opacity-40"
+          >
+            <Zap className="h-3 w-3" />
+            Generate
+          </button>
+        )}
+      </div>
+
+      {/* SQL Editor */}
+      <div className="flex-[2] min-h-[100px] border-b border-border relative">
+        <Editor
+          height="100%"
+          language="sql"
+          value={sql}
+          theme={resolvedTheme === "light" ? "light" : "vs-dark"}
+          options={{
+            minimap: { enabled: false },
+            fontSize: 12,
+            lineNumbers: "on",
+            wordWrap: "on",
+            scrollBeyondLastLine: false,
+            automaticLayout: true,
+            tabSize: 2,
+            padding: { top: 8 },
+          }}
+          onChange={(v) => handleSqlChange(v || "")}
+          onMount={(editor, monaco) => {
+            // Ctrl+Enter / Cmd+Enter to run query
+            editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
+              runQuery(editor.getValue());
+            });
+          }}
+        />
+        {/* Run button */}
+        <div className="absolute top-1 right-2 z-10">
+          <button
+            onClick={() => runQuery()}
+            disabled={running || !sql.trim()}
+            className="flex items-center gap-1 px-2 py-1 text-[10px] rounded-md bg-green-500/10 text-green-600 dark:text-green-400 hover:bg-green-500/20 border border-green-500/20 transition-colors disabled:opacity-40"
+            title="Run query (Cmd+Enter)"
+          >
+            {running ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
+            Run
+          </button>
+        </div>
+      </div>
+
+      {/* Results */}
+      <div className="flex-[3] min-h-0 overflow-hidden flex flex-col">
+        {queryError && (
+          <div className="shrink-0 px-3 py-2 bg-red-500/10 text-red-500 text-[11px] border-b border-border">
+            {queryError}
+          </div>
+        )}
+        {results && (
+          <>
+            <div className="shrink-0 flex items-center gap-2 px-3 py-1 bg-muted/30 border-b border-border text-[10px] text-muted-foreground">
+              <span className="font-medium text-foreground">{results.command}</span>
+              <span>{results.rowCount} row{results.rowCount !== 1 ? "s" : ""}</span>
+              <span>{results.duration}ms</span>
+            </div>
+            <div className="flex-1 min-h-0 overflow-auto">
+              {results.columns.length > 0 ? (
+                <table className="w-full text-[11px] border-collapse">
+                  <thead className="sticky top-0 bg-muted/80 backdrop-blur-sm">
+                    <tr>
+                      {results.columns.map((col) => (
+                        <th key={col} className="text-left px-2 py-1 border-b border-border font-medium text-foreground whitespace-nowrap">
+                          {col}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {results.rows.map((row, i) => (
+                      <tr key={i} className="hover:bg-muted/40 transition-colors border-b border-border/50">
+                        {results.columns.map((col) => (
+                          <td key={col} className="px-2 py-0.5 whitespace-nowrap max-w-[200px] truncate font-mono text-[10px]" title={String(row[col] ?? "")}>
+                            {row[col] === null ? <span className="text-muted-foreground/40 italic">NULL</span> : String(row[col])}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <div className="text-center text-muted-foreground text-xs py-4">
+                  Query executed successfully ({results.rowCount} row{results.rowCount !== 1 ? "s" : ""} affected)
+                </div>
+              )}
+            </div>
+          </>
+        )}
+        {!results && !queryError && !running && (
+          <div className="flex items-center justify-center h-full text-muted-foreground text-xs">
+            Press Cmd+Enter or click Run to execute
+          </div>
+        )}
+        {running && (
+          <div className="flex items-center justify-center h-full gap-2 text-muted-foreground text-xs">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Running query...
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function VscodeDatabasePanel({
+  onOpenQueryTab,
+  onPreviewTable,
+}: {
+  onOpenQueryTab: (connId: string, connLabel: string) => void;
+  onPreviewTable: (connId: string, schema: string, table: string) => void;
+}) {
+  const [connections, setConnections] = useState<DbConnectionInfo[]>([]);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [expandedConn, setExpandedConn] = useState<string | null>(null);
+  const [schemas, setSchemas] = useState<Record<string, string[]>>({});
+  const [expandedSchema, setExpandedSchema] = useState<string | null>(null);
+  const [tables, setTables] = useState<Record<string, DbTable[]>>({});
+  const [expandedTable, setExpandedTable] = useState<string | null>(null);
+  const [columns, setColumns] = useState<Record<string, DbColumn[]>>({});
+  const [loading, setLoading] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  // New connection form
+  const [formLabel, setFormLabel] = useState("");
+  const [formHost, setFormHost] = useState("localhost");
+  const [formPort, setFormPort] = useState("5432");
+  const [formDatabase, setFormDatabase] = useState("postgres");
+  const [formUsername, setFormUsername] = useState("postgres");
+  const [formPassword, setFormPassword] = useState("");
+  const [formSsl, setFormSsl] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  const fetchConnections = useCallback(async () => {
+    try {
+      const res = await fetch("/api/database?action=connections");
+      const data = await res.json();
+      setConnections(data.connections || []);
+    } catch { setConnections([]); }
+  }, []);
+
+  useEffect(() => { fetchConnections(); }, [fetchConnections]);
+
+  const testConnection = async () => {
+    setTesting(true); setTestResult(null);
+    try {
+      const res = await fetch("/api/database", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "test-connection", host: formHost, port: formPort, database: formDatabase, username: formUsername, password: formPassword, ssl: formSsl }),
+      });
+      const data = await res.json();
+      setTestResult({ success: data.success, message: data.success ? data.version : data.error });
+    } catch (err) {
+      setTestResult({ success: false, message: err instanceof Error ? err.message : "Failed" });
+    }
+    setTesting(false);
+  };
+
+  const saveConnection = async () => {
+    try {
+      await fetch("/api/database", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "add-connection",
+          label: formLabel || `${formUsername}@${formHost}/${formDatabase}`,
+          host: formHost, port: formPort, database: formDatabase,
+          username: formUsername, password: formPassword, ssl: formSsl,
+        }),
+      });
+      setShowAddForm(false);
+      setFormLabel(""); setFormHost("localhost"); setFormPort("5432");
+      setFormDatabase("postgres"); setFormUsername("postgres"); setFormPassword("");
+      setTestResult(null);
+      fetchConnections();
+    } catch { /* ignore */ }
+  };
+
+  const deleteConnection = async (id: string) => {
+    if (!confirm("Delete this connection?")) return;
+    await fetch("/api/database", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "delete-connection", id }),
+    });
+    fetchConnections();
+    if (expandedConn === id) setExpandedConn(null);
+  };
+
+  const loadSchemas = async (connId: string) => {
+    if (expandedConn === connId) { setExpandedConn(null); return; }
+    setExpandedConn(connId);
+    setExpandedSchema(null); setExpandedTable(null);
+    setLoading(connId); setError(null);
+    try {
+      const res = await fetch(`/api/database?action=schemas&id=${connId}`);
+      const data = await res.json();
+      if (data.error) { setError(data.error); }
+      else setSchemas((prev) => ({ ...prev, [connId]: data.schemas }));
+    } catch (err) { setError(err instanceof Error ? err.message : "Failed"); }
+    setLoading(null);
+  };
+
+  const loadTables = async (connId: string, schema: string) => {
+    const key = `${connId}:${schema}`;
+    if (expandedSchema === key) { setExpandedSchema(null); return; }
+    setExpandedSchema(key); setExpandedTable(null);
+    setLoading(key);
+    try {
+      const res = await fetch(`/api/database?action=tables&id=${connId}&schema=${encodeURIComponent(schema)}`);
+      const data = await res.json();
+      if (data.error) setError(data.error);
+      else setTables((prev) => ({ ...prev, [key]: data.tables }));
+    } catch { /* ignore */ }
+    setLoading(null);
+  };
+
+  const loadColumns = async (connId: string, schema: string, table: string) => {
+    const key = `${connId}:${schema}:${table}`;
+    if (expandedTable === key) { setExpandedTable(null); return; }
+    setExpandedTable(key);
+    setLoading(key);
+    try {
+      const res = await fetch(`/api/database?action=columns&id=${connId}&schema=${encodeURIComponent(schema)}&table=${encodeURIComponent(table)}`);
+      const data = await res.json();
+      if (data.error) setError(data.error);
+      else setColumns((prev) => ({ ...prev, [key]: data.columns }));
+    } catch { /* ignore */ }
+    setLoading(null);
+  };
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Add connection button */}
+      <div className="px-2 py-1.5 border-b border-border shrink-0">
+        <button
+          onClick={() => setShowAddForm(!showAddForm)}
+          className="w-full flex items-center gap-1.5 text-[11px] px-2 py-1 rounded-md bg-muted/50 hover:bg-primary/10 hover:text-primary border border-border/50 transition-colors"
+        >
+          <Plus className="h-3 w-3" />
+          {showAddForm ? "Cancel" : "Add Connection"}
+        </button>
+      </div>
+
+      {/* Add connection form */}
+      {showAddForm && (
+        <div className="px-2 py-2 border-b border-border space-y-1.5 shrink-0">
+          <input value={formLabel} onChange={(e) => setFormLabel(e.target.value)} placeholder="Label (optional)" className="w-full text-[10px] bg-muted/40 border border-border rounded px-2 py-0.5 outline-none focus:ring-1 focus:ring-primary/50" />
+          <div className="flex gap-1">
+            <input value={formHost} onChange={(e) => setFormHost(e.target.value)} placeholder="Host" className="flex-1 text-[10px] bg-muted/40 border border-border rounded px-2 py-0.5 outline-none focus:ring-1 focus:ring-primary/50" />
+            <input value={formPort} onChange={(e) => setFormPort(e.target.value)} placeholder="Port" className="w-12 text-[10px] bg-muted/40 border border-border rounded px-2 py-0.5 outline-none focus:ring-1 focus:ring-primary/50" />
+          </div>
+          <input value={formDatabase} onChange={(e) => setFormDatabase(e.target.value)} placeholder="Database" className="w-full text-[10px] bg-muted/40 border border-border rounded px-2 py-0.5 outline-none focus:ring-1 focus:ring-primary/50" />
+          <input value={formUsername} onChange={(e) => setFormUsername(e.target.value)} placeholder="Username" className="w-full text-[10px] bg-muted/40 border border-border rounded px-2 py-0.5 outline-none focus:ring-1 focus:ring-primary/50" />
+          <input value={formPassword} onChange={(e) => setFormPassword(e.target.value)} placeholder="Password" type="password" className="w-full text-[10px] bg-muted/40 border border-border rounded px-2 py-0.5 outline-none focus:ring-1 focus:ring-primary/50" />
+          <label className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+            <input type="checkbox" checked={formSsl} onChange={(e) => setFormSsl(e.target.checked)} className="rounded" />
+            Use SSL
+          </label>
+          {testResult && (
+            <div className={cn("text-[9px] px-1 py-0.5 rounded", testResult.success ? "bg-green-500/10 text-green-500" : "bg-red-500/10 text-red-500")}>
+              {testResult.message}
+            </div>
+          )}
+          <div className="flex items-center gap-1">
+            <button onClick={testConnection} disabled={testing} className="flex-1 text-[10px] px-2 py-1 rounded bg-muted hover:bg-muted/80 transition-colors disabled:opacity-40">
+              {testing ? <Loader2 className="h-3 w-3 animate-spin inline" /> : "Test"}
+            </button>
+            <button onClick={saveConnection} className="flex-1 text-[10px] px-2 py-1 rounded bg-primary/10 text-primary hover:bg-primary/20 transition-colors">
+              Save
+            </button>
+          </div>
+        </div>
+      )}
+
+      {error && (
+        <div className="px-2 py-1 text-[9px] text-red-500 border-b border-border shrink-0">
+          {error}
+          <button onClick={() => setError(null)} className="ml-1 underline">dismiss</button>
+        </div>
+      )}
+
+      {/* Connection list / tree */}
+      <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin py-0.5">
+        {connections.length === 0 && !showAddForm && (
+          <div className="text-xs text-muted-foreground text-center py-4">No connections</div>
+        )}
+        {connections.map((conn) => (
+          <div key={conn.id}>
+            {/* Connection node */}
+            <div className="flex items-center group">
+              <button
+                onClick={() => loadSchemas(conn.id)}
+                className={cn(
+                  "flex-1 flex items-center gap-1.5 px-2 py-1 text-[11px] hover:bg-muted/60 transition-colors text-left",
+                  expandedConn === conn.id && "text-primary font-medium"
+                )}
+              >
+                <ChevronRight className={cn("h-3 w-3 shrink-0 text-muted-foreground/60 transition-transform", expandedConn === conn.id && "rotate-90")} />
+                <Database className="h-3.5 w-3.5 shrink-0 text-blue-500" />
+                <span className="truncate">{conn.label}</span>
+                {loading === conn.id && <Loader2 className="h-2.5 w-2.5 animate-spin shrink-0 text-muted-foreground" />}
+              </button>
+              <div className="flex items-center gap-0.5 pr-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button
+                  onClick={() => onOpenQueryTab(conn.id, conn.label)}
+                  className="p-0.5 rounded text-muted-foreground hover:text-primary hover:bg-muted transition-colors"
+                  title="New query"
+                >
+                  <Zap className="h-3 w-3" />
+                </button>
+                <button
+                  onClick={() => deleteConnection(conn.id)}
+                  className="p-0.5 rounded text-muted-foreground hover:text-red-400 hover:bg-muted transition-colors"
+                  title="Delete connection"
+                >
+                  <Trash2 className="h-3 w-3" />
+                </button>
+              </div>
+            </div>
+
+            {/* Schemas */}
+            {expandedConn === conn.id && schemas[conn.id] && (
+              <div>
+                {schemas[conn.id].map((schema) => {
+                  const schemaKey = `${conn.id}:${schema}`;
+                  return (
+                    <div key={schema}>
+                      <button
+                        onClick={() => loadTables(conn.id, schema)}
+                        className={cn("w-full flex items-center gap-1.5 py-0.5 text-[11px] hover:bg-muted/60 transition-colors text-left", expandedSchema === schemaKey && "text-primary")}
+                        style={{ paddingLeft: "28px" }}
+                      >
+                        <ChevronRight className={cn("h-2.5 w-2.5 shrink-0 text-muted-foreground/60 transition-transform", expandedSchema === schemaKey && "rotate-90")} />
+                        <Folder className="h-3 w-3 shrink-0 text-yellow-500" />
+                        <span className="truncate">{schema}</span>
+                        {loading === schemaKey && <Loader2 className="h-2.5 w-2.5 animate-spin shrink-0" />}
+                      </button>
+
+                      {/* Tables */}
+                      {expandedSchema === schemaKey && tables[schemaKey] && (
+                        <div>
+                          {tables[schemaKey].map((table) => {
+                            const tableKey = `${conn.id}:${schema}:${table.name}`;
+                            return (
+                              <div key={table.name}>
+                                <div className="flex items-center group/table">
+                                  <button
+                                    onClick={() => loadColumns(conn.id, schema, table.name)}
+                                    className={cn("flex-1 flex items-center gap-1.5 py-0.5 text-[11px] hover:bg-muted/60 transition-colors text-left", expandedTable === tableKey && "text-primary")}
+                                    style={{ paddingLeft: "44px" }}
+                                  >
+                                    <ChevronRight className={cn("h-2.5 w-2.5 shrink-0 text-muted-foreground/60 transition-transform", expandedTable === tableKey && "rotate-90")} />
+                                    <Table2 className={cn("h-3 w-3 shrink-0", table.type === "view" ? "text-purple-500" : "text-green-500")} />
+                                    <span className="truncate">{table.name}</span>
+                                    {table.type === "view" && <span className="text-[8px] text-purple-400 shrink-0">VIEW</span>}
+                                    {loading === tableKey && <Loader2 className="h-2.5 w-2.5 animate-spin shrink-0" />}
+                                  </button>
+                                  <button
+                                    onClick={() => onPreviewTable(conn.id, schema, table.name)}
+                                    className="p-0.5 rounded text-muted-foreground/0 group-hover/table:text-muted-foreground hover:!text-primary hover:bg-muted transition-colors mr-1 shrink-0"
+                                    title="Preview data"
+                                  >
+                                    <Eye className="h-3 w-3" />
+                                  </button>
+                                </div>
+
+                                {/* Columns */}
+                                {expandedTable === tableKey && columns[tableKey] && (
+                                  <div>
+                                    {columns[tableKey].map((col) => (
+                                      <div
+                                        key={col.name}
+                                        className="flex items-center gap-1.5 py-[1px] text-[10px] text-muted-foreground hover:bg-muted/40 transition-colors"
+                                        style={{ paddingLeft: "62px" }}
+                                        title={`${col.type}${col.nullable ? " (nullable)" : ""}${col.default ? ` default: ${col.default}` : ""}`}
+                                      >
+                                        <Columns3 className="h-2.5 w-2.5 shrink-0 text-muted-foreground/60" />
+                                        <span className="truncate font-medium">{col.name}</span>
+                                        <span className="text-[9px] text-muted-foreground/50 shrink-0 ml-auto mr-1">{col.type}</span>
+                                        {!col.nullable && <span className="text-[8px] text-orange-400 shrink-0">NN</span>}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function VscodeLayout({
+  rootPath,
+  gitStatus,
+  projectInfo,
+  onClose,
+  onRefreshGit,
+}: {
+  rootPath: string;
+  gitStatus: GitStatus | null;
+  projectInfo: ProjectInfo | null;
+  onClose: () => void;
+  onRefreshGit: () => void;
+}) {
+  const { resolvedTheme } = useTheme();
+  const [activePanel, setActivePanel] = useState<VscodeSidebarPanel>("explorer");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [openFiles, setOpenFiles] = useState<VscodeOpenFile[]>([]);
+  const [activeFileIdx, setActiveFileIdx] = useState(-1);
+  const [explorerNodes, setExplorerNodes] = useState<TreeNode[]>([]);
+  const [saveStatus, setSaveStatus] = useState<"saved" | "error" | null>(null);
+
+  // Commit state
+  const [commitMsg, setCommitMsg] = useState("");
+  const [committing, setCommitting] = useState(false);
+  const [commitResult, setCommitResult] = useState<string | null>(null);
+
+  // Terminal panel for running scripts
+  const [terminalCmd, setTerminalCmd] = useState<{ cwd: string; command: string; label: string } | null>(null);
+
+  // Explorer tree loading
+  const loadDir = useCallback(async (dirPath: string): Promise<FileEntry[]> => {
+    try {
+      const res = await fetch(`/api/files?path=${encodeURIComponent(dirPath)}`);
+      const data = await res.json() as DirListing & { error?: string };
+      return data.entries || [];
+    } catch { return []; }
+  }, []);
+
+  // Load root entries
+  useEffect(() => {
+    (async () => {
+      const entries = await loadDir(rootPath);
+      setExplorerNodes(entries.map((e) => ({ entry: e, loaded: false, expanded: false })));
+    })();
+  }, [rootPath, loadDir]);
+
+  const toggleNode = useCallback(async (path: string) => {
+    const findAndUpdate = (nodes: TreeNode[]): TreeNode[] =>
+      nodes.map((n) => {
+        if (n.entry.path === path) return { ...n, expanded: !n.expanded };
+        if (n.children) return { ...n, children: findAndUpdate(n.children) };
+        return n;
+      });
+    setExplorerNodes((prev) => findAndUpdate(prev));
+
+    // Load children if needed
+    const findNode = (nodes: TreeNode[], p: string): TreeNode | null => {
+      for (const n of nodes) {
+        if (n.entry.path === p) return n;
+        if (n.children) { const f = findNode(n.children, p); if (f) return f; }
+      }
+      return null;
+    };
+    const node = findNode(explorerNodes, path);
+    if (node && !node.loaded) {
+      const children = (await loadDir(path)).map((e) => ({ entry: e, loaded: false, expanded: false } as TreeNode));
+      setExplorerNodes((prev) => {
+        const update = (ns: TreeNode[]): TreeNode[] =>
+          ns.map((n) => {
+            if (n.entry.path === path) return { ...n, loaded: true, children };
+            if (n.children) return { ...n, children: update(n.children) };
+            return n;
+          });
+        return update(prev);
+      });
+    }
+  }, [explorerNodes, loadDir]);
+
+  const openFile = useCallback(async (entry: FileEntry) => {
+    if (entry.isDirectory) { toggleNode(entry.path); return; }
+    // Check if already open
+    const existingIdx = openFiles.findIndex((f) => f.path === entry.path);
+    if (existingIdx >= 0) { setActiveFileIdx(existingIdx); return; }
+    // Fetch content
+    try {
+      const res = await fetch(`/api/files?path=${encodeURIComponent(entry.path)}&read=1`);
+      const data = await res.json() as FileContent;
+      const newFile: VscodeOpenFile = {
+        name: entry.name,
+        path: entry.path,
+        extension: entry.extension,
+        content: data.content || "",
+        dirty: false,
+      };
+      setOpenFiles((prev) => [...prev, newFile]);
+      setActiveFileIdx(openFiles.length);
+    } catch { /* ignore */ }
+  }, [openFiles, toggleNode]);
+
+  const closeFile = useCallback((idx: number) => {
+    setOpenFiles((prev) => prev.filter((_, i) => i !== idx));
+    if (activeFileIdx >= idx) setActiveFileIdx(Math.max(0, activeFileIdx - 1));
+    if (openFiles.length <= 1) setActiveFileIdx(-1);
+  }, [activeFileIdx, openFiles.length]);
+
+  const saveActiveFile = useCallback(async (content: string) => {
+    const file = openFiles[activeFileIdx];
+    if (!file) return;
+    setSaveStatus(null);
+    try {
+      const res = await fetch("/api/files", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "save", path: file.path, content }),
+      });
+      const data = await res.json();
+      if (data.saved) {
+        setOpenFiles((prev) => prev.map((f, i) => i === activeFileIdx ? { ...f, content, dirty: false } : f));
+        setSaveStatus("saved");
+        onRefreshGit();
+        setTimeout(() => setSaveStatus(null), 2000);
+      } else { setSaveStatus("error"); }
+    } catch { setSaveStatus("error"); }
+  }, [openFiles, activeFileIdx, onRefreshGit]);
+
+  // Source control: stage/unstage
+  const doStage = useCallback(async (files: string[]) => {
+    await fetch("/api/files", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "git-stage", files, path: rootPath }) });
+    onRefreshGit();
+  }, [rootPath, onRefreshGit]);
+
+  const doUnstage = useCallback(async (files: string[]) => {
+    await fetch("/api/files", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "git-unstage", files, path: rootPath }) });
+    onRefreshGit();
+  }, [rootPath, onRefreshGit]);
+
+  const doCommit = useCallback(async () => {
+    if (!commitMsg.trim()) return;
+    setCommitting(true); setCommitResult(null);
+    try {
+      const res = await fetch("/api/files", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "git-commit", message: commitMsg, path: rootPath }) });
+      const data = await res.json();
+      if (data.error) setCommitResult(`Error: ${data.error}`);
+      else { setCommitResult("Committed!"); setCommitMsg(""); }
+    } catch { setCommitResult("Commit failed"); }
+    setCommitting(false);
+    onRefreshGit();
+    setTimeout(() => setCommitResult(null), 3000);
+  }, [commitMsg, rootPath, onRefreshGit]);
+
+  const runScript = useCallback((name: string, cmd: string) => {
+    const command = projectInfo?.type === "node" ? `npm run ${name}` : cmd;
+    setTerminalCmd({ cwd: rootPath, command, label: name });
+  }, [rootPath, projectInfo]);
+
+
+  // Active file
+  const activeFile = activeFileIdx >= 0 ? openFiles[activeFileIdx] : null;
+
+  // Activity bar items
+  const activityItems: { id: VscodeSidebarPanel; icon: React.ReactNode; label: string }[] = [
+    { id: "explorer", icon: <FolderOpen className="h-4 w-4" />, label: "Explorer" },
+    { id: "search", icon: <Search className="h-4 w-4" />, label: "Search" },
+    { id: "sourceControl", icon: <GitBranch className="h-4 w-4" />, label: "Source Control" },
+    { id: "scripts", icon: <Play className="h-4 w-4" />, label: "Run & Debug" },
+    { id: "database", icon: <Database className="h-4 w-4" />, label: "Database Explorer" },
+  ];
+
+  return (
+    <div className="flex h-full w-full overflow-hidden">
+      {/* Activity Bar */}
+      <div className="flex flex-col items-center w-10 shrink-0 bg-muted/30 border-r border-border py-1 gap-0.5">
+        {activityItems.map((item) => (
+          <button
+            key={item.id}
+            onClick={() => {
+              if (activePanel === item.id && !sidebarCollapsed) setSidebarCollapsed(true);
+              else { setActivePanel(item.id); setSidebarCollapsed(false); }
+            }}
+            className={cn(
+              "w-9 h-9 flex items-center justify-center rounded-md transition-colors relative",
+              activePanel === item.id && !sidebarCollapsed
+                ? "text-foreground bg-muted"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
+            )}
+            title={item.label}
+          >
+            {item.icon}
+            {activePanel === item.id && !sidebarCollapsed && (
+              <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-primary rounded-r" />
+            )}
+          </button>
+        ))}
+
+        <div className="flex-1" />
+
+        {/* Close VS Code mode button */}
+        <button
+          onClick={onClose}
+          className="w-9 h-9 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+          title="Exit VS Code mode"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+
+      {/* Sidebar */}
+      {!sidebarCollapsed && (
+        <div className="w-52 shrink-0 flex flex-col border-r border-border bg-background overflow-hidden">
+          <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium px-3 py-2 border-b border-border shrink-0">
+            {activePanel === "explorer" && "Explorer"}
+            {activePanel === "search" && "Search"}
+            {activePanel === "sourceControl" && "Source Control"}
+            {activePanel === "scripts" && "Scripts"}
+            {activePanel === "database" && "Database"}
+          </div>
+
+          <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin">
+            {/* Explorer Panel */}
+            {activePanel === "explorer" && (
+              <div className="py-0.5">
+                <div className="text-[9px] uppercase tracking-wider text-muted-foreground/60 px-3 py-1 font-medium">
+                  {rootPath.split("/").pop() || rootPath}
+                </div>
+                {explorerNodes.map((node) => (
+                  <VscodeTreeNode
+                    key={node.entry.path}
+                    node={node}
+                    depth={0}
+                    onToggle={toggleNode}
+                    onFileClick={openFile}
+                    activeFilePath={activeFile?.path}
+                  />
+                ))}
+              </div>
+            )}
+
+            {/* Search Panel */}
+            {activePanel === "search" && (
+              <VscodeSearchPanel rootPath={rootPath} onOpenFile={openFile} />
+            )}
+
+            {/* Source Control Panel */}
+            {activePanel === "sourceControl" && (
+              <div className="py-1">
+                {gitStatus?.isGitRepo ? (
+                  <>
+                    <div className="flex items-center gap-1.5 px-3 py-1 text-[10px] text-muted-foreground">
+                      <GitBranch className="h-3 w-3" />
+                      <span className="font-medium">{gitStatus.branch}</span>
+                      {(gitStatus.ahead || 0) > 0 && <span className="text-green-500">↑{gitStatus.ahead}</span>}
+                      {(gitStatus.behind || 0) > 0 && <span className="text-orange-500">↓{gitStatus.behind}</span>}
+                    </div>
+                    {/* Commit input */}
+                    <div className="px-3 py-1.5 border-b border-border">
+                      <div className="flex items-center gap-1">
+                        <input
+                          value={commitMsg}
+                          onChange={(e) => setCommitMsg(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === "Enter" && commitMsg.trim()) doCommit(); }}
+                          placeholder="Commit message..."
+                          className="flex-1 text-[11px] bg-muted/40 border border-border rounded px-2 py-1 outline-none focus:ring-1 focus:ring-primary/50 placeholder:text-muted-foreground/40"
+                        />
+                        <button
+                          onClick={doCommit}
+                          disabled={committing || !commitMsg.trim() || !(gitStatus.files?.some((f) => f.staged))}
+                          className="p-1 rounded bg-primary/10 text-primary hover:bg-primary/20 transition-colors disabled:opacity-40"
+                          title="Commit staged changes"
+                        >
+                          {committing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                        </button>
+                      </div>
+                      {commitResult && (
+                        <div className={cn("text-[9px] mt-1", commitResult.startsWith("Error") ? "text-red-500" : "text-green-500")}>
+                          {commitResult}
+                        </div>
+                      )}
+                    </div>
+                    {gitStatus.files && gitStatus.files.length > 0 ? (
+                      <>
+                        {/* Staged */}
+                        {gitStatus.files.filter((f) => f.staged).length > 0 && (
+                          <div>
+                            <div className="flex items-center justify-between px-3 py-1">
+                              <span className="text-[9px] uppercase tracking-wider text-green-500 font-medium">
+                                Staged ({gitStatus.files.filter((f) => f.staged).length})
+                              </span>
+                              <button
+                                onClick={() => doUnstage(gitStatus.files!.filter((f) => f.staged).map((f) => f.path))}
+                                className="text-[9px] text-muted-foreground hover:text-foreground"
+                                title="Unstage all"
+                              >
+                                <Minus className="h-3 w-3" />
+                              </button>
+                            </div>
+                            {gitStatus.files.filter((f) => f.staged).map((f) => (
+                              <button
+                                key={`s-${f.path}`}
+                                onClick={() => {
+                                  const name = f.path.split("/").pop() || f.path;
+                                  const ext = name.includes(".") ? "." + name.split(".").pop()!.toLowerCase() : "";
+                                  const absPath = gitStatus.repoRoot ? `${gitStatus.repoRoot}/${f.path}` : f.path;
+                                  openFile({ name, path: absPath, extension: ext, isDirectory: false, size: 0, modified: "" });
+                                }}
+                                className="w-full flex items-center gap-1.5 px-3 py-0.5 text-[11px] hover:bg-muted/60 transition-colors text-left"
+                              >
+                                <GitStatusBadge status={f.status} />
+                                <span className="truncate flex-1 text-green-600 dark:text-green-400">{f.path}</span>
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); doUnstage([f.path]); }}
+                                  className="p-0.5 text-muted-foreground hover:text-foreground shrink-0"
+                                >
+                                  <Minus className="h-2.5 w-2.5" />
+                                </button>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                        {/* Working */}
+                        {gitStatus.files.filter((f) => f.working).length > 0 && (
+                          <div>
+                            <div className="flex items-center justify-between px-3 py-1">
+                              <span className="text-[9px] uppercase tracking-wider text-yellow-500 font-medium">
+                                Changes ({gitStatus.files.filter((f) => f.working).length})
+                              </span>
+                              <button
+                                onClick={() => doStage(gitStatus.files!.filter((f) => f.working && !f.staged).map((f) => f.path))}
+                                className="text-[9px] text-muted-foreground hover:text-foreground"
+                                title="Stage all"
+                              >
+                                <Plus className="h-3 w-3" />
+                              </button>
+                            </div>
+                            {gitStatus.files.filter((f) => f.working).map((f) => (
+                              <button
+                                key={`w-${f.path}`}
+                                onClick={() => {
+                                  const name = f.path.split("/").pop() || f.path;
+                                  const ext = name.includes(".") ? "." + name.split(".").pop()!.toLowerCase() : "";
+                                  const absPath = gitStatus.repoRoot ? `${gitStatus.repoRoot}/${f.path}` : f.path;
+                                  openFile({ name, path: absPath, extension: ext, isDirectory: false, size: 0, modified: "" });
+                                }}
+                                className="w-full flex items-center gap-1.5 px-3 py-0.5 text-[11px] hover:bg-muted/60 transition-colors text-left"
+                              >
+                                <GitStatusBadge status={f.status} />
+                                <span className={cn("truncate flex-1", f.status === "D" ? "text-red-500 line-through" : "text-yellow-600 dark:text-yellow-400")}>{f.path}</span>
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); doStage([f.path]); }}
+                                  className="p-0.5 text-muted-foreground hover:text-foreground shrink-0"
+                                >
+                                  <Plus className="h-2.5 w-2.5" />
+                                </button>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div className="text-xs text-muted-foreground text-center py-4">Working tree clean</div>
+                    )}
+                  </>
+                ) : (
+                  <div className="text-xs text-muted-foreground text-center py-4">Not a git repository</div>
+                )}
+              </div>
+            )}
+
+            {/* Scripts Panel */}
+            {activePanel === "scripts" && (
+              <div className="py-1">
+                {projectInfo && Object.entries(projectInfo.scripts).length > 0 ? (
+                  <>
+                    <div className="flex items-center gap-1.5 px-3 py-1 text-[10px] text-muted-foreground">
+                      <Package className="h-3 w-3" />
+                      <span className="font-medium">{projectInfo.name}</span>
+                      <span className="text-muted-foreground/50">({projectInfo.type})</span>
+                    </div>
+                    {Object.entries(projectInfo.scripts).map(([name, cmd]) => (
+                      <button
+                        key={name}
+                        onClick={() => runScript(name, cmd)}
+                        className="w-full flex items-center gap-1.5 px-3 py-1.5 text-[11px] hover:bg-muted/60 transition-colors group text-left"
+                        title={`Run: ${cmd}`}
+                      >
+                        <Play className="h-3 w-3 text-green-500 shrink-0 group-hover:scale-110 transition-transform" />
+                        <span className="truncate flex-1 font-medium">{name}</span>
+                        <span className="text-[9px] text-muted-foreground/50 truncate max-w-[80px] hidden group-hover:block">{cmd}</span>
+                      </button>
+                    ))}
+                  </>
+                ) : (
+                  <div className="text-xs text-muted-foreground text-center py-4">No scripts detected</div>
+                )}
+              </div>
+            )}
+
+            {/* Database Panel */}
+            {activePanel === "database" && (
+              <VscodeDatabasePanel
+                onOpenQueryTab={(connId, connLabel) => {
+                  // Open a new "query" tab in the editor
+                  const queryFile: VscodeOpenFile = {
+                    name: `Query - ${connLabel}`,
+                    path: `__query__:${connId}:${Date.now()}`,
+                    extension: ".sql",
+                    content: "-- Write your SQL query here\nSELECT 1;\n",
+                    dirty: false,
+                  };
+                  setOpenFiles((prev) => [...prev, queryFile]);
+                  setActiveFileIdx(openFiles.length);
+                }}
+                onPreviewTable={async (connId, schema, table) => {
+                  // Fetch preview and open as a special tab
+                  try {
+                    const res = await fetch(`/api/database?action=preview&id=${connId}&schema=${encodeURIComponent(schema)}&table=${encodeURIComponent(table)}&limit=50`);
+                    const data = await res.json();
+                    if (data.error) { return; }
+                    const content = JSON.stringify({ __dbPreview: true, columns: data.columns, rows: data.rows, table: `${schema}.${table}`, rowCount: data.rowCount }, null, 2);
+                    const previewFile: VscodeOpenFile = {
+                      name: `${schema}.${table}`,
+                      path: `__dbpreview__:${connId}:${schema}:${table}`,
+                      extension: ".dbpreview",
+                      content,
+                      dirty: false,
+                    };
+                    setOpenFiles((prev) => {
+                      const existing = prev.findIndex((f) => f.path === previewFile.path);
+                      if (existing >= 0) {
+                        setActiveFileIdx(existing);
+                        return prev.map((f, i) => i === existing ? previewFile : f);
+                      }
+                      setActiveFileIdx(prev.length);
+                      return [...prev, previewFile];
+                    });
+                  } catch { /* ignore */ }
+                }}
+              />
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Main Editor Area */}
+      <div className="flex-1 min-w-0 flex flex-col bg-background overflow-hidden">
+        {/* Tabs */}
+        {openFiles.length > 0 && (
+          <div className="flex items-center overflow-x-auto scrollbar-thin shrink-0 bg-muted/20 border-b border-border">
+            {openFiles.map((file, idx) => (
+              <div
+                key={file.path}
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-1.5 text-[11px] cursor-pointer border-r border-border transition-colors group min-w-0 max-w-[160px] shrink-0",
+                  idx === activeFileIdx
+                    ? "bg-background text-foreground border-b-2 border-b-primary"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted/40"
+                )}
+                onClick={() => setActiveFileIdx(idx)}
+              >
+                <FileIcon entry={{ extension: file.extension, isDirectory: false }} className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">{file.name}</span>
+                {file.dirty && <span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" />}
+                <button
+                  onClick={(e) => { e.stopPropagation(); closeFile(idx); }}
+                  className="ml-auto p-0.5 rounded text-muted-foreground/0 group-hover:text-muted-foreground hover:!text-foreground hover:bg-muted transition-colors shrink-0"
+                >
+                  <X className="h-2.5 w-2.5" />
+                </button>
+              </div>
+            ))}
+            {/* Save status */}
+            {saveStatus && (
+              <span className={cn("text-[9px] px-2 shrink-0", saveStatus === "saved" ? "text-green-500" : "text-red-500")}>
+                {saveStatus === "saved" ? "Saved" : "Save failed"}
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* Editor */}
+        <div className={cn("min-h-0", terminalCmd ? "flex-[2]" : "flex-1")}>
+          {activeFile ? (
+            activeFile.extension === ".dbpreview" ? (
+              <DbPreviewTable content={activeFile.content} />
+            ) : activeFile.path.startsWith("__query__:") ? (
+              <DbQueryEditor
+                connId={activeFile.path.split(":")[1]}
+                initialSql={activeFile.content}
+                onSqlChange={(sql) => {
+                  setOpenFiles((prev) => prev.map((f, i) => i === activeFileIdx ? { ...f, content: sql, dirty: true } : f));
+                }}
+              />
+            ) : (
+              <MonacoEditorPanel
+                content={activeFile.content}
+                extension={activeFile.extension}
+                filePath={activeFile.path}
+                onSave={saveActiveFile}
+              />
+            )
+          ) : (
+            <div className="flex flex-col items-center justify-center h-full gap-3 text-muted-foreground">
+              <FolderOpen className="h-12 w-12 opacity-20" />
+              <span className="text-sm">Open a file from the explorer</span>
+              <span className="text-xs text-muted-foreground/50">
+                {shortenPath(rootPath)}
+              </span>
+            </div>
+          )}
+        </div>
+
+        {/* Terminal Panel (for running scripts) */}
+        {terminalCmd && (
+          <div className="flex-1 min-h-[120px] max-h-[40%] border-t border-border">
+            <TerminalPanel
+              cwd={terminalCmd.cwd}
+              command={terminalCmd.command}
+              label={terminalCmd.label}
+              onClose={() => setTerminalCmd(null)}
+            />
+          </div>
+        )}
+
+        {/* Status Bar */}
+        <div className="shrink-0 flex items-center justify-between px-2 py-0.5 bg-primary/10 border-t border-border text-[9px]">
+          <div className="flex items-center gap-2 text-muted-foreground">
+            {gitStatus?.isGitRepo && (
+              <span className="flex items-center gap-1">
+                <GitBranch className="h-2.5 w-2.5" />
+                {gitStatus.branch}
+              </span>
+            )}
+            {gitStatus?.files && gitStatus.files.length > 0 && (
+              <span className="text-yellow-500">{gitStatus.files.length} changes</span>
+            )}
+          </div>
+          <div className="flex items-center gap-2 text-muted-foreground">
+            {activeFile && (
+              <>
+                <span>{monacoLangMap[activeFile.extension] || "plaintext"}</span>
+                <span>UTF-8</span>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── VS Code Tree Node (simplified for sidebar) ─────────────────────────────
+
+function VscodeTreeNode({
+  node,
+  depth,
+  onToggle,
+  onFileClick,
+  activeFilePath,
+}: {
+  node: TreeNode;
+  depth: number;
+  onToggle: (path: string) => void;
+  onFileClick: (entry: FileEntry) => void;
+  activeFilePath?: string;
+}) {
+  const isActive = !node.entry.isDirectory && node.entry.path === activeFilePath;
+
+  return (
+    <>
+      <button
+        onClick={() => {
+          if (node.entry.isDirectory) onToggle(node.entry.path);
+          else onFileClick(node.entry);
+        }}
+        className={cn(
+          "w-full flex items-center gap-1 px-1 py-[2px] text-[11px] text-left hover:bg-muted/60 transition-colors focus:outline-none",
+          isActive && "bg-primary/10 text-primary"
+        )}
+        style={{ paddingLeft: `${8 + depth * 12}px` }}
+      >
+        {node.entry.isDirectory ? (
+          <ChevronRight className={cn("h-3 w-3 shrink-0 text-muted-foreground/60 transition-transform", node.expanded && "rotate-90")} />
+        ) : (
+          <span className="w-3 shrink-0" />
+        )}
+        <FileIcon entry={node.entry} className="h-3.5 w-3.5 shrink-0" />
+        <span className="truncate">{node.entry.name}</span>
+      </button>
+      {node.expanded && node.children?.map((child) => (
+        <VscodeTreeNode
+          key={child.entry.path}
+          node={child}
+          depth={depth + 1}
+          onToggle={onToggle}
+          onFileClick={onFileClick}
+          activeFilePath={activeFilePath}
+        />
+      ))}
+    </>
+  );
+}
+
+// ─── VS Code Search Panel ────────────────────────────────────────────────────
+
+function VscodeSearchPanel({
+  rootPath,
+  onOpenFile,
+}: {
+  rootPath: string;
+  onOpenFile: (entry: FileEntry) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<SearchResultEntry[]>([]);
+  const [loading, setLoading] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    const q = query.trim();
+    if (q.length < 2) { setResults([]); return; }
+    setLoading(true);
+    timerRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/files?search=${encodeURIComponent(q)}&root=${encodeURIComponent(rootPath)}&mode=content`);
+        const data = await res.json();
+        setResults(data.results || []);
+      } catch { setResults([]); }
+      setLoading(false);
+    }, 200);
+    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
+  }, [query, rootPath]);
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="px-2 py-1.5 shrink-0">
+        <div className="relative">
+          <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search in files..."
+            className="w-full pl-7 pr-2 py-1 text-[11px] bg-muted/40 border border-border rounded focus:outline-none focus:ring-1 focus:ring-primary/50 placeholder:text-muted-foreground/50"
+          />
+          {loading && (
+            <Loader2 className="absolute right-2 top-1/2 -translate-y-1/2 h-3 w-3 animate-spin text-muted-foreground" />
+          )}
+        </div>
+      </div>
+      <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin">
+        {results.map((r) => (
+          <button
+            key={r.path + (r.matchLineNumber || "")}
+            onClick={() => onOpenFile(r)}
+            className="w-full flex flex-col px-3 py-1 text-left hover:bg-muted/60 transition-colors"
+          >
+            <div className="flex items-center gap-1.5 text-[11px]">
+              <FileIcon entry={r} className="h-3 w-3 shrink-0" />
+              <span className="truncate font-medium">{r.name}</span>
+              {r.matchLineNumber && <span className="text-[9px] text-muted-foreground/50">:{r.matchLineNumber}</span>}
+            </div>
+            {r.matchLine && (
+              <span className="text-[10px] text-muted-foreground truncate pl-[18px] font-mono">{r.matchLine}</span>
+            )}
+          </button>
+        ))}
+        {query.length >= 2 && !loading && results.length === 0 && (
+          <div className="text-xs text-muted-foreground text-center py-4">No results</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export function FilesWidget() {
@@ -2864,6 +4495,9 @@ export function FilesWidget() {
     saveViewMode(v);
   }, []);
 
+  // VS Code (Monaco) mode
+  const [monacoMode, setMonacoMode] = useState(false);
+
   // Preview / Edit state
   const [preview, setPreview] = useState<{
     name: string;
@@ -2873,6 +4507,11 @@ export function FilesWidget() {
     filePath?: string;
   } | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  // AI summary for the current preview file
+  const [aiSummary, setAiSummary] = useState<string | null>(null);
+  const [aiSummaryLoading, setAiSummaryLoading] = useState(false);
+  const [aiSummaryError, setAiSummaryError] = useState<string | null>(null);
+  const [aiSummaryFor, setAiSummaryFor] = useState<string | null>(null); // path the summary is for
   const [editing, setEditing] = useState(false);
   const [editContent, setEditContent] = useState("");
   const [saving, setSaving] = useState(false);
@@ -2882,11 +4521,12 @@ export function FilesWidget() {
   // Search state
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchMode, setSearchMode] = useState<"name" | "content">("name");
+  const [searchMode, setSearchMode] = useState<"name" | "content" | "ai">("name");
   const [searchGlobal, setSearchGlobal] = useState(false);
   const [searchResults, setSearchResults] = useState<SearchResultEntry[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchTotal, setSearchTotal] = useState(0);
+  const [aiSearchNote, setAiSearchNote] = useState<string | null>(null);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -2940,6 +4580,9 @@ export function FilesWidget() {
   // Language stats
   const [langStats, setLangStats] = useState<LangStat[] | null>(null);
   const [showLangStats, setShowLangStats] = useState(false);
+
+  // AI cleanup assistant — when set, the panel is shown for this folder path
+  const [cleanupFor, setCleanupFor] = useState<string | null>(null);
 
   // Gitignore filtering
   const [hideGitignored, setHideGitignored] = useState(false);
@@ -3344,26 +4987,77 @@ export function FilesWidget() {
     if (!searchOpen) return;
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
     const q = searchQuery.trim();
-    if (q.length < 2) {
+    // AI mode requires longer queries (debounced more aggressively)
+    const minLen = searchMode === "ai" ? 4 : 2;
+    if (q.length < minLen) {
       setSearchResults([]);
       setSearchLoading(false);
       setSearchTotal(0);
+      setAiSearchNote(null);
       return;
     }
     setSearchLoading(true);
+    setAiSearchNote(null);
+    // AI search costs an API call → wait longer before firing
+    const debounce = searchMode === "ai" ? 600 : 150;
     searchTimerRef.current = setTimeout(async () => {
       try {
         const root = searchGlobal ? "~" : resolvedPath;
-        const params = new URLSearchParams({ search: q, root, mode: searchMode });
-        const res = await fetch(`/api/files?${params}`);
-        const data = await res.json();
-        if (data.results) {
-          setSearchResults(data.results);
-          setSearchTotal(data.total || data.results.length);
+        if (searchMode === "ai") {
+          const res = await fetch("/api/files-ai", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "nl-search", query: q, root }),
+          });
+          const data = await res.json();
+          if (data.error) {
+            setSearchResults([]);
+            setSearchTotal(0);
+            setAiSearchNote(data.error);
+          } else {
+            // Map AI results into SearchResultEntry shape
+            const aiResults: SearchResultEntry[] = (data.results || []).map(
+              (r: {
+                path: string;
+                name: string;
+                isDirectory: boolean;
+                size: number;
+                modified: string;
+                extension: string;
+                reason: string;
+                confidence: "high" | "medium" | "low";
+              }) => ({
+                path: r.path,
+                name: r.name,
+                isDirectory: r.isDirectory,
+                size: r.size,
+                modified: r.modified,
+                extension: r.extension,
+                score: r.confidence === "high" ? 100 : r.confidence === "medium" ? 60 : 30,
+                reason: r.reason,
+                confidence: r.confidence,
+              })
+            );
+            setSearchResults(aiResults);
+            setSearchTotal(aiResults.length);
+            setAiSearchNote(data.note || null);
+          }
+        } else {
+          const params = new URLSearchParams({ search: q, root, mode: searchMode });
+          const res = await fetch(`/api/files?${params}`);
+          const data = await res.json();
+          if (data.results) {
+            setSearchResults(data.results);
+            setSearchTotal(data.total || data.results.length);
+          }
         }
-      } catch { /* ignore */ }
+      } catch (err) {
+        if (searchMode === "ai") {
+          setAiSearchNote(err instanceof Error ? err.message : "AI search failed");
+        }
+      }
       setSearchLoading(false);
-    }, 150);
+    }, debounce);
     return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current); };
   }, [searchQuery, searchMode, searchGlobal, searchOpen, resolvedPath]);
 
@@ -3371,7 +5065,7 @@ export function FilesWidget() {
     if (searchOpen) {
       setTimeout(() => searchInputRef.current?.focus(), 50);
     } else {
-      setSearchQuery(""); setSearchResults([]); setSearchTotal(0);
+      setSearchQuery(""); setSearchResults([]); setSearchTotal(0); setAiSearchNote(null);
     }
   }, [searchOpen]);
 
@@ -3382,6 +5076,8 @@ export function FilesWidget() {
     setEditing(false);
     setSaveStatus(null);
     setDiffContent(null); setBlameLines(null);
+    // Reset any previous AI summary when opening a new file
+    setAiSummary(null); setAiSummaryError(null); setAiSummaryFor(null);
     setPreview({ name: entry.name, content: "", extension: entry.extension, truncated: false, filePath: entry.path });
     try {
       let data: FileContent;
@@ -3406,6 +5102,32 @@ export function FilesWidget() {
     }
     setPreviewLoading(false);
   }, [openInTab, singleViewVps]);
+
+  // Fetch an AI-written summary of the currently-open file.
+  const fetchAiSummary = useCallback(async (filePath: string) => {
+    setAiSummaryLoading(true);
+    setAiSummaryError(null);
+    setAiSummary(null);
+    setAiSummaryFor(filePath);
+    try {
+      const res = await fetch("/api/files-ai", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "summarize-file", path: filePath }),
+      });
+      const data = await res.json();
+      if (data.error) {
+        setAiSummaryError(data.error);
+      } else if (data.summary) {
+        setAiSummary(data.summary);
+      } else {
+        setAiSummaryError("No summary returned.");
+      }
+    } catch (err) {
+      setAiSummaryError(err instanceof Error ? err.message : "Failed to summarize");
+    }
+    setAiSummaryLoading(false);
+  }, []);
 
   const startEditing = useCallback(() => {
     if (!preview || isVpsMode) return;
@@ -3593,6 +5315,17 @@ export function FilesWidget() {
       onExpandChange={(expanded) => { if (!expanded) setSplitTerminal(null); }}
       headerAction={
         <div className="flex items-center gap-0.5">
+          {/* VS Code mode toggle */}
+          <button
+            onClick={() => setMonacoMode(!monacoMode)}
+            className={cn(
+              "px-1.5 py-0.5 rounded-md text-[10px] font-medium transition-colors",
+              monacoMode ? "text-primary bg-primary/10 border border-primary/30" : "text-muted-foreground hover:text-foreground hover:bg-muted"
+            )}
+            title={monacoMode ? "Exit VS Code mode" : "VS Code mode"}
+          >
+            VS Code
+          </button>
            {/* View toggle */}
           <ViewToggle view={viewMode} onChange={handleViewModeChange} />
           {/* Sort controls */}
@@ -3817,7 +5550,15 @@ export function FilesWidget() {
         ) : undefined
       }
     >
-      {dualPaneMode ? (
+      {monacoMode ? (
+        <VscodeLayout
+          rootPath={resolvedPath || "~"}
+          gitStatus={gitStatus}
+          projectInfo={projectInfo}
+          onClose={() => setMonacoMode(false)}
+          onRefreshGit={() => fetchGitStatus(resolvedPath)}
+        />
+      ) : dualPaneMode ? (
         <DualPaneExplorer
           vpsConnections={vpsConnections}
           onOpenVpsDialog={() => { setShowVpsDialog(true); setEditingVpsConn(null); }}
@@ -3830,13 +5571,23 @@ export function FilesWidget() {
           <div className="shrink-0 space-y-1">
             <div className="flex items-center gap-1">
               <div className="relative flex-1">
-                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground pointer-events-none" />
+                {searchMode === "ai" ? (
+                  <Sparkles className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-primary pointer-events-none" />
+                ) : (
+                  <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground pointer-events-none" />
+                )}
                 <input
                   ref={searchInputRef}
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder={searchMode === "content" ? "Search file contents..." : "Search filenames..."}
+                  placeholder={
+                    searchMode === "ai"
+                      ? "Ask AI: \u201Cthe contract Mary sent me\u201D…"
+                      : searchMode === "content"
+                        ? "Search file contents..."
+                        : "Search filenames..."
+                  }
                   className="w-full pl-6 pr-2 py-1 text-xs bg-muted/40 border border-border rounded-md focus:outline-none focus:ring-1 focus:ring-primary/50 placeholder:text-muted-foreground/50"
                   onKeyDown={(e) => { if (e.key === "Escape") setSearchOpen(false); }}
                 />
@@ -3850,14 +5601,28 @@ export function FilesWidget() {
             </div>
             <div className="flex items-center gap-2 px-0.5">
               <button
-                onClick={() => setSearchMode(searchMode === "name" ? "content" : "name")}
+                onClick={() => {
+                  // Cycle: name → content → ai → name
+                  const next = searchMode === "name" ? "content" : searchMode === "content" ? "ai" : "name";
+                  setSearchMode(next);
+                }}
                 className={cn(
                   "flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded transition-colors",
-                  searchMode === "content" ? "bg-primary/10 text-primary border border-primary/20" : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                  searchMode === "ai"
+                    ? "bg-primary/15 text-primary border border-primary/30"
+                    : searchMode === "content"
+                      ? "bg-primary/10 text-primary border border-primary/20"
+                      : "text-muted-foreground hover:text-foreground hover:bg-muted"
                 )}
+                title="Cycle search mode (filename → content → AI)"
               >
-                <FileSearch className="h-2.5 w-2.5" />
-                {searchMode === "content" ? "Content" : "Filename"}
+                {searchMode === "ai" ? (
+                  <><Sparkles className="h-2.5 w-2.5" /> AI</>
+                ) : searchMode === "content" ? (
+                  <><FileSearch className="h-2.5 w-2.5" /> Content</>
+                ) : (
+                  <><FileSearch className="h-2.5 w-2.5" /> Filename</>
+                )}
               </button>
               <button
                 onClick={() => setSearchGlobal(!searchGlobal)}
@@ -3994,6 +5759,15 @@ export function FilesWidget() {
           />
         )}
 
+        {/* AI Cleanup Assistant */}
+        {cleanupFor && (
+          <CleanupAssistantPanel
+            folderPath={cleanupFor}
+            onClose={() => setCleanupFor(null)}
+            onDeleted={() => fetchDir(resolvedPath)}
+          />
+        )}
+
         {/* Diff viewer — image diff for image files, text diff otherwise */}
         {diffContent !== null && diffFile && (
           <div className="shrink-0 max-h-[45%] border border-border rounded-md overflow-hidden">
@@ -4076,7 +5850,7 @@ export function FilesWidget() {
 
         {/* File preview panel — shown in list/grid/tree modes */}
         {preview && !isSearchActive && !gitOpen && viewMode !== "gallery" && viewMode !== "columns" && (
-          <div className="shrink-0 max-h-[55%] flex flex-col border border-border rounded-md overflow-hidden bg-muted/20">
+          <div className={cn("flex flex-col border border-border rounded-md overflow-hidden bg-muted/20", monacoMode ? "flex-1 min-h-0" : "shrink-0 max-h-[55%]")}>
             {/* Multi-file tabs */}
             <FileTabs tabs={openTabs} activeIdx={activeTabIdx} onSelect={selectTab} onClose={closeTab} />
             <div className="flex items-center justify-between px-2 py-1 bg-muted/40 border-b border-border">
@@ -4087,7 +5861,7 @@ export function FilesWidget() {
               </span>
               <div className="flex items-center gap-1 shrink-0">
                 {/* Blame button */}
-                {!editing && gitStatus?.isGitRepo && preview.filePath && isTextFile(preview.extension) && (
+                {!editing && !monacoMode && gitStatus?.isGitRepo && preview.filePath && isTextFile(preview.extension) && (
                   <button
                     onClick={() => { if (blameLines) setBlameLines(null); else if (preview.filePath) fetchBlame(preview.filePath); }}
                     className={cn("p-0.5 rounded hover:bg-muted transition-colors", blameLines ? "text-primary" : "text-muted-foreground hover:text-foreground")}
@@ -4097,7 +5871,7 @@ export function FilesWidget() {
                   </button>
                 )}
                 {/* Symbols/outline button */}
-                {!editing && preview.filePath && isTextFile(preview.extension) && (
+                {!editing && !monacoMode && preview.filePath && isTextFile(preview.extension) && (
                   <button
                     onClick={() => { if (showSymbols) { setShowSymbols(false); setSymbols(null); } else if (preview.filePath) fetchSymbols(preview.filePath); }}
                     className={cn("p-0.5 rounded hover:bg-muted transition-colors", showSymbols ? "text-primary" : "text-muted-foreground hover:text-foreground")}
@@ -4106,12 +5880,39 @@ export function FilesWidget() {
                     <ListTree className="h-3 w-3" />
                   </button>
                 )}
-                {!editing && !preview.truncated && isTextFile(preview.extension) && (
+                {/* AI summary button — text files and PDFs */}
+                {!editing && !monacoMode && preview.filePath && (isTextFile(preview.extension) || preview.extension === ".pdf") && (
+                  <button
+                    onClick={() => {
+                      if (aiSummary || aiSummaryError) {
+                        // Toggle off
+                        setAiSummary(null);
+                        setAiSummaryError(null);
+                        setAiSummaryFor(null);
+                      } else if (preview.filePath) {
+                        fetchAiSummary(preview.filePath);
+                      }
+                    }}
+                    disabled={aiSummaryLoading}
+                    className={cn(
+                      "p-0.5 rounded hover:bg-muted transition-colors disabled:opacity-50",
+                      (aiSummary || aiSummaryError) ? "text-primary" : "text-muted-foreground hover:text-foreground"
+                    )}
+                    title={aiSummary ? "Hide AI summary" : "Summarize with AI"}
+                  >
+                    {aiSummaryLoading ? (
+                      <div className="h-3 w-3 border-[1.5px] border-muted-foreground/30 border-t-primary rounded-full animate-spin" />
+                    ) : (
+                      <Sparkles className="h-3 w-3" />
+                    )}
+                  </button>
+                )}
+                {!editing && !monacoMode && !preview.truncated && isTextFile(preview.extension) && (
                   <button onClick={startEditing} className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-muted transition-colors" title="Edit file">
                     <Pencil className="h-3 w-3" />
                   </button>
                 )}
-                {editing && (
+                {editing && !monacoMode && (
                   <>
                     <button onClick={saveFile} disabled={saving} className="text-green-600 hover:text-green-500 p-0.5 rounded hover:bg-muted transition-colors disabled:opacity-50" title="Save (Cmd+S)">
                       <Save className={cn("h-3 w-3", saving && "animate-pulse")} />
@@ -4130,17 +5931,78 @@ export function FilesWidget() {
                 <button onClick={() => { if (preview.filePath) window.open(rawFileUrl(preview.filePath), "_blank", "noopener,noreferrer"); }} className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-muted transition-colors" title="Open in new tab">
                   <ExternalLink className="h-3 w-3" />
                 </button>
-                <button onClick={() => { setPreview(null); setEditing(false); setDiffContent(null); setBlameLines(null); setShowSymbols(false); setSymbols(null); }} className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-muted transition-colors">
+                <button onClick={() => { setPreview(null); setEditing(false); setMonacoMode(false); setDiffContent(null); setBlameLines(null); setShowSymbols(false); setSymbols(null); }} className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-muted transition-colors">
                   <X className="h-3 w-3" />
                 </button>
               </div>
             </div>
-            <div className="flex-1 overflow-auto p-2">
+            {/* AI summary panel — shown above the file content when active */}
+            {(aiSummary || aiSummaryError || aiSummaryLoading) && aiSummaryFor === preview.filePath && (
+              <div className="shrink-0 border-b border-border bg-primary/5 px-2 py-1.5 max-h-[40%] overflow-y-auto scrollbar-thin">
+                <div className="flex items-center gap-1.5 mb-1 text-[10px] font-medium text-primary">
+                  <Sparkles className="h-3 w-3" />
+                  <span>AI summary</span>
+                  {aiSummaryLoading && (
+                    <div className="h-2.5 w-2.5 border-[1.5px] border-primary/30 border-t-primary rounded-full animate-spin ml-auto" />
+                  )}
+                  {!aiSummaryLoading && (
+                    <button
+                      onClick={() => { setAiSummary(null); setAiSummaryError(null); setAiSummaryFor(null); }}
+                      className="ml-auto text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-muted transition-colors"
+                      title="Hide summary"
+                    >
+                      <X className="h-2.5 w-2.5" />
+                    </button>
+                  )}
+                </div>
+                {aiSummaryError ? (
+                  <div className="flex items-start gap-1.5 text-[11px] text-red-500">
+                    <AlertCircle className="h-3 w-3 shrink-0 mt-0.5" />
+                    <span>{aiSummaryError}</span>
+                  </div>
+                ) : aiSummary ? (
+                  <div className="text-[11px] leading-relaxed text-foreground prose prose-sm dark:prose-invert max-w-none [&_p]:my-1 [&_ul]:my-1 [&_ul]:pl-4 [&_li]:my-0 [&_strong]:font-semibold [&_strong]:text-foreground [&_h1]:text-xs [&_h2]:text-xs [&_h3]:text-xs [&_code]:text-[10px] [&_code]:bg-muted [&_code]:px-1 [&_code]:rounded">
+                    <ReactMarkdown>{aiSummary}</ReactMarkdown>
+                  </div>
+                ) : (
+                  <div className="text-[11px] text-muted-foreground italic">
+                    Reading the file…
+                  </div>
+                )}
+              </div>
+            )}
+            <div className={cn("flex-1 overflow-hidden", monacoMode ? "min-h-0" : "overflow-auto p-2")}>
               {previewLoading ? (
-                <div className="flex items-center gap-2 text-muted-foreground text-[10px]">
+                <div className="flex items-center gap-2 text-muted-foreground text-[10px] p-2">
                   <div className="h-3 w-3 border-2 border-muted-foreground/30 border-t-primary rounded-full animate-spin" />
                   Loading...
                 </div>
+              ) : monacoMode ? (
+                <MonacoEditorPanel
+                  content={preview.content}
+                  extension={preview.extension}
+                  filePath={preview.filePath}
+                  readOnly={isVpsMode}
+                  onSave={isVpsMode ? undefined : async (newContent) => {
+                    if (!preview.filePath) return;
+                    setSaving(true); setSaveStatus(null);
+                    try {
+                      const res = await fetch("/api/files", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ action: "save", path: preview.filePath, content: newContent }),
+                      });
+                      const data = await res.json();
+                      if (data.saved) {
+                        setPreview((prev) => prev ? { ...prev, content: newContent } : prev);
+                        setSaveStatus("saved");
+                        setTimeout(() => setSaveStatus(null), 2000);
+                        if (resolvedPath) fetchGitStatus(resolvedPath);
+                      } else { setSaveStatus("error"); }
+                    } catch { setSaveStatus("error"); }
+                    setSaving(false);
+                  }}
+                />
               ) : editing ? (
                 <textarea
                   ref={editTextareaRef}
@@ -4157,7 +6019,7 @@ export function FilesWidget() {
                 <HighlightedCode code={preview.content} extension={preview.extension} />
               )}
             </div>
-            {preview.truncated && !editing && (
+            {preview.truncated && !editing && !monacoMode && (
               <div className="text-[9px] text-muted-foreground/60 px-2 py-0.5 border-t border-border bg-muted/20 text-center">
                 File truncated (showing first 100KB)
               </div>
@@ -4187,8 +6049,13 @@ export function FilesWidget() {
                 </div>
               </div>
             ) : searchResults.length === 0 && !searchLoading ? (
-              <div className="flex items-center justify-center h-full text-muted-foreground">
-                <span className="text-xs">No matches found</span>
+              <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-1 px-4 text-center">
+                <span className="text-xs">{aiSearchNote || "No matches found"}</span>
+                {searchMode === "ai" && !aiSearchNote && (
+                  <span className="text-[10px] text-muted-foreground/60">
+                    Try rephrasing — AI search looks at filenames, dates, and folder context.
+                  </span>
+                )}
               </div>
             ) : (
               <div className="space-y-0">
@@ -4198,9 +6065,30 @@ export function FilesWidget() {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5">
                         <span className={cn("text-xs truncate", result.isDirectory && "font-medium")}>{result.name}</span>
+                        {result.confidence && (
+                          <span
+                            className={cn(
+                              "text-[8px] uppercase font-bold px-1 py-px rounded shrink-0",
+                              result.confidence === "high"
+                                ? "bg-green-500/15 text-green-600 dark:text-green-400"
+                                : result.confidence === "medium"
+                                  ? "bg-yellow-500/15 text-yellow-600 dark:text-yellow-400"
+                                  : "bg-muted text-muted-foreground"
+                            )}
+                            title={`AI confidence: ${result.confidence}`}
+                          >
+                            {result.confidence}
+                          </span>
+                        )}
                         {!result.isDirectory && <span className="text-[9px] text-muted-foreground/50 shrink-0">{formatSize(result.size)}</span>}
                       </div>
                       <div className="text-[10px] text-muted-foreground/60 truncate">{shortenPath(result.path)}</div>
+                      {result.reason && (
+                        <div className="text-[10px] text-primary/80 mt-0.5 italic flex items-start gap-1">
+                          <Sparkles className="h-2.5 w-2.5 shrink-0 mt-0.5" />
+                          <span className="flex-1">{result.reason}</span>
+                        </div>
+                      )}
                       {result.matchLine && (
                         <div className="text-[10px] text-muted-foreground mt-0.5 truncate font-mono bg-muted/40 rounded px-1 py-0.5">
                           {result.matchLineNumber && <span className="text-muted-foreground/40 mr-1">L{result.matchLineNumber}:</span>}
@@ -4422,6 +6310,7 @@ export function FilesWidget() {
         onCopyPath={copyPath}
         onCopyRelativePath={copyRelativePath}
         onToggleBookmark={toggleBookmark}
+        onCleanup={(entry) => { setCleanupFor(entry.path); setCtxMenu(null); }}
         isBookmarked={ctxMenu ? bookmarks.some((b) => b.path === ctxMenu.entry.path) : false}
       />
     )}
