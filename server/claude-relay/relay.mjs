@@ -187,9 +187,13 @@ wss.on("connection", (ws, req) => {
           }
           const messages = await getSessionMessages(msg.sessionId, {
             dir: msg.dir || DEFAULT_CWD,
-            limit: msg.limit || 100,
+            limit: msg.limit || 500,
           });
-          send({ type: "messages", messages, sessionId: msg.sessionId });
+          // Filter out system messages and parent_tool_use sub-messages for cleaner display
+          const filtered = messages.filter(m => 
+            (m.type === "user" || m.type === "assistant") && !m.parent_tool_use_id
+          );
+          send({ type: "messages", messages: filtered, sessionId: msg.sessionId });
           break;
         }
 

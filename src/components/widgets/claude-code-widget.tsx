@@ -197,6 +197,16 @@ export function ClaudeCodeWidget() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const streamingTextRef = useRef("");
+  const activeFolderRef = useRef(activeFolder);
+  const configsRef = useRef(configs);
+  const activeConfigIdxRef = useRef(activeConfigIdx);
+  const activeSessionIdRef = useRef(activeSessionId);
+
+  // Keep refs in sync
+  activeFolderRef.current = activeFolder;
+  configsRef.current = configs;
+  activeConfigIdxRef.current = activeConfigIdx;
+  activeSessionIdRef.current = activeSessionId;
 
   // Load relay configs — default to local relay server
   useEffect(() => {
@@ -299,26 +309,54 @@ export function ClaudeCodeWidget() {
         break;
 
       case "messages": {
-        const sessionMessages = (msg.messages as Array<{ type: string; message?: { content?: unknown[] }; uuid?: string }>)|| [];
+        const sessionMessages = (msg.messages as Array<Record<string, unknown>>)|| [];
         // Convert SDK messages to our format
         const converted: Message[] = [];
         for (const m of sessionMessages) {
-          if (m.type === "user" || m.type === "assistant") {
+          const mType = m.type as string;
+          if (mType === "user" || mType === "assistant") {
             let content = "";
-            const rawMsg = m.message as { content?: unknown[] } | undefined;
-            if (rawMsg?.content) {
+            
+            // Try message.content[] blocks (standard format)
+            const rawMsg = m.message as { content?: unknown[]; role?: string } | undefined;
+            if (rawMsg?.content && Array.isArray(rawMsg.content)) {
               for (const block of rawMsg.content) {
-                if ((block as { type?: string; text?: string }).type === "text") {
-                  content += (block as { text: string }).text;
+                const b = block as Record<string, unknown>;
+                if (b.type === "text" && b.text) {
+                  content += b.text;
+                } else if (b.type === "tool_use") {
+                  content += `\n\`\`\`\nTool: ${b.name}\n${JSON.stringify(b.input, null, 2)}\n\`\`\`\n`;
+                } else if (b.type === "tool_result") {
+                  const resultContent = b.content;
+                  if (typeof resultContent === "string") {
+                    content += resultContent;
+                  } else if (Array.isArray(resultContent)) {
+                    for (const rc of resultContent) {
+                      if ((rc as Record<string, unknown>).type === "text") {
+                        content += (rc as Record<string, unknown>).text;
+                      }
+                    }
+                  }
                 }
               }
             }
+            
+            // Try direct prompt field (user messages from CLI)
+            if (!content && m.prompt) {
+              content = m.prompt as string;
+            }
+            
+            // Try message as string directly
+            if (!content && typeof m.message === "string") {
+              content = m.message;
+            }
+
             if (content) {
               converted.push({
-                id: (m as { uuid?: string }).uuid || Math.random().toString(36).slice(2) + Date.now().toString(36),
-                role: m.type as "user" | "assistant",
+                id: (m.uuid as string) || Math.random().toString(36).slice(2) + Date.now().toString(36),
+                role: mType as "user" | "assistant",
                 content,
-                timestamp: new Date().toISOString(),
+                timestamp: (m.timestamp as string) || new Date().toISOString(),
               });
             }
           }
@@ -345,7 +383,7 @@ export function ClaudeCodeWidget() {
             }
           }
           // Capture session ID
-          if ((data as { session_id?: string }).session_id && !activeSessionId) {
+          if ((data as { session_id?: string }).session_id && !activeSessionIdRef.current) {
             setActiveSessionId((data as { session_id: string }).session_id);
           }
         }
@@ -371,7 +409,7 @@ export function ClaudeCodeWidget() {
         if (msg.sessionId) setActiveSessionId(msg.sessionId as string);
         // Refresh session list
         if (wsRef.current?.readyState === WebSocket.OPEN) {
-          wsRef.current.send(JSON.stringify({ type: "list-sessions", dir: activeFolder || configs[activeConfigIdx]?.defaultCwd }));
+          wsRef.current.send(JSON.stringify({ type: "list-sessions", dir: activeFolderRef.current || configsRef.current[activeConfigIdxRef.current]?.defaultCwd }));
         }
         break;
       }
@@ -486,11 +524,22 @@ export function ClaudeCodeWidget() {
 
   // Slash commands
   const SLASH_COMMANDS = [
-    { cmd: "/clear", desc: "Clear current conversation" },
-    { cmd: "/new", desc: "Start a new session" },
-    { cmd: "/model", desc: "Switch model (sonnet, opus, haiku)" },
-    { cmd: "/compact", desc: "Compact conversation context" },
-    { cmd: "/help", desc: "Show available commands" },
+    { cmd: "/clear", desc: "Clear current conversation", local: true },
+    { cmd: "/new", desc: "Start a new session", local: true },
+    { cmd: "/model", desc: "Switch model (sonnet, opus, haiku)", local: true },
+    { cmd: "/help", desc: "Show available commands", local: true },
+    { cmd: "/compact", desc: "Compact conversation context", local: false },
+    { cmd: "/cost", desc: "Show token usage and cost", local: false },
+    { cmd: "/doctor", desc: "Check Claude Code setup", local: false },
+    { cmd: "/init", desc: "Initialize project with CLAUDE.md", local: false },
+    { cmd: "/login", desc: "Switch account or re-authenticate", local: false },
+    { cmd: "/logout", desc: "Sign out of current account", local: false },
+    { cmd: "/memory", desc: "Edit CLAUDE.md memory files", local: false },
+    { cmd: "/permissions", desc: "View or update permissions", local: false },
+    { cmd: "/review", desc: "Review a PR or diff", local: false },
+    { cmd: "/status", desc: "Show session and project status", local: false },
+    { cmd: "/terminal-setup", desc: "Install shell integration", local: false },
+    { cmd: "/vim", desc: "Toggle vim mode", local: false },
   ];
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -506,22 +555,47 @@ export function ClaudeCodeWidget() {
 
   const executeSlashCommand = (cmd: string) => {
     setShowSlashMenu(false);
+    setInput("");
+    
+    const command = SLASH_COMMANDS.find((c) => c.cmd === cmd);
+    
+    // Non-local commands: send to relay as a prompt (CLI handles them)
+    if (command && !command.local) {
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        setMessages((prev) => [...prev, {
+          id: Math.random().toString(36).slice(2) + Date.now().toString(36),
+          role: "user",
+          content: cmd,
+          timestamp: new Date().toISOString(),
+        }]);
+        setStreaming(true);
+        setStreamingText("");
+        streamingTextRef.current = "";
+        wsRef.current.send(JSON.stringify({
+          type: "query",
+          prompt: cmd,
+          sessionId: activeSessionId || undefined,
+          cwd: activeFolder || configs[activeConfigIdx]?.defaultCwd,
+          model: selectedModel,
+        }));
+      }
+      return;
+    }
+
+    // Local commands
     switch (cmd) {
       case "/clear":
         setMessages([]);
         setStreamingText("");
-        setInput("");
         break;
       case "/new":
         newSession();
-        setInput("");
         break;
       case "/model": {
         // Cycle through models
         const idx = MODELS.findIndex((m) => m.id === selectedModel);
         const next = MODELS[(idx + 1) % MODELS.length];
         setSelectedModel(next.id);
-        setInput("");
         setMessages((prev) => [...prev, {
           id: Math.random().toString(36).slice(2) + Date.now().toString(36),
           role: "assistant",
@@ -530,31 +604,7 @@ export function ClaudeCodeWidget() {
         }]);
         break;
       }
-      case "/compact":
-        setInput("");
-        // Send compact prompt directly
-        if (wsRef.current?.readyState === WebSocket.OPEN) {
-          const compactPrompt = "Please compact the conversation so far into a concise summary, then continue from there.";
-          setMessages((prev) => [...prev, {
-            id: Math.random().toString(36).slice(2) + Date.now().toString(36),
-            role: "user",
-            content: compactPrompt,
-            timestamp: new Date().toISOString(),
-          }]);
-          setStreaming(true);
-          setStreamingText("");
-          streamingTextRef.current = "";
-          wsRef.current.send(JSON.stringify({
-            type: "query",
-            prompt: compactPrompt,
-            sessionId: activeSessionId || undefined,
-            cwd: activeFolder || configs[activeConfigIdx]?.defaultCwd,
-            model: selectedModel,
-          }));
-        }
-        break;
       case "/help":
-        setInput("");
         setMessages((prev) => [...prev, {
           id: Math.random().toString(36).slice(2) + Date.now().toString(36),
           role: "assistant",
