@@ -94,12 +94,12 @@ interface Worktree {
 }
 
 const MODELS = [
-  { id: "claude-sonnet-4-20250514", label: "Sonnet 4" },
-  { id: "claude-opus-4-20250115", label: "Opus 4" },
-  { id: "claude-haiku-3-5-20241022", label: "Haiku 3.5" },
+  { id: "claude-sonnet-4-6", label: "Sonnet 4.6" },
+  { id: "claude-opus-4-7", label: "Opus 4.7" },
+  { id: "claude-haiku-4-5", label: "Haiku 4.5" },
 ];
 
-const MAX_CONTEXT_TOKENS = 200000; // Claude's context window
+const MAX_CONTEXT_TOKENS = 1000000; // Claude Sonnet 4.6 / Opus 4.7 context window
 
 // ─── Claude Icon ─────────────────────────────────────────────────────────────
 
