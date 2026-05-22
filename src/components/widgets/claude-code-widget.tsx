@@ -427,6 +427,24 @@ export function ClaudeCodeWidget() {
       case "message": {
         // Streaming message from the SDK
         const data = msg.data as Record<string, unknown>;
+        
+        // Handle partial/streaming events (SDKPartialAssistantMessage)
+        if (data?.type === "stream_event") {
+          const event = data.event as Record<string, unknown>;
+          if (event?.type === "content_block_delta") {
+            const delta = event.delta as Record<string, unknown>;
+            if (delta?.type === "text_delta" && delta.text) {
+              streamingTextRef.current += delta.text as string;
+              setStreamingText(streamingTextRef.current);
+            }
+          }
+          // Capture session ID
+          if (data.session_id && !activeSessionIdRef.current) {
+            setActiveSessionId(data.session_id as string);
+          }
+          break;
+        }
+        
         if (data?.type === "assistant") {
           const assistantMsg = data.message as { content?: Array<{ type: string; text?: string }> } | undefined;
           if (assistantMsg?.content) {

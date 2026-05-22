@@ -127,6 +127,7 @@ wss.on("connection", (ws, req) => {
             abortController,
             permissionMode: "bypassPermissions",
             allowDangerouslySkipPermissions: true,
+            includePartialMessages: true,
           };
 
           if (msg.model) options.model = msg.model;
