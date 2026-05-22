@@ -152,7 +152,12 @@ wss.on("connection", (ws, req) => {
 
               // Debug: log first few message types
               if (msgCount < 5) {
-                console.log(`[relay] Stream msg #${msgCount}: type=${message.type}${message.type === "stream_event" ? ` event=${message.event?.type}` : ""}`);
+                console.log(`[relay] Stream msg #${msgCount}: type=${message.type}${message.type === "stream_event" ? ` event=${message.event?.type}` : ""}${message.model ? ` model=${message.model}` : ""}`);
+              }
+              if (msgCount === 0) {
+                // Log full first message to see model info
+                console.log(`[relay] First stream message keys: ${Object.keys(message).join(", ")}`);
+                if (message.model) console.log(`[relay] *** ACTUAL MODEL: ${message.model} ***`);
               }
               msgCount++;
 
