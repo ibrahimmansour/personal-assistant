@@ -341,7 +341,7 @@ export function ClaudeCodeWidget() {
             let hasUserText = false;
             
             // Try message.content[] blocks (standard format)
-            const rawMsg = m.message as { content?: unknown[]; role?: string } | undefined;
+            const rawMsg = m.message as { content?: unknown; role?: string } | undefined;
             if (rawMsg?.content && Array.isArray(rawMsg.content)) {
               for (const block of rawMsg.content) {
                 const b = block as Record<string, unknown>;
@@ -354,6 +354,15 @@ export function ClaudeCodeWidget() {
                   if (mType === "assistant") {
                     textContent += `\n\`\`\`\nTool: ${b.name}\n${JSON.stringify(b.input, null, 2)}\n\`\`\`\n`;
                   }
+                } else if (b.type === "tool_result") {
+                  hasToolResult = true;
+                }
+              }
+            } else if (rawMsg?.content && typeof rawMsg.content === "string") {
+              // CLI user messages have content as a plain string
+              textContent = rawMsg.content;
+              if (mType === "user") hasUserText = true;
+            }
                 } else if (b.type === "tool_result") {
                   hasToolResult = true;
                   // Skip tool results entirely — they're internal API responses
