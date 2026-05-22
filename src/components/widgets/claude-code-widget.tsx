@@ -69,9 +69,9 @@ interface Worktree {
 }
 
 const MODELS = [
-  { id: "claude-sonnet-4-6", label: "Sonnet 4.6" },
-  { id: "claude-opus-4-7", label: "Opus 4.7" },
-  { id: "claude-haiku-4-5", label: "Haiku 4.5" },
+  { id: "sonnet", label: "Sonnet" },
+  { id: "opus", label: "Opus" },
+  { id: "haiku", label: "Haiku" },
 ];
 
 // ─── Claude Icon ─────────────────────────────────────────────────────────────
@@ -283,7 +283,15 @@ export function ClaudeCodeWidget() {
 
   // Auto-scroll
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const el = messagesEndRef.current;
+    if (el) {
+      const scrollContainer = el.closest("[data-radix-scroll-area-viewport]");
+      if (scrollContainer) {
+        scrollContainer.scrollTop = scrollContainer.scrollHeight;
+      } else {
+        el.scrollIntoView({ behavior: "smooth" });
+      }
+    }
   }, [messages, streamingText]);
 
   // ─── WebSocket connection ──────────────────────────────────────────────────
@@ -577,12 +585,13 @@ export function ClaudeCodeWidget() {
       const res = await fetch(`/api/files?path=${encodeURIComponent(dir)}`);
       if (res.ok) {
         const data = await res.json();
-        const dirs = (data.files || [])
+        const entries = data.entries || [];
+        const dirs = entries
           .filter((f: { isDirectory: boolean }) => f.isDirectory)
           .map((f: { name: string; path: string }) => ({ name: f.name, path: f.path }))
           .sort((a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name));
         setBrowseDirs(dirs);
-        setBrowsingPath(dir);
+        setBrowsingPath(data.path || dir);
       }
     } catch { /* ignore */ }
     setBrowseLoading(false);
