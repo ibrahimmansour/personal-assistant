@@ -69,9 +69,9 @@ interface Worktree {
 }
 
 const MODELS = [
-  { id: "sonnet", label: "Sonnet 4.6" },
-  { id: "opus", label: "Opus 4.7" },
-  { id: "haiku", label: "Haiku 4.5" },
+  { id: "claude-sonnet-4-6", label: "Sonnet 4.6" },
+  { id: "claude-opus-4-7", label: "Opus 4.7" },
+  { id: "claude-haiku-3-5", label: "Haiku 3.5" },
 ];
 
 // ─── Claude Icon ─────────────────────────────────────────────────────────────

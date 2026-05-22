@@ -143,8 +143,15 @@ wss.on("connection", (ws, req) => {
             let pendingMessage = null;
             let flushTimer = null;
 
+            let msgCount = 0;
             for await (const message of q) {
               if (abortController.signal.aborted) break;
+
+              // Debug: log first few message types
+              if (msgCount < 5) {
+                console.log(`[relay] Stream msg #${msgCount}: type=${message.type}${message.type === "stream_event" ? ` event=${message.event?.type}` : ""}`);
+              }
+              msgCount++;
 
               // Capture session ID from first message
               if (!sessionId && message.session_id) {
@@ -201,10 +208,12 @@ wss.on("connection", (ws, req) => {
         }
 
         case "list-sessions": {
+          console.log(`[relay] list-sessions dir: ${msg.dir || DEFAULT_CWD}`);
           const sessions = await listSessions({
             dir: msg.dir || DEFAULT_CWD,
             limit: msg.limit || 50,
           });
+          console.log(`[relay] Found ${sessions.length} sessions`);
           send({ type: "sessions", sessions });
           break;
         }
