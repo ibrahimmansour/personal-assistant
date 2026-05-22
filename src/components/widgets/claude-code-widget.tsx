@@ -191,7 +191,9 @@ export function ClaudeCodeWidget() {
   const [selectedModel, setSelectedModel] = useState(MODELS[0].id);
   const [error, setError] = useState<string | null>(null);
   const [showConfig, setShowConfig] = useState(false);
-  const [showTerminal, setShowTerminal] = useState(false);
+  const [mode, setMode] = useState<"chat" | "terminal">("chat");
+  const terminalPasteRef = useRef<((text: string) => void) | null>(null);
+  const [terminalSessionId, setTerminalSessionId] = useState<string | null>(null);
   const [configUrl, setConfigUrl] = useState("");
   const [configToken, setConfigToken] = useState("");
   const [configLabel, setConfigLabel] = useState("");
@@ -645,6 +647,17 @@ export function ClaudeCodeWidget() {
 
   const loadSession = (sessionId: string) => {
     setActiveSessionId(sessionId);
+    if (mode === "terminal") {
+      // In terminal mode, send Ctrl+C then resume command
+      if (terminalPasteRef.current) {
+        terminalPasteRef.current("\x03"); // Ctrl+C
+        setTimeout(() => {
+          terminalPasteRef.current?.(`claude --resume ${sessionId}\n`);
+        }, 300);
+      }
+      setTerminalSessionId(sessionId);
+      return;
+    }
     setMessages([]);
     wsRef.current?.send(JSON.stringify({
       type: "get-messages",
@@ -1113,7 +1126,14 @@ export function ClaudeCodeWidget() {
                 ))}
               </DropdownMenuContent>
             </DropdownMenu>
-            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setShowTerminal(!showTerminal)} title="Open session in terminal">
+            <Button variant="ghost" size="icon" className={cn("h-7 w-7", mode === "terminal" && "bg-accent")} onClick={() => {
+              if (mode === "chat") {
+                setMode("terminal");
+                setTerminalSessionId(activeSessionId);
+              } else {
+                setMode("chat");
+              }
+            }} title={mode === "chat" ? "Switch to CLI mode" : "Switch to Chat mode"}>
               <Terminal className="h-3.5 w-3.5" />
             </Button>
             <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setShowConfig(!showConfig)}>
@@ -1172,6 +1192,20 @@ export function ClaudeCodeWidget() {
             </div>
           )}
 
+          {/* Terminal mode */}
+          {mode === "terminal" ? (
+            <div className="flex-1 min-h-0">
+              <TerminalPanel
+                cwd={activeFolder}
+                command={terminalSessionId ? `claude --resume ${terminalSessionId}` : "claude"}
+                label="Claude CLI"
+                onClose={() => setMode("chat")}
+                className="h-full"
+                pasteRef={terminalPasteRef}
+              />
+            </div>
+          ) : (
+          <>
           {/* Messages */}
           <ScrollArea className="flex-1 px-4 py-3">
             {!connected ? (
@@ -1321,18 +1355,9 @@ export function ClaudeCodeWidget() {
               </div>
             </div>
           )}
+          </>
+          )}
         </div>
-        {showTerminal && (
-          <div className="w-[45%] border-l border-border shrink-0">
-            <TerminalPanel
-              cwd={activeFolder}
-              command={activeSessionId ? `claude --resume ${activeSessionId}` : "claude"}
-              label="Claude CLI"
-              onClose={() => setShowTerminal(false)}
-              className="h-full"
-            />
-          </div>
-        )}
       </div>
     </WidgetWrapper>
   );
