@@ -130,7 +130,10 @@ wss.on("connection", (ws, req) => {
             includePartialMessages: true,
           };
 
-          if (msg.model) options.model = msg.model;
+          if (msg.model) {
+            options.model = msg.model;
+            console.log(`[relay] Setting model to: ${msg.model}`);
+          }
           if (msg.sessionId) options.resume = msg.sessionId;
 
           let sessionId = msg.sessionId || null;
@@ -212,6 +215,7 @@ wss.on("connection", (ws, req) => {
           const sessions = await listSessions({
             dir: msg.dir || DEFAULT_CWD,
             limit: msg.limit || 50,
+            includeWorktrees: false,
           });
           console.log(`[relay] Found ${sessions.length} sessions`);
           send({ type: "sessions", sessions });
