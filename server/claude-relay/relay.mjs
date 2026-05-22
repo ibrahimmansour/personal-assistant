@@ -122,14 +122,6 @@ wss.on("connection", (ws, req) => {
           const cwd = msg.cwd || DEFAULT_CWD;
           console.log(`[relay] Query cwd: ${cwd}, model: ${msg.model || "default"}, sessionId: ${msg.sessionId || "new"}`);
 
-          // Set model via env var — this is the only reliable way to control model in the SDK
-          // The bundled CLI respects CLAUDE_MODEL env var (equivalent to --model flag)
-          if (msg.model) {
-            process.env.CLAUDE_MODEL = msg.model;
-            process.env.CLAUDE_CODE_SUBAGENT_MODEL = msg.model;
-            console.log(`[relay] Set CLAUDE_MODEL + CLAUDE_CODE_SUBAGENT_MODEL = ${msg.model}`);
-          }
-
           const options = {
             cwd,
             abortController,
@@ -139,7 +131,8 @@ wss.on("connection", (ws, req) => {
           };
 
           if (msg.model) {
-            options.model = msg.model; // Also pass it in options (may or may not work)
+            options.model = msg.model;
+            console.log(`[relay] Setting model to: ${msg.model}`);
           }
           if (msg.sessionId) options.resume = msg.sessionId;
 
