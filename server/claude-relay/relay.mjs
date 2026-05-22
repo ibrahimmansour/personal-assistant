@@ -326,33 +326,95 @@ wss.on("connection", (ws, req) => {
         }
 
         case "delete-sessions": {
-          // Delete session JSON files from ~/.claude/projects/<sanitized-cwd>/
+          // Delete session JSON files
           const dir = msg.dir || DEFAULT_CWD;
           const sessionIds = msg.sessionIds || [];
           if (!Array.isArray(sessionIds) || sessionIds.length === 0) {
             send({ type: "error", error: "Missing sessionIds array" });
             break;
           }
-          const { readdir, unlink } = await import("fs/promises");
+          const { readdir, unlink, stat } = await import("fs/promises");
           const { join } = await import("path");
           const { homedir } = await import("os");
-          // Claude stores sessions in ~/.claude/projects/<sanitized>/ where sanitized replaces / with -
-          const sanitized = dir.replace(/^\//, "").replace(/\//g, "-");
-          const sessionsDir = join(homedir(), ".claude", "projects", sanitized);
-          let deleted = 0;
+
+          // Claude stores sessions in ~/.claude/projects/<sanitized>/sessions/
+          // The sanitization varies — try multiple patterns to find the right dir
+          const home = homedir();
+          const claudeProjectsDir = join(home, ".claude", "projects");
+          let sessionsDir = null;
+
           try {
-            const files = await readdir(sessionsDir);
-            for (const id of sessionIds) {
-              // Session files are named <sessionId>.json
-              const filename = files.find(f => f.startsWith(id));
-              if (filename) {
-                await unlink(join(sessionsDir, filename));
-                deleted++;
+            const projectDirs = await readdir(claudeProjectsDir);
+            // Find the project dir that matches our cwd
+            // Claude uses various sanitization: replace / with -, or URL-encode, etc.
+            const sanitizations = [
+              dir.replace(/^\//, "").replace(/\//g, "-"),  // /home/user/foo -> home-user-foo
+              dir.replace(/\//g, "-").replace(/^-/, ""),    // same
+              encodeURIComponent(dir),                       // URL encoded
+              dir.replaceAll("/", "%2F"),                   // percent-encoded slashes
+            ];
+
+            for (const projDir of projectDirs) {
+              if (sanitizations.includes(projDir)) {
+                // Check if it has a sessions subdirectory or session files directly
+                const candidate = join(claudeProjectsDir, projDir);
+                try {
+                  const subItems = await readdir(candidate);
+                  if (subItems.includes("sessions")) {
+                    sessionsDir = join(candidate, "sessions");
+                  } else if (subItems.some(f => f.endsWith(".jsonl") || f.endsWith(".json"))) {
+                    sessionsDir = candidate;
+                  }
+                } catch {}
+                if (sessionsDir) break;
+              }
+            }
+
+            // Fallback: scan all project dirs for matching session IDs
+            if (!sessionsDir) {
+              for (const projDir of projectDirs) {
+                const candidate = join(claudeProjectsDir, projDir);
+                try {
+                  // Check sessions/ subdir first
+                  const sessSubDir = join(candidate, "sessions");
+                  const sessFiles = await readdir(sessSubDir).catch(() => null);
+                  if (sessFiles && sessFiles.some(f => sessionIds.some(id => f.includes(id)))) {
+                    sessionsDir = sessSubDir;
+                    break;
+                  }
+                  // Check top-level
+                  const topFiles = await readdir(candidate);
+                  if (topFiles.some(f => sessionIds.some(id => f.includes(id)))) {
+                    sessionsDir = candidate;
+                    break;
+                  }
+                } catch {}
               }
             }
           } catch (err) {
-            console.log(`[relay] delete-sessions dir scan failed: ${err.message}`);
+            console.log(`[relay] Could not read projects dir: ${err.message}`);
           }
+
+          let deleted = 0;
+          if (sessionsDir) {
+            console.log(`[relay] Found sessions dir: ${sessionsDir}`);
+            try {
+              const files = await readdir(sessionsDir);
+              for (const id of sessionIds) {
+                const filename = files.find(f => f.includes(id));
+                if (filename) {
+                  await unlink(join(sessionsDir, filename));
+                  deleted++;
+                  console.log(`[relay] Deleted session file: ${filename}`);
+                }
+              }
+            } catch (err) {
+              console.log(`[relay] delete error: ${err.message}`);
+            }
+          } else {
+            console.log(`[relay] Could not find sessions directory for cwd: ${dir}`);
+          }
+
           console.log(`[relay] Deleted ${deleted}/${sessionIds.length} sessions`);
           // Return refreshed session list
           const sessions = await listSessions({ dir, limit: 50, includeWorktrees: false });
