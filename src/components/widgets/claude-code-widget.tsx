@@ -14,6 +14,7 @@ import {
   X,
   Copy,
   ChevronDown,
+  ChevronRight,
   Wifi,
   WifiOff,
   Settings,
@@ -22,6 +23,13 @@ import {
   GitBranch,
   GitFork,
   Terminal,
+  Square,
+  FileCode,
+  Play,
+  AlertCircle,
+  Activity,
+  MessageSquare,
+  Zap,
 } from "lucide-react";
 import { TerminalPanel } from "@/components/terminal-panel";
 import { cn } from "@/lib/utils";
@@ -38,11 +46,28 @@ import {
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
+interface ToolCallBlock {
+  type: "tool_call";
+  id: string;
+  name: string;
+  input: Record<string, unknown>;
+  status?: "running" | "done" | "error";
+}
+
+interface TextBlock {
+  type: "text";
+  text: string;
+}
+
+type ContentBlock = TextBlock | ToolCallBlock;
+
 interface Message {
   id: string;
   role: "user" | "assistant";
   content: string;
+  blocks?: ContentBlock[];
   timestamp: string;
+  tokenCount?: number;
 }
 
 interface SessionInfo {
@@ -74,6 +99,8 @@ const MODELS = [
   { id: "haiku", label: "Haiku" },
 ];
 
+const MAX_CONTEXT_TOKENS = 200000; // Claude's context window
+
 // ─── Claude Icon ─────────────────────────────────────────────────────────────
 
 function ClaudeIcon({ className }: { className?: string }) {
@@ -84,6 +111,133 @@ function ClaudeIcon({ className }: { className?: string }) {
   );
 }
 
+// ─── Collapsible Tool Call Block ─────────────────────────────────────────────
+
+function ToolCallPill({ block }: { block: ToolCallBlock }) {
+  const [expanded, setExpanded] = useState(false);
+
+  const getToolIcon = (name: string) => {
+    if (name.includes("file") || name.includes("write") || name.includes("read") || name.includes("edit")) return <FileCode className="h-3 w-3" />;
+    if (name.includes("bash") || name.includes("exec") || name.includes("run")) return <Terminal className="h-3 w-3" />;
+    return <Zap className="h-3 w-3" />;
+  };
+
+  const getStatusColor = (status?: string) => {
+    if (status === "running") return "border-blue-500/50 bg-blue-500/5";
+    if (status === "error") return "border-destructive/50 bg-destructive/5";
+    return "border-border bg-muted/30";
+  };
+
+  // Extract relevant info from input
+  const getSummary = () => {
+    const input = block.input;
+    if (input.command) return String(input.command).slice(0, 80);
+    if (input.filePath || input.path) return String(input.filePath || input.path).split("/").pop();
+    if (input.pattern) return `pattern: ${input.pattern}`;
+    return block.name;
+  };
+
+  return (
+    <div className={cn("rounded-md border my-1.5 transition-colors", getStatusColor(block.status))}>
+      <div
+        className="flex items-center gap-2 px-2.5 py-1.5 cursor-pointer select-none"
+        onClick={() => setExpanded(!expanded)}
+      >
+        <ChevronRight className={cn("h-3 w-3 transition-transform shrink-0", expanded && "rotate-90")} />
+        {getToolIcon(block.name)}
+        <span className="text-xs font-medium">{block.name}</span>
+        <span className="text-[11px] text-muted-foreground truncate flex-1">{getSummary()}</span>
+        {block.status === "running" && <Loader2 className="h-3 w-3 animate-spin text-blue-500 shrink-0" />}
+        {block.status === "error" && <AlertCircle className="h-3 w-3 text-destructive shrink-0" />}
+        {block.status === "done" && <Check className="h-3 w-3 text-green-500 shrink-0" />}
+      </div>
+      {expanded && (
+        <div className="border-t border-border px-2.5 py-2">
+          <pre className="text-[11px] font-mono overflow-x-auto whitespace-pre-wrap text-muted-foreground max-h-48 overflow-y-auto">
+            {JSON.stringify(block.input, null, 2)}
+          </pre>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Inline Diff Renderer ────────────────────────────────────────────────────
+
+function DiffBlock({ content }: { content: string }) {
+  const lines = content.split("\n");
+  return (
+    <div className="rounded-md border border-border my-2 overflow-hidden text-[11px] font-mono">
+      {lines.map((line, i) => {
+        let bg = "";
+        let textColor = "";
+        if (line.startsWith("+") && !line.startsWith("+++")) {
+          bg = "bg-green-500/10";
+          textColor = "text-green-700 dark:text-green-400";
+        } else if (line.startsWith("-") && !line.startsWith("---")) {
+          bg = "bg-red-500/10";
+          textColor = "text-red-700 dark:text-red-400";
+        } else if (line.startsWith("@@")) {
+          bg = "bg-blue-500/10";
+          textColor = "text-blue-700 dark:text-blue-400";
+        }
+        return (
+          <div key={i} className={cn("px-2 py-0.5 leading-tight", bg, textColor)}>
+            {line || "\u00A0"}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Token Usage Bar ─────────────────────────────────────────────────────────
+
+function TokenBar({ used, max }: { used: number; max: number }) {
+  const pct = Math.min((used / max) * 100, 100);
+  const color = pct > 80 ? "bg-destructive" : pct > 60 ? "bg-yellow-500" : "bg-green-500";
+  return (
+    <div className="flex items-center gap-2 px-3 py-1 border-b border-border bg-muted/20">
+      <span className="text-[10px] text-muted-foreground shrink-0">Context</span>
+      <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+        <div className={cn("h-full rounded-full transition-all", color)} style={{ width: `${pct}%` }} />
+      </div>
+      <span className="text-[10px] text-muted-foreground shrink-0">
+        {Math.round(used / 1000)}k / {Math.round(max / 1000)}k
+      </span>
+    </div>
+  );
+}
+
+// ─── Activity Feed Item ──────────────────────────────────────────────────────
+
+function ActivityItem({ block }: { block: ToolCallBlock }) {
+  const getIcon = (name: string) => {
+    if (name.includes("file") || name.includes("write") || name.includes("edit")) return <FileCode className="h-3 w-3 text-blue-500" />;
+    if (name.includes("bash") || name.includes("exec")) return <Terminal className="h-3 w-3 text-purple-500" />;
+    if (name.includes("read") || name.includes("glob") || name.includes("grep")) return <FileCode className="h-3 w-3 text-muted-foreground" />;
+    return <Zap className="h-3 w-3 text-yellow-500" />;
+  };
+
+  const getSummary = () => {
+    const input = block.input;
+    if (input.command) return String(input.command).slice(0, 60);
+    if (input.filePath || input.path) return String(input.filePath || input.path);
+    if (input.pattern) return String(input.pattern);
+    return "";
+  };
+
+  return (
+    <div className="flex items-center gap-2 px-3 py-1.5 text-xs border-b border-border/50 last:border-0">
+      {getIcon(block.name)}
+      <span className="font-medium shrink-0">{block.name}</span>
+      <span className="text-muted-foreground truncate flex-1">{getSummary()}</span>
+      {block.status === "error" && <AlertCircle className="h-3 w-3 text-destructive shrink-0" />}
+      {block.status === "done" && <Check className="h-3 w-3 text-green-500/70 shrink-0" />}
+    </div>
+  );
+}
+
 // ─── Simple markdown renderer ────────────────────────────────────────────────
 
 function renderContent(content: string) {
@@ -91,17 +245,32 @@ function renderContent(content: string) {
   const elements: React.ReactNode[] = [];
   let inCodeBlock = false;
   let codeBuffer: string[] = [];
+  let inDiff = false;
+  let diffBuffer: string[] = [];
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
 
+    if (line.startsWith("```diff") || line.startsWith("```patch")) {
+      inDiff = true;
+      inCodeBlock = true;
+      diffBuffer = [];
+      continue;
+    }
+
     if (line.startsWith("```")) {
       if (inCodeBlock) {
-        elements.push(
-          <pre key={i} className="bg-muted rounded-md p-3 my-2 overflow-x-auto text-xs font-mono">
-            <code>{codeBuffer.join("\n")}</code>
-          </pre>
-        );
+        if (inDiff) {
+          elements.push(<DiffBlock key={i} content={diffBuffer.join("\n")} />);
+          diffBuffer = [];
+          inDiff = false;
+        } else {
+          elements.push(
+            <pre key={i} className="bg-muted rounded-md p-3 my-2 overflow-x-auto text-xs font-mono">
+              <code>{codeBuffer.join("\n")}</code>
+            </pre>
+          );
+        }
         codeBuffer = [];
         inCodeBlock = false;
       } else {
@@ -112,7 +281,11 @@ function renderContent(content: string) {
     }
 
     if (inCodeBlock) {
-      codeBuffer.push(line);
+      if (inDiff) {
+        diffBuffer.push(line);
+      } else {
+        codeBuffer.push(line);
+      }
       continue;
     }
 
@@ -137,11 +310,15 @@ function renderContent(content: string) {
   }
 
   if (inCodeBlock && codeBuffer.length > 0) {
-    elements.push(
-      <pre key="unclosed" className="bg-muted rounded-md p-3 my-2 overflow-x-auto text-xs font-mono">
-        <code>{codeBuffer.join("\n")}</code>
-      </pre>
-    );
+    if (inDiff) {
+      elements.push(<DiffBlock key="unclosed-diff" content={diffBuffer.join("\n")} />);
+    } else {
+      elements.push(
+        <pre key="unclosed" className="bg-muted rounded-md p-3 my-2 overflow-x-auto text-xs font-mono">
+          <code>{codeBuffer.join("\n")}</code>
+        </pre>
+      );
+    }
   }
 
   return <>{elements}</>;
@@ -182,16 +359,19 @@ export function ClaudeCodeWidget() {
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [tokenUsage, setTokenUsage] = useState(0);
 
   // UI state
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [streamingText, setStreamingText] = useState("");
+  const [streamingToolCalls, setStreamingToolCalls] = useState<ToolCallBlock[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [selectedModel, setSelectedModel] = useState(MODELS[0].id);
   const [error, setError] = useState<string | null>(null);
   const [showConfig, setShowConfig] = useState(false);
   const [mode, setMode] = useState<"chat" | "terminal">("chat");
+  const [viewMode, setViewMode] = useState<"chat" | "activity">("chat");
   const terminalPasteRef = useRef<((text: string) => void) | null>(null);
   const [terminalSessionId, setTerminalSessionId] = useState<string | null>(null);
   const [configUrl, setConfigUrl] = useState("");
@@ -219,10 +399,12 @@ export function ClaudeCodeWidget() {
   // Slash command state
   const [showSlashMenu, setShowSlashMenu] = useState(false);
   const [slashFilter, setSlashFilter] = useState("");
+  const [slashSelectedIdx, setSlashSelectedIdx] = useState(0);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const streamingTextRef = useRef("");
+  const streamingToolCallsRef = useRef<ToolCallBlock[]>([]);
   const activeFolderRef = useRef(activeFolder);
   const configsRef = useRef(configs);
   const activeConfigIdxRef = useRef(activeConfigIdx);
@@ -294,7 +476,7 @@ export function ClaudeCodeWidget() {
         el.scrollIntoView({ behavior: "smooth" });
       }
     }
-  }, [messages, streamingText]);
+  }, [messages, streamingText, streamingToolCalls]);
 
   // ─── WebSocket connection ──────────────────────────────────────────────────
 
@@ -344,16 +526,16 @@ export function ClaudeCodeWidget() {
 
       case "messages": {
         const sessionMessages = (msg.messages as Array<Record<string, unknown>>)|| [];
-        // Convert SDK messages to our format
+        // Convert SDK messages to our format with tool call blocks
         const converted: Message[] = [];
         for (const m of sessionMessages) {
           const mType = m.type as string;
           if (mType !== "user" && mType !== "assistant") continue;
           
           let textContent = "";
-          let hasToolUse = false;
           let hasToolResult = false;
           let hasUserText = false;
+          const blocks: ContentBlock[] = [];
             
             // Try message.content[] blocks (standard format)
             const rawMsg = m.message as { content?: unknown; role?: string } | undefined;
@@ -362,20 +544,23 @@ export function ClaudeCodeWidget() {
                 const b = block as Record<string, unknown>;
                 if (b.type === "text" && b.text) {
                   textContent += b.text;
+                  blocks.push({ type: "text", text: b.text as string });
                   if (mType === "user") hasUserText = true;
                 } else if (b.type === "tool_use") {
-                  hasToolUse = true;
-                  // Show tool calls as formatted blocks for assistant messages
-                  if (mType === "assistant") {
-                    textContent += `\n\`\`\`\nTool: ${b.name}\n${JSON.stringify(b.input, null, 2)}\n\`\`\`\n`;
-                  }
+                  blocks.push({
+                    type: "tool_call",
+                    id: (b.id as string) || Math.random().toString(36).slice(2),
+                    name: b.name as string,
+                    input: (b.input as Record<string, unknown>) || {},
+                    status: "done",
+                  });
                 } else if (b.type === "tool_result") {
                   hasToolResult = true;
                 }
               }
             } else if (rawMsg?.content && typeof rawMsg.content === "string") {
-              // CLI user messages have content as a plain string
               textContent = rawMsg.content;
+              blocks.push({ type: "text", text: rawMsg.content });
               if (mType === "user") hasUserText = true;
             }
             // Try message as array of content blocks directly (CLI user messages)
@@ -383,6 +568,7 @@ export function ClaudeCodeWidget() {
               for (const block of m.message as Array<Record<string, unknown>>) {
                 if (block.type === "text" && block.text) {
                   textContent += block.text;
+                  blocks.push({ type: "text", text: block.text as string });
                   if (mType === "user") hasUserText = true;
                 } else if (block.type === "tool_result") {
                   hasToolResult = true;
@@ -398,37 +584,29 @@ export function ClaudeCodeWidget() {
             // Try direct prompt field (user messages from CLI)
             if (!textContent && m.prompt) {
               textContent = m.prompt as string;
+              blocks.push({ type: "text", text: textContent });
             }
             
             // Try message as string directly
             if (!textContent && typeof m.message === "string") {
               textContent = m.message;
+              blocks.push({ type: "text", text: textContent });
             }
 
-            // Skip assistant messages that only have tool_use with no text explanation
-            if (mType === "assistant" && hasToolUse && !textContent.replace(/\n```\nTool:[\s\S]*?```\n/g, "").trim()) {
-              // Still show it but mark as tool call
-              if (textContent) {
-                converted.push({
-                  id: (m.uuid as string) || Math.random().toString(36).slice(2) + Date.now().toString(36),
-                  role: "assistant",
-                  content: textContent,
-                  timestamp: (m.timestamp as string) || new Date().toISOString(),
-                });
-              }
-              continue;
-            }
-
-            if (textContent) {
+            if (textContent || blocks.some(b => b.type === "tool_call")) {
               converted.push({
                 id: (m.uuid as string) || Math.random().toString(36).slice(2) + Date.now().toString(36),
                 role: mType as "user" | "assistant",
                 content: textContent,
+                blocks,
                 timestamp: (m.timestamp as string) || new Date().toISOString(),
               });
             }
         }
         setMessages(converted);
+        // Estimate token usage from message count (rough heuristic)
+        const totalChars = converted.reduce((sum, m) => sum + m.content.length, 0);
+        setTokenUsage(Math.round(totalChars / 4)); // ~4 chars per token
         break;
       }
 
@@ -445,31 +623,75 @@ export function ClaudeCodeWidget() {
               streamingTextRef.current += delta.text as string;
               setStreamingText(streamingTextRef.current);
             }
+          } else if (event?.type === "content_block_start") {
+            const contentBlock = event.content_block as Record<string, unknown>;
+            if (contentBlock?.type === "tool_use") {
+              const toolCall: ToolCallBlock = {
+                type: "tool_call",
+                id: (contentBlock.id as string) || Math.random().toString(36).slice(2),
+                name: contentBlock.name as string,
+                input: {},
+                status: "running",
+              };
+              streamingToolCallsRef.current = [...streamingToolCallsRef.current, toolCall];
+              setStreamingToolCalls([...streamingToolCallsRef.current]);
+            }
+          } else if (event?.type === "content_block_stop") {
+            // Mark last tool call as done
+            const calls = streamingToolCallsRef.current;
+            if (calls.length > 0) {
+              calls[calls.length - 1].status = "done";
+              streamingToolCallsRef.current = [...calls];
+              setStreamingToolCalls([...calls]);
+            }
           }
           // Capture session ID
           if (data.session_id && !activeSessionIdRef.current) {
             setActiveSessionId(data.session_id as string);
           }
+          // Update token usage from usage data if present
+          if (data.usage) {
+            const usage = data.usage as { input_tokens?: number; output_tokens?: number };
+            if (usage.input_tokens) setTokenUsage(usage.input_tokens + (usage.output_tokens || 0));
+          }
           break;
         }
         
         if (data?.type === "assistant") {
-          const assistantMsg = data.message as { content?: Array<{ type: string; text?: string }> } | undefined;
+          const assistantMsg = data.message as { content?: Array<{ type: string; text?: string; name?: string; input?: unknown; id?: string }> } | undefined;
           if (assistantMsg?.content) {
             let text = "";
+            const toolCalls: ToolCallBlock[] = [];
             for (const block of assistantMsg.content) {
               if (block.type === "text" && block.text) {
                 text += block.text;
+              } else if (block.type === "tool_use") {
+                toolCalls.push({
+                  type: "tool_call",
+                  id: block.id || Math.random().toString(36).slice(2),
+                  name: block.name || "tool",
+                  input: (block.input as Record<string, unknown>) || {},
+                  status: "done",
+                });
               }
             }
             if (text) {
               streamingTextRef.current = text;
               setStreamingText(text);
             }
+            if (toolCalls.length > 0) {
+              streamingToolCallsRef.current = toolCalls;
+              setStreamingToolCalls(toolCalls);
+            }
           }
           // Capture session ID
           if ((data as { session_id?: string }).session_id && !activeSessionIdRef.current) {
             setActiveSessionId((data as { session_id: string }).session_id);
+          }
+          // Update token usage
+          if ((data as { usage?: { input_tokens?: number; output_tokens?: number } }).usage) {
+            const usage = (data as { usage: { input_tokens?: number; output_tokens?: number } }).usage;
+            if (usage.input_tokens) setTokenUsage(usage.input_tokens + (usage.output_tokens || 0));
           }
         }
         break;
@@ -477,19 +699,27 @@ export function ClaudeCodeWidget() {
 
       case "done": {
         const finalText = streamingTextRef.current;
-        if (finalText) {
+        const finalToolCalls = streamingToolCallsRef.current;
+        const blocks: ContentBlock[] = [];
+        if (finalText) blocks.push({ type: "text", text: finalText });
+        blocks.push(...finalToolCalls);
+
+        if (finalText || finalToolCalls.length > 0) {
           setMessages((prev) => [
             ...prev,
             {
               id: Math.random().toString(36).slice(2) + Date.now().toString(36),
               role: "assistant",
               content: finalText,
+              blocks,
               timestamp: new Date().toISOString(),
             },
           ]);
         }
         setStreamingText("");
+        setStreamingToolCalls([]);
         streamingTextRef.current = "";
+        streamingToolCallsRef.current = [];
         setStreaming(false);
         if (msg.sessionId) setActiveSessionId(msg.sessionId as string);
         // Refresh session list
@@ -506,6 +736,10 @@ export function ClaudeCodeWidget() {
 
       case "aborted":
         setStreaming(false);
+        setStreamingText("");
+        setStreamingToolCalls([]);
+        streamingTextRef.current = "";
+        streamingToolCallsRef.current = [];
         break;
 
       case "renamed":
@@ -522,11 +756,9 @@ export function ClaudeCodeWidget() {
 
       case "worktree-added":
         setWorktrees((msg.worktrees as Worktree[]) || []);
-        // Switch to the new worktree folder and load its sessions
         if (msg.path) {
           const wtPath = msg.path as string;
           setActiveFolder(wtPath);
-          // Add to folders if not already there
           setFolders((prev) => {
             const updated = prev.includes(wtPath) ? prev : [...prev, wtPath];
             localStorage.setItem("claude-code-folders", JSON.stringify(updated));
@@ -560,12 +792,14 @@ export function ClaudeCodeWidget() {
     // Add user message locally
     setMessages((prev) => [
       ...prev,
-      { id: Math.random().toString(36).slice(2) + Date.now().toString(36), role: "user", content, timestamp: new Date().toISOString() },
+      { id: Math.random().toString(36).slice(2) + Date.now().toString(36), role: "user", content, blocks: [{ type: "text", text: content }], timestamp: new Date().toISOString() },
     ]);
 
     setStreaming(true);
     setStreamingText("");
+    setStreamingToolCalls([]);
     streamingTextRef.current = "";
+    streamingToolCallsRef.current = [];
 
     const config = configs[activeConfigIdx];
     ws.send(JSON.stringify({
@@ -614,7 +848,6 @@ export function ClaudeCodeWidget() {
       path: newWorktreePath,
       newBranch: newWorktreeBranch || undefined,
     }));
-    // Store label locally if provided
     if (newWorktreeLabel.trim()) {
       const labels = JSON.parse(localStorage.getItem("claude-code-worktree-labels") || "{}");
       labels[newWorktreePath] = newWorktreeLabel.trim();
@@ -643,15 +876,10 @@ export function ClaudeCodeWidget() {
   const loadSession = (sessionId: string) => {
     setActiveSessionId(sessionId);
     if (mode === "terminal") {
-      // Send Ctrl+C twice to exit current claude session, then clear and resume
       if (terminalPasteRef.current) {
-        terminalPasteRef.current("\x03\x03"); // Ctrl+C twice
-        setTimeout(() => {
-          terminalPasteRef.current?.("clear\n");
-        }, 500);
-        setTimeout(() => {
-          terminalPasteRef.current?.(`claude --resume ${sessionId}\n`);
-        }, 800);
+        terminalPasteRef.current("\x03\x03");
+        setTimeout(() => { terminalPasteRef.current?.("clear\n"); }, 500);
+        setTimeout(() => { terminalPasteRef.current?.(`claude --resume ${sessionId}\n`); }, 800);
       }
       setTerminalSessionId(sessionId);
       return;
@@ -668,6 +896,8 @@ export function ClaudeCodeWidget() {
     setActiveSessionId(null);
     setMessages([]);
     setStreamingText("");
+    setStreamingToolCalls([]);
+    setTokenUsage(0);
     inputRef.current?.focus();
   };
 
@@ -708,6 +938,16 @@ export function ClaudeCodeWidget() {
     navigator.clipboard.writeText(content);
   };
 
+  // ─── Cross-widget integration ─────────────────────────────────────────────
+  // Dispatch custom events that other widgets can listen for
+  const openFileInWidget = (filePath: string) => {
+    window.dispatchEvent(new CustomEvent("widget:open-file", { detail: { path: filePath } }));
+  };
+
+  const runInTerminalWidget = (command: string) => {
+    window.dispatchEvent(new CustomEvent("widget:run-command", { detail: { command } }));
+  };
+
   // Slash commands
   const SLASH_COMMANDS = [
     { cmd: "/clear", desc: "Clear current conversation", local: true },
@@ -728,12 +968,15 @@ export function ClaudeCodeWidget() {
     { cmd: "/vim", desc: "Toggle vim mode", local: false },
   ];
 
+  const filteredSlashCommands = SLASH_COMMANDS.filter((c) => c.cmd.includes("/" + slashFilter));
+
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const val = e.target.value;
     setInput(val);
     if (val.startsWith("/") && !val.includes(" ")) {
       setShowSlashMenu(true);
       setSlashFilter(val.slice(1));
+      setSlashSelectedIdx(0);
     } else {
       setShowSlashMenu(false);
     }
@@ -752,11 +995,13 @@ export function ClaudeCodeWidget() {
           id: Math.random().toString(36).slice(2) + Date.now().toString(36),
           role: "user",
           content: cmd,
+          blocks: [{ type: "text", text: cmd }],
           timestamp: new Date().toISOString(),
         }]);
         setStreaming(true);
         setStreamingText("");
         streamingTextRef.current = "";
+        streamingToolCallsRef.current = [];
         wsRef.current.send(JSON.stringify({
           type: "query",
           prompt: cmd,
@@ -773,12 +1018,13 @@ export function ClaudeCodeWidget() {
       case "/clear":
         setMessages([]);
         setStreamingText("");
+        setStreamingToolCalls([]);
+        setTokenUsage(0);
         break;
       case "/new":
         newSession();
         break;
       case "/model": {
-        // Cycle through models
         const idx = MODELS.findIndex((m) => m.id === selectedModel);
         const next = MODELS[(idx + 1) % MODELS.length];
         setSelectedModel(next.id);
@@ -786,6 +1032,7 @@ export function ClaudeCodeWidget() {
           id: Math.random().toString(36).slice(2) + Date.now().toString(36),
           role: "assistant",
           content: `Switched to ${next.label}`,
+          blocks: [{ type: "text", text: `Switched to ${next.label}` }],
           timestamp: new Date().toISOString(),
         }]);
         break;
@@ -795,6 +1042,7 @@ export function ClaudeCodeWidget() {
           id: Math.random().toString(36).slice(2) + Date.now().toString(36),
           role: "assistant",
           content: SLASH_COMMANDS.map((c) => `\`${c.cmd}\` — ${c.desc}`).join("\n"),
+          blocks: [{ type: "text", text: SLASH_COMMANDS.map((c) => `\`${c.cmd}\` — ${c.desc}`).join("\n") }],
           timestamp: new Date().toISOString(),
         }]);
         break;
@@ -802,23 +1050,32 @@ export function ClaudeCodeWidget() {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (showSlashMenu && e.key === "Tab") {
-      e.preventDefault();
-      const filtered = SLASH_COMMANDS.filter((c) => c.cmd.includes("/" + slashFilter));
-      if (filtered.length === 1) {
-        executeSlashCommand(filtered[0].cmd);
+    if (showSlashMenu) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setSlashSelectedIdx((prev) => Math.min(prev + 1, filteredSlashCommands.length - 1));
+        return;
       }
-      return;
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setSlashSelectedIdx((prev) => Math.max(prev - 1, 0));
+        return;
+      }
+      if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) {
+        e.preventDefault();
+        if (filteredSlashCommands.length > 0) {
+          executeSlashCommand(filteredSlashCommands[slashSelectedIdx]?.cmd || filteredSlashCommands[0].cmd);
+        }
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setShowSlashMenu(false);
+        return;
+      }
     }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      if (showSlashMenu) {
-        const filtered = SLASH_COMMANDS.filter((c) => c.cmd.includes("/" + slashFilter));
-        if (filtered.length > 0 && input.startsWith("/")) {
-          executeSlashCommand(filtered[0].cmd);
-          return;
-        }
-      }
       sendMessage();
     }
   };
@@ -832,6 +1089,12 @@ export function ClaudeCodeWidget() {
     if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
     return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
   };
+
+  // Collect all tool calls for activity feed
+  const allToolCalls: ToolCallBlock[] = [
+    ...messages.flatMap(m => (m.blocks || []).filter((b): b is ToolCallBlock => b.type === "tool_call")),
+    ...streamingToolCalls,
+  ];
 
   // ─── Render ────────────────────────────────────────────────────────────────
 
@@ -1016,7 +1279,6 @@ export function ClaudeCodeWidget() {
                       value={newWorktreeBranch}
                       onChange={(e) => {
                         setNewWorktreeBranch(e.target.value);
-                        // Auto-fill path from branch name if not manually edited
                         if (e.target.value && activeFolder) {
                           const parent = activeFolder.split("/").slice(0, -1).join("/");
                           setNewWorktreePath(`${parent}/${e.target.value}`);
@@ -1110,6 +1372,23 @@ export function ClaudeCodeWidget() {
                   : "Disconnected"}
               </span>
             </div>
+            {/* View mode toggle (Chat vs Activity Feed) */}
+            <div className="flex items-center rounded-md border border-input bg-background overflow-hidden">
+              <button
+                className={cn("px-2 h-7 text-xs flex items-center gap-1 transition-colors", viewMode === "chat" ? "bg-accent text-accent-foreground" : "hover:bg-muted")}
+                onClick={() => setViewMode("chat")}
+                title="Chat view"
+              >
+                <MessageSquare className="h-3 w-3" />
+              </button>
+              <button
+                className={cn("px-2 h-7 text-xs flex items-center gap-1 transition-colors border-l border-input", viewMode === "activity" ? "bg-accent text-accent-foreground" : "hover:bg-muted")}
+                onClick={() => setViewMode("activity")}
+                title="Activity feed"
+              >
+                <Activity className="h-3 w-3" />
+              </button>
+            </div>
             {/* Model selector */}
             <DropdownMenu>
               <DropdownMenuTrigger className="inline-flex shrink-0 items-center justify-center rounded-md border border-input bg-background px-2 h-7 text-xs gap-1 hover:bg-accent hover:text-accent-foreground">
@@ -1138,6 +1417,9 @@ export function ClaudeCodeWidget() {
               <Settings className="h-3.5 w-3.5" />
             </Button>
           </div>
+
+          {/* Token usage bar */}
+          {tokenUsage > 0 && <TokenBar used={tokenUsage} max={MAX_CONTEXT_TOKENS} />}
 
           {/* Config panel */}
           {showConfig && (
@@ -1204,7 +1486,25 @@ export function ClaudeCodeWidget() {
             </div>
           ) : (
           <>
-          {/* Messages */}
+          {/* Activity Feed View */}
+          {viewMode === "activity" ? (
+            <ScrollArea className="flex-1">
+              {allToolCalls.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full py-12">
+                  <Activity className="h-8 w-8 text-muted-foreground/50 mb-3" />
+                  <p className="text-xs text-muted-foreground">No activity yet</p>
+                </div>
+              ) : (
+                <div>
+                  {allToolCalls.map((tc, i) => (
+                    <ActivityItem key={tc.id + i} block={tc} />
+                  ))}
+                </div>
+              )}
+            </ScrollArea>
+          ) : (
+          <>
+          {/* Messages (Chat View) */}
           <ScrollArea className="flex-1 px-4 py-3">
             {!connected ? (
               <div className="flex flex-col items-center justify-center h-full text-center py-12">
@@ -1216,7 +1516,6 @@ export function ClaudeCodeWidget() {
                 <div className="flex gap-2">
                   <Button size="sm" onClick={async () => {
                     await fetch("/api/claude-code", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "start-relay" }) });
-                    // Wait a moment for relay to start, then retry connection
                     setTimeout(() => {
                       const cfgs = configsRef.current;
                       if (cfgs.length > 0) connectToRelay(cfgs[0]);
@@ -1260,28 +1559,81 @@ export function ClaudeCodeWidget() {
                           : "bg-muted"
                       )}
                     >
-                      {msg.role === "assistant" ? renderContent(msg.content) : <p className="whitespace-pre-wrap">{msg.content}</p>}
+                      {msg.role === "assistant" ? (
+                        <>
+                          {msg.blocks?.map((block, bi) => {
+                            if (block.type === "text") {
+                              return <div key={bi}>{renderContent(block.text)}</div>;
+                            }
+                            if (block.type === "tool_call") {
+                              return (
+                                <ToolCallPill key={block.id + bi} block={block} />
+                              );
+                            }
+                            return null;
+                          }) || renderContent(msg.content)}
+                        </>
+                      ) : (
+                        <p className="whitespace-pre-wrap">{msg.content}</p>
+                      )}
                       <div className="flex items-center gap-1 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
                         <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => copyMessage(msg.content)}>
                           <Copy className="h-3 w-3" />
                         </Button>
+                        {/* Cross-widget: open file paths in files widget */}
+                        {msg.blocks?.some(b => b.type === "tool_call" && (b.input.filePath || b.input.path)) && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-5 w-5"
+                            onClick={() => {
+                              const toolBlock = msg.blocks?.find(b => b.type === "tool_call" && (b.input.filePath || b.input.path)) as ToolCallBlock | undefined;
+                              if (toolBlock) openFileInWidget(String(toolBlock.input.filePath || toolBlock.input.path));
+                            }}
+                            title="Open in Files widget"
+                          >
+                            <FileCode className="h-3 w-3" />
+                          </Button>
+                        )}
+                        {/* Cross-widget: run command in terminal */}
+                        {msg.blocks?.some(b => b.type === "tool_call" && b.input.command) && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-5 w-5"
+                            onClick={() => {
+                              const toolBlock = msg.blocks?.find(b => b.type === "tool_call" && b.input.command) as ToolCallBlock | undefined;
+                              if (toolBlock) runInTerminalWidget(String(toolBlock.input.command));
+                            }}
+                            title="Run in Terminal widget"
+                          >
+                            <Play className="h-3 w-3" />
+                          </Button>
+                        )}
                       </div>
                     </div>
                   </div>
                 ))}
                 {/* Streaming */}
-                {streaming && streamingText && (
+                {streaming && (streamingText || streamingToolCalls.length > 0) && (
                   <div className="flex gap-3">
                     <div className="shrink-0 h-7 w-7 rounded-full flex items-center justify-center bg-muted">
                       <ClaudeIcon className="h-4 w-4" />
                     </div>
                     <div className="max-w-[85%] rounded-lg px-3 py-2 text-sm bg-muted">
-                      {renderContent(streamingText)}
-                      <span className="inline-block w-1.5 h-4 bg-foreground/70 animate-pulse ml-0.5" />
+                      {streamingText && (
+                        <>
+                          {renderContent(streamingText)}
+                          <span className="inline-block w-1.5 h-4 bg-foreground/70 animate-pulse ml-0.5" />
+                        </>
+                      )}
+                      {streamingToolCalls.map((tc, i) => (
+                        <ToolCallPill key={tc.id + i} block={tc} />
+                      ))}
                     </div>
                   </div>
                 )}
-                {streaming && !streamingText && (
+                {streaming && !streamingText && streamingToolCalls.length === 0 && (
                   <div className="flex gap-3">
                     <div className="shrink-0 h-7 w-7 rounded-full flex items-center justify-center bg-muted">
                       <ClaudeIcon className="h-4 w-4" />
@@ -1295,6 +1647,8 @@ export function ClaudeCodeWidget() {
               </div>
             )}
           </ScrollArea>
+          </>
+          )}
 
           {/* Error */}
           {error && (
@@ -1309,28 +1663,33 @@ export function ClaudeCodeWidget() {
           {/* Input */}
           {connected && (
             <div className="p-3 border-t border-border shrink-0 relative">
-              {/* Slash command menu */}
-              {showSlashMenu && (
-                <div className="absolute bottom-full left-3 right-3 mb-1 rounded-md border border-border bg-popover shadow-md z-10 max-h-40 overflow-y-auto">
-                  {SLASH_COMMANDS
-                    .filter((c) => c.cmd.includes("/" + slashFilter))
-                    .map((c) => (
-                      <div
-                        key={c.cmd}
-                        className="px-3 py-1.5 text-xs cursor-pointer hover:bg-accent flex justify-between items-center"
-                        onClick={() => executeSlashCommand(c.cmd)}
-                      >
-                        <span className="font-mono font-medium">{c.cmd}</span>
-                        <span className="text-muted-foreground ml-2">{c.desc}</span>
+              {/* Slash command autocomplete menu */}
+              {showSlashMenu && filteredSlashCommands.length > 0 && (
+                <div className="absolute bottom-full left-3 right-3 mb-1 rounded-md border border-border bg-popover shadow-lg z-10 max-h-52 overflow-y-auto">
+                  {filteredSlashCommands.map((c, i) => (
+                    <div
+                      key={c.cmd}
+                      className={cn(
+                        "px-3 py-2 text-xs cursor-pointer flex justify-between items-center gap-3",
+                        i === slashSelectedIdx ? "bg-accent text-accent-foreground" : "hover:bg-muted"
+                      )}
+                      onClick={() => executeSlashCommand(c.cmd)}
+                      onMouseEnter={() => setSlashSelectedIdx(i)}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono font-semibold text-foreground">{c.cmd}</span>
+                        {c.local && <span className="text-[9px] bg-muted px-1 rounded text-muted-foreground">local</span>}
                       </div>
-                    ))}
+                      <span className="text-muted-foreground text-[11px]">{c.desc}</span>
+                    </div>
+                  ))}
                 </div>
               )}
               <div className="flex gap-2 items-end">
                 <textarea
                   ref={inputRef}
                   className="flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring min-h-[38px] max-h-[120px]"
-                  placeholder={activeFolder ? "Ask Claude... (/ for commands)" : "Select a folder first..."}
+                  placeholder={activeFolder ? "Ask Claude... (/ for commands, Shift+Enter for newline)" : "Select a folder first..."}
                   value={input}
                   onChange={(e) => {
                     handleInputChange(e);
@@ -1342,8 +1701,8 @@ export function ClaudeCodeWidget() {
                   disabled={streaming}
                 />
                 {streaming ? (
-                  <Button size="icon" variant="destructive" className="h-9 w-9 shrink-0" onClick={abortQuery}>
-                    <X className="h-4 w-4" />
+                  <Button size="icon" variant="destructive" className="h-9 w-9 shrink-0" onClick={abortQuery} title="Stop generation (Esc)">
+                    <Square className="h-4 w-4" />
                   </Button>
                 ) : (
                   <Button size="icon" className="h-9 w-9 shrink-0" onClick={sendMessage} disabled={!input.trim()}>
