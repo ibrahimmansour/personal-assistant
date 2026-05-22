@@ -1067,10 +1067,23 @@ export function ClaudeCodeWidget() {
                 <p className="text-xs text-muted-foreground mb-4">
                   Configure a relay server connection to start using Claude Code.
                 </p>
-                <Button size="sm" onClick={() => setShowConfig(true)} className="gap-1.5">
-                  <Settings className="h-3.5 w-3.5" />
-                  Configure
-                </Button>
+                <div className="flex gap-2">
+                  <Button size="sm" onClick={async () => {
+                    await fetch("/api/claude-code", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "start-relay" }) });
+                    // Wait a moment for relay to start, then retry connection
+                    setTimeout(() => {
+                      const cfgs = configsRef.current;
+                      if (cfgs.length > 0) connectToRelay(cfgs[0]);
+                    }, 1500);
+                  }} className="gap-1.5" variant="default">
+                    <Wifi className="h-3.5 w-3.5" />
+                    Start Relay
+                  </Button>
+                  <Button size="sm" onClick={() => setShowConfig(true)} className="gap-1.5" variant="outline">
+                    <Settings className="h-3.5 w-3.5" />
+                    Configure
+                  </Button>
+                </div>
               </div>
             ) : messages.length === 0 && !streaming ? (
               <div className="flex flex-col items-center justify-center h-full text-center py-12">

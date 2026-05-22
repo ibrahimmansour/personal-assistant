@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { readFile, writeFile, mkdir, readdir, unlink } from "fs/promises";
 import { join } from "path";
 import { homedir } from "os";
+import { spawn, execSync } from "child_process";
 
 export const dynamic = "force-dynamic";
 
@@ -79,6 +80,19 @@ export async function POST(request: NextRequest) {
       configs.splice(body.index, 1);
       await saveConfig(configs);
       return Response.json({ configs });
+    }
+
+    case "start-relay": {
+      // Kill any existing relay on port 4446, then start fresh
+      try { execSync("fuser -k 4446/tcp", { stdio: "pipe" }); } catch { /* nothing running */ }
+      const relayPath = join(homedir(), ".personal-assistant", "bin", "server", "claude-relay", "relay.mjs");
+      const child = spawn("node", [relayPath], {
+        env: { ...process.env, PORT: "4446" },
+        stdio: "ignore",
+        detached: true,
+      });
+      child.unref();
+      return Response.json({ success: true, message: "Relay server started on port 4446" });
     }
 
     default:
