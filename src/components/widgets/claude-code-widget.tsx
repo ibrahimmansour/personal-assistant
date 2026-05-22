@@ -360,6 +360,17 @@ export function ClaudeCodeWidget() {
                 }
               }
             }
+            // Try message as array of content blocks directly (CLI user messages)
+            if (!textContent && Array.isArray(m.message)) {
+              for (const block of m.message as Array<Record<string, unknown>>) {
+                if (block.type === "text" && block.text) {
+                  textContent += block.text;
+                  if (mType === "user") hasUserText = true;
+                } else if (block.type === "tool_result") {
+                  hasToolResult = true;
+                }
+              }
+            }
             
             // For user messages that only contain tool_result blocks, skip them
             if (mType === "user" && hasToolResult && !hasUserText) {

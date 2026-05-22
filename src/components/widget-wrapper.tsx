@@ -284,7 +284,7 @@ export function WidgetWrapper({
             {/* Expanded content — split view when sidePanel or splitWidget is active */}
             <div className={cn(
               "relative z-10 w-full h-full max-h-[90vh] flex gap-3",
-              hasSplit ? "max-w-[95vw]" : "max-w-5xl"
+              hasSplit ? "max-w-[95vw]" : "max-w-[90vw]"
             )}>
               {/* Main card */}
               <Card

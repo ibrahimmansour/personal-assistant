@@ -221,6 +221,9 @@ wss.on("connection", (ws, req) => {
           const filtered = messages.filter(m => 
             (m.type === "user" || m.type === "assistant") && !m.parent_tool_use_id
           );
+          // Debug: log first user message structure
+          const firstUser = filtered.find(m => m.type === "user");
+          if (firstUser) console.log("[relay] Sample user message structure:", JSON.stringify(firstUser, null, 2).slice(0, 500));
           send({ type: "messages", messages: filtered, sessionId: msg.sessionId });
           break;
         }
