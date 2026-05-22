@@ -883,15 +883,30 @@ export function ClaudeCodeWidget() {
   const switchToWorktree = (wt: Worktree) => {
     setActiveFolder(wt.path);
     setShowWorktreePanel(false);
+    // In terminal mode, navigate to the new worktree path
+    if (mode === "terminal" && terminalPasteRef.current) {
+      terminalPasteRef.current("\x03\x03"); // Kill current claude session
+      setTimeout(() => { terminalPasteRef.current?.("\x03\n"); }, 300); // Extra Ctrl+C + newline to ensure prompt
+      setTimeout(() => { terminalPasteRef.current?.(`cd ${wt.path}\n`); }, 1200);
+      setTimeout(() => { terminalPasteRef.current?.("clear\n"); }, 1600);
+    }
   };
 
   const loadSession = (sessionId: string) => {
     setActiveSessionId(sessionId);
     if (mode === "terminal") {
       if (terminalPasteRef.current) {
-        terminalPasteRef.current("\x03\x03");
-        setTimeout(() => { terminalPasteRef.current?.("clear\n"); }, 500);
-        setTimeout(() => { terminalPasteRef.current?.(`claude --resume ${sessionId}\n`); }, 800);
+        const dir = activeFolder || configs[activeConfigIdx]?.defaultCwd || "";
+        // Step 1: Kill current claude CLI session (Ctrl+C x3 + newline to ensure we get shell prompt back)
+        terminalPasteRef.current("\x03\x03\x03");
+        // Step 2: Wait for CLI to fully exit and shell prompt to appear
+        setTimeout(() => { terminalPasteRef.current?.("\n"); }, 600);
+        // Step 3: Navigate to correct directory
+        setTimeout(() => { terminalPasteRef.current?.(`cd ${dir}\n`); }, 1200);
+        // Step 4: Clear terminal
+        setTimeout(() => { terminalPasteRef.current?.("clear\n"); }, 1800);
+        // Step 5: Resume session in the correct directory
+        setTimeout(() => { terminalPasteRef.current?.(`claude --resume ${sessionId}\n`); }, 2200);
       }
       setTerminalSessionId(sessionId);
       return;
