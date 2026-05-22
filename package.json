@@ -18,6 +18,7 @@
     "start": "NODE_TLS_REJECT_UNAUTHORIZED=0 node server/pty-server.mjs & node server/claude-relay/relay.mjs & NODE_TLS_REJECT_UNAUTHORIZED=0 next start --port 4444",
     "postinstall": "chmod +x node_modules/node-pty/prebuilds/darwin-arm64/spawn-helper 2>/dev/null || true",
     "lint": "eslint",
+    "release": "npm version patch --no-git-tag-force && git push && git push origin v$(node -p \"require('./package.json').version\")",
     "build:binary": "node scripts/build-binary.mjs",
     "build:binary:all": "node scripts/build-binary.mjs --all"
   },
