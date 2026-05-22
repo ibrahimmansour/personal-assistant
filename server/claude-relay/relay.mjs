@@ -211,14 +211,17 @@ wss.on("connection", (ws, req) => {
         }
 
         case "list-sessions": {
-          console.log(`[relay] list-sessions dir: ${msg.dir || DEFAULT_CWD}`);
+          const dir = msg.dir || DEFAULT_CWD;
+          console.log(`[relay] list-sessions dir: ${dir}`);
           const sessions = await listSessions({
-            dir: msg.dir || DEFAULT_CWD,
+            dir,
             limit: msg.limit || 50,
             includeWorktrees: false,
           });
-          console.log(`[relay] Found ${sessions.length} sessions`);
-          send({ type: "sessions", sessions });
+          // Filter sessions to only those matching the exact dir (worktree support)
+          const filtered = sessions.filter(s => !s.cwd || s.cwd === dir);
+          console.log(`[relay] Found ${sessions.length} sessions, ${filtered.length} after dir filter`);
+          send({ type: "sessions", sessions: filtered });
           break;
         }
 

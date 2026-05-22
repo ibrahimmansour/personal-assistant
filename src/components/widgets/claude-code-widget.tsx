@@ -637,23 +637,21 @@ export function ClaudeCodeWidget() {
 
   const switchToWorktree = (wt: Worktree) => {
     setActiveFolder(wt.path);
-    setFolders((prev) => {
-      const updated = prev.includes(wt.path) ? prev : [...prev, wt.path];
-      localStorage.setItem("claude-code-folders", JSON.stringify(updated));
-      return updated;
-    });
     setShowWorktreePanel(false);
   };
 
   const loadSession = (sessionId: string) => {
     setActiveSessionId(sessionId);
     if (mode === "terminal") {
-      // In terminal mode, send Ctrl+C then resume command
+      // Send Ctrl+C twice to exit current claude session, then clear and resume
       if (terminalPasteRef.current) {
-        terminalPasteRef.current("\x03"); // Ctrl+C
+        terminalPasteRef.current("\x03\x03"); // Ctrl+C twice
+        setTimeout(() => {
+          terminalPasteRef.current?.("clear\n");
+        }, 500);
         setTimeout(() => {
           terminalPasteRef.current?.(`claude --resume ${sessionId}\n`);
-        }, 300);
+        }, 800);
       }
       setTerminalSessionId(sessionId);
       return;
