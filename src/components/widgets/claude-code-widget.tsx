@@ -94,9 +94,9 @@ interface Worktree {
 }
 
 const MODELS = [
-  { id: "sonnet", label: "Sonnet" },
-  { id: "opus", label: "Opus" },
-  { id: "haiku", label: "Haiku" },
+  { id: "claude-sonnet-4-20250514", label: "Sonnet 4" },
+  { id: "claude-opus-4-20250115", label: "Opus 4" },
+  { id: "claude-haiku-3-5-20241022", label: "Haiku 3.5" },
 ];
 
 const MAX_CONTEXT_TOKENS = 200000; // Claude's context window
