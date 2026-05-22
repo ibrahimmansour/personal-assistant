@@ -325,6 +325,42 @@ wss.on("connection", (ws, req) => {
           break;
         }
 
+        case "delete-sessions": {
+          // Delete session JSON files from ~/.claude/projects/<sanitized-cwd>/
+          const dir = msg.dir || DEFAULT_CWD;
+          const sessionIds = msg.sessionIds || [];
+          if (!Array.isArray(sessionIds) || sessionIds.length === 0) {
+            send({ type: "error", error: "Missing sessionIds array" });
+            break;
+          }
+          const { readdir, unlink } = await import("fs/promises");
+          const { join } = await import("path");
+          const { homedir } = await import("os");
+          // Claude stores sessions in ~/.claude/projects/<sanitized>/ where sanitized replaces / with -
+          const sanitized = dir.replace(/^\//, "").replace(/\//g, "-");
+          const sessionsDir = join(homedir(), ".claude", "projects", sanitized);
+          let deleted = 0;
+          try {
+            const files = await readdir(sessionsDir);
+            for (const id of sessionIds) {
+              // Session files are named <sessionId>.json
+              const filename = files.find(f => f.startsWith(id));
+              if (filename) {
+                await unlink(join(sessionsDir, filename));
+                deleted++;
+              }
+            }
+          } catch (err) {
+            console.log(`[relay] delete-sessions dir scan failed: ${err.message}`);
+          }
+          console.log(`[relay] Deleted ${deleted}/${sessionIds.length} sessions`);
+          // Return refreshed session list
+          const sessions = await listSessions({ dir, limit: 50, includeWorktrees: false });
+          const filtered = sessions.filter(s => !s.cwd || s.cwd === dir);
+          send({ type: "sessions-deleted", deleted, sessions: filtered });
+          break;
+        }
+
         default:
           send({ type: "error", error: `Unknown message type: ${msg.type}` });
       }

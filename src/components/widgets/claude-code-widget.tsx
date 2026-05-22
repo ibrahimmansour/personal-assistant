@@ -30,6 +30,7 @@ import {
   Activity,
   MessageSquare,
   Zap,
+  RefreshCw,
 } from "lucide-react";
 import { TerminalPanel } from "@/components/terminal-panel";
 import { cn } from "@/lib/utils";
@@ -401,7 +402,12 @@ export function ClaudeCodeWidget() {
   const [slashFilter, setSlashFilter] = useState("");
   const [slashSelectedIdx, setSlashSelectedIdx] = useState(0);
 
+  // Bulk delete state
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedSessions, setSelectedSessions] = useState<Set<string>>(new Set());
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const chatScrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const streamingTextRef = useRef("");
   const streamingToolCallsRef = useRef<ToolCallBlock[]>([]);
@@ -465,16 +471,11 @@ export function ClaudeCodeWidget() {
     setMessages([]);
   }, [activeFolder, connected]);
 
-  // Auto-scroll
+  // Auto-scroll chat area
   useEffect(() => {
-    const el = messagesEndRef.current;
-    if (el) {
-      const scrollContainer = el.closest("[data-radix-scroll-area-viewport]");
-      if (scrollContainer) {
-        scrollContainer.scrollTop = scrollContainer.scrollHeight;
-      } else {
-        el.scrollIntoView({ behavior: "smooth" });
-      }
+    const container = chatScrollRef.current;
+    if (container) {
+      container.scrollTop = container.scrollHeight;
     }
   }, [messages, streamingText, streamingToolCalls]);
 
@@ -774,6 +775,17 @@ export function ClaudeCodeWidget() {
 
       case "branches":
         setBranches((msg.branches as string[]) || []);
+        break;
+
+      case "sessions-deleted":
+        setSessions((msg.sessions as SessionInfo[]) || []);
+        setSelectedSessions(new Set());
+        setSelectMode(false);
+        // If active session was deleted, clear it
+        if (activeSessionId && (msg.sessionIds as string[] || []).includes(activeSessionId)) {
+          setActiveSessionId(null);
+          setMessages([]);
+        }
         break;
     }
   }, [configs, activeConfigIdx, activeSessionId]);
@@ -1273,15 +1285,45 @@ export function ClaudeCodeWidget() {
                     </div>
                   )}
                   <div className="space-y-1 pt-1 border-t border-border">
+                    {/* Branch picker with create-new option */}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger className="w-full flex items-center gap-1.5 rounded-md border border-input bg-background px-2 h-6 text-xs hover:bg-accent hover:text-accent-foreground">
+                        <GitBranch className="h-3 w-3 shrink-0 text-muted-foreground" />
+                        <span className="flex-1 truncate text-left">{newWorktreeBranch || "Select or create branch..."}</span>
+                        <ChevronDown className="h-3 w-3 shrink-0" />
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start" className="w-48 max-h-40 overflow-y-auto">
+                        {branches.map((b) => (
+                          <DropdownMenuItem
+                            key={b}
+                            onClick={() => {
+                              setNewWorktreeBranch(b);
+                              if (activeFolder) {
+                                const parent = activeFolder.split("/").slice(0, -1).join("/");
+                                setNewWorktreePath(`${parent}/${b.replace(/\//g, "-")}`);
+                              }
+                            }}
+                          >
+                            <GitBranch className="h-3 w-3 mr-1.5" />
+                            <span className="truncate">{b}</span>
+                          </DropdownMenuItem>
+                        ))}
+                        {branches.length > 0 && <div className="border-t border-border my-1" />}
+                        <DropdownMenuItem onClick={() => inputRef.current?.focus()} className="text-muted-foreground">
+                          <Plus className="h-3 w-3 mr-1.5" />
+                          Create new branch...
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                     <Input
                       className="h-6 text-xs"
-                      placeholder="Branch name"
+                      placeholder="New branch name (or picked above)"
                       value={newWorktreeBranch}
                       onChange={(e) => {
                         setNewWorktreeBranch(e.target.value);
                         if (e.target.value && activeFolder) {
                           const parent = activeFolder.split("/").slice(0, -1).join("/");
-                          setNewWorktreePath(`${parent}/${e.target.value}`);
+                          setNewWorktreePath(`${parent}/${e.target.value.replace(/\//g, "-")}`);
                         }
                       }}
                     />
@@ -1314,12 +1356,61 @@ export function ClaudeCodeWidget() {
             <div className="p-2 border-b border-border flex items-center justify-between">
               <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Sessions</span>
               <div className="flex gap-1">
-                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={newSession} title="New session">
-                  <Plus className="h-3.5 w-3.5" />
-                </Button>
-                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setSidebarOpen(false)}>
-                  <PanelLeftClose className="h-3.5 w-3.5" />
-                </Button>
+                {selectMode ? (
+                  <>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 text-destructive"
+                      onClick={() => {
+                        if (selectedSessions.size > 0 && wsRef.current?.readyState === WebSocket.OPEN) {
+                          wsRef.current.send(JSON.stringify({
+                            type: "delete-sessions",
+                            sessionIds: Array.from(selectedSessions),
+                            dir: activeFolder || configs[activeConfigIdx]?.defaultCwd,
+                          }));
+                        }
+                      }}
+                      disabled={selectedSessions.size === 0}
+                      title={`Delete ${selectedSessions.size} session(s)`}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6"
+                      onClick={() => {
+                        // Select all / deselect all
+                        if (selectedSessions.size === sessions.length) {
+                          setSelectedSessions(new Set());
+                        } else {
+                          setSelectedSessions(new Set(sessions.map(s => s.sessionId)));
+                        }
+                      }}
+                      title="Select all"
+                    >
+                      <Check className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => { setSelectMode(false); setSelectedSessions(new Set()); }} title="Cancel">
+                      <X className="h-3.5 w-3.5" />
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={newSession} title="New session">
+                      <Plus className="h-3.5 w-3.5" />
+                    </Button>
+                    {sessions.length > 0 && (
+                      <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setSelectMode(true)} title="Select sessions to delete">
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setSidebarOpen(false)}>
+                      <PanelLeftClose className="h-3.5 w-3.5" />
+                    </Button>
+                  </>
+                )}
               </div>
             </div>
             <ScrollArea className="flex-1">
@@ -1329,17 +1420,42 @@ export function ClaudeCodeWidget() {
                     key={s.sessionId}
                     className={cn(
                       "group relative rounded-md px-2.5 py-2 cursor-pointer text-xs transition-colors",
-                      activeSessionId === s.sessionId
-                        ? "bg-accent text-accent-foreground"
-                        : "hover:bg-muted"
+                      selectMode && selectedSessions.has(s.sessionId)
+                        ? "bg-destructive/10 border border-destructive/30"
+                        : activeSessionId === s.sessionId
+                          ? "bg-accent text-accent-foreground"
+                          : "hover:bg-muted"
                     )}
-                    onClick={() => loadSession(s.sessionId)}
+                    onClick={() => {
+                      if (selectMode) {
+                        setSelectedSessions(prev => {
+                          const next = new Set(prev);
+                          if (next.has(s.sessionId)) next.delete(s.sessionId);
+                          else next.add(s.sessionId);
+                          return next;
+                        });
+                      } else {
+                        loadSession(s.sessionId);
+                      }
+                    }}
                   >
-                    <div className="font-medium truncate pr-6">
-                      {s.summary || s.firstPrompt?.slice(0, 40) || "Untitled"}
-                    </div>
-                    <div className="text-muted-foreground mt-0.5">
-                      {formatTime(s.lastModified)}
+                    <div className="flex items-center gap-2">
+                      {selectMode && (
+                        <div className={cn(
+                          "w-3.5 h-3.5 rounded border shrink-0 flex items-center justify-center",
+                          selectedSessions.has(s.sessionId) ? "bg-destructive border-destructive" : "border-muted-foreground/40"
+                        )}>
+                          {selectedSessions.has(s.sessionId) && <Check className="h-2.5 w-2.5 text-destructive-foreground" />}
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium truncate">
+                          {s.summary || s.firstPrompt?.slice(0, 40) || "Untitled"}
+                        </div>
+                        <div className="text-muted-foreground mt-0.5">
+                          {formatTime(s.lastModified)}
+                        </div>
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -1372,6 +1488,24 @@ export function ClaudeCodeWidget() {
                   : "Disconnected"}
               </span>
             </div>
+            {/* Refresh session button */}
+            {activeSessionId && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={() => {
+                  wsRef.current?.send(JSON.stringify({
+                    type: "get-messages",
+                    sessionId: activeSessionId,
+                    dir: activeFolder || configs[activeConfigIdx]?.defaultCwd,
+                  }));
+                }}
+                title="Refresh session messages"
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+              </Button>
+            )}
             {/* View mode toggle (Chat vs Activity Feed) */}
             <div className="flex items-center rounded-md border border-input bg-background overflow-hidden">
               <button
@@ -1505,7 +1639,7 @@ export function ClaudeCodeWidget() {
           ) : (
           <>
           {/* Messages (Chat View) */}
-          <ScrollArea className="flex-1 px-4 py-3">
+          <div ref={chatScrollRef} className="flex-1 px-4 py-3 overflow-y-auto">
             {!connected ? (
               <div className="flex flex-col items-center justify-center h-full text-center py-12">
                 <WifiOff className="h-10 w-10 text-muted-foreground/50 mb-4" />
@@ -1646,7 +1780,7 @@ export function ClaudeCodeWidget() {
                 <div ref={messagesEndRef} />
               </div>
             )}
-          </ScrollArea>
+          </div>
           </>
           )}
 
