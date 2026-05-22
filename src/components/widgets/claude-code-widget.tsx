@@ -202,12 +202,16 @@ export function ClaudeCodeWidget() {
   const [activeFolder, setActiveFolder] = useState<string>("");
   const [showFolderInput, setShowFolderInput] = useState(false);
   const [newFolderPath, setNewFolderPath] = useState("");
+  const [browsingPath, setBrowsingPath] = useState<string>("");
+  const [browseDirs, setBrowseDirs] = useState<{ name: string; path: string }[]>([]);
+  const [browseLoading, setBrowseLoading] = useState(false);
   
   // Worktree state
   const [worktrees, setWorktrees] = useState<Worktree[]>([]);
   const [showWorktreePanel, setShowWorktreePanel] = useState(false);
   const [newWorktreeBranch, setNewWorktreeBranch] = useState("");
   const [newWorktreePath, setNewWorktreePath] = useState("");
+  const [newWorktreeLabel, setNewWorktreeLabel] = useState("");
   const [branches, setBranches] = useState<string[]>([]);
   
   // Slash command state
@@ -334,11 +338,12 @@ export function ClaudeCodeWidget() {
         const converted: Message[] = [];
         for (const m of sessionMessages) {
           const mType = m.type as string;
-          if (mType === "user" || mType === "assistant") {
-            let textContent = "";
-            let hasToolUse = false;
-            let hasToolResult = false;
-            let hasUserText = false;
+          if (mType !== "user" && mType !== "assistant") continue;
+          
+          let textContent = "";
+          let hasToolUse = false;
+          let hasToolResult = false;
+          let hasUserText = false;
             
             // Try message.content[] blocks (standard format)
             const rawMsg = m.message as { content?: unknown; role?: string } | undefined;
@@ -362,12 +367,6 @@ export function ClaudeCodeWidget() {
               // CLI user messages have content as a plain string
               textContent = rawMsg.content;
               if (mType === "user") hasUserText = true;
-            }
-                } else if (b.type === "tool_result") {
-                  hasToolResult = true;
-                  // Skip tool results entirely — they're internal API responses
-                }
-              }
             }
             // Try message as array of content blocks directly (CLI user messages)
             if (!textContent && Array.isArray(m.message)) {
@@ -418,7 +417,6 @@ export function ClaudeCodeWidget() {
                 timestamp: (m.timestamp as string) || new Date().toISOString(),
               });
             }
-          }
         }
         setMessages(converted);
         break;
@@ -573,6 +571,23 @@ export function ClaudeCodeWidget() {
     wsRef.current?.send(JSON.stringify({ type: "abort" }));
   };
 
+  const browseFolders = async (dir: string) => {
+    setBrowseLoading(true);
+    try {
+      const res = await fetch(`/api/files?path=${encodeURIComponent(dir)}`);
+      if (res.ok) {
+        const data = await res.json();
+        const dirs = (data.files || [])
+          .filter((f: { isDirectory: boolean }) => f.isDirectory)
+          .map((f: { name: string; path: string }) => ({ name: f.name, path: f.path }))
+          .sort((a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name));
+        setBrowseDirs(dirs);
+        setBrowsingPath(dir);
+      }
+    } catch { /* ignore */ }
+    setBrowseLoading(false);
+  };
+
   const fetchWorktrees = () => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
     wsRef.current.send(JSON.stringify({ type: "list-worktrees", dir: activeFolder || configs[activeConfigIdx]?.defaultCwd }));
@@ -588,8 +603,15 @@ export function ClaudeCodeWidget() {
       path: newWorktreePath,
       newBranch: newWorktreeBranch || undefined,
     }));
+    // Store label locally if provided
+    if (newWorktreeLabel.trim()) {
+      const labels = JSON.parse(localStorage.getItem("claude-code-worktree-labels") || "{}");
+      labels[newWorktreePath] = newWorktreeLabel.trim();
+      localStorage.setItem("claude-code-worktree-labels", JSON.stringify(labels));
+    }
     setNewWorktreePath("");
     setNewWorktreeBranch("");
+    setNewWorktreeLabel("");
   };
 
   const removeWorktree = (path: string) => {
@@ -839,42 +861,81 @@ export function ClaudeCodeWidget() {
                 </DropdownMenu>
               )}
               {showFolderInput && (
-                <div className="flex gap-1 mt-1.5">
-                  <Input
-                    className="h-6 text-xs flex-1"
-                    placeholder="/path/to/project"
-                    value={newFolderPath}
-                    onChange={(e) => setNewFolderPath(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && newFolderPath.trim()) {
-                        const path = newFolderPath.trim();
-                        const updated = [...folders.filter((f) => f !== path), path];
-                        setFolders(updated);
-                        setActiveFolder(path);
-                        localStorage.setItem("claude-code-folders", JSON.stringify(updated));
-                        setNewFolderPath("");
-                        setShowFolderInput(false);
-                      }
-                    }}
-                  />
+                <div className="mt-1.5 space-y-1">
+                  <div className="flex gap-1">
+                    <Input
+                      className="h-6 text-xs flex-1"
+                      placeholder="/path/to/project"
+                      value={newFolderPath}
+                      onChange={(e) => setNewFolderPath(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && newFolderPath.trim()) {
+                          const path = newFolderPath.trim();
+                          const updated = [...folders.filter((f) => f !== path), path];
+                          setFolders(updated);
+                          setActiveFolder(path);
+                          localStorage.setItem("claude-code-folders", JSON.stringify(updated));
+                          setNewFolderPath("");
+                          setShowFolderInput(false);
+                          setBrowseDirs([]);
+                        }
+                      }}
+                    />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 shrink-0"
+                      onClick={() => {
+                        if (newFolderPath.trim()) {
+                          const path = newFolderPath.trim();
+                          const updated = [...folders.filter((f) => f !== path), path];
+                          setFolders(updated);
+                          setActiveFolder(path);
+                          localStorage.setItem("claude-code-folders", JSON.stringify(updated));
+                          setNewFolderPath("");
+                          setShowFolderInput(false);
+                          setBrowseDirs([]);
+                        }
+                      }}
+                    >
+                      <Check className="h-3 w-3" />
+                    </Button>
+                  </div>
+                  {/* Browse button */}
                   <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6 shrink-0"
-                    onClick={() => {
-                      if (newFolderPath.trim()) {
-                        const path = newFolderPath.trim();
-                        const updated = [...folders.filter((f) => f !== path), path];
-                        setFolders(updated);
-                        setActiveFolder(path);
-                        localStorage.setItem("claude-code-folders", JSON.stringify(updated));
-                        setNewFolderPath("");
-                        setShowFolderInput(false);
-                      }
-                    }}
+                    variant="outline"
+                    size="sm"
+                    className="h-6 text-[10px] w-full"
+                    onClick={() => browseFolders(newFolderPath || "/home")}
                   >
-                    <Check className="h-3 w-3" />
+                    <FolderOpen className="h-3 w-3 mr-1" />
+                    Browse
                   </Button>
+                  {/* Directory browser */}
+                  {browseDirs.length > 0 && (
+                    <div className="border border-border rounded max-h-40 overflow-y-auto">
+                      {browsingPath !== "/" && (
+                        <div
+                          className="flex items-center gap-1 text-[11px] px-1.5 py-1 hover:bg-muted cursor-pointer border-b border-border"
+                          onClick={() => browseFolders(browsingPath.split("/").slice(0, -1).join("/") || "/")}
+                        >
+                          <span className="text-muted-foreground">..</span>
+                          <span className="text-[10px] text-muted-foreground ml-auto truncate">{browsingPath}</span>
+                        </div>
+                      )}
+                      {browseDirs.map((d) => (
+                        <div
+                          key={d.path}
+                          className="flex items-center gap-1 text-[11px] px-1.5 py-1 hover:bg-muted cursor-pointer"
+                          onClick={() => { setNewFolderPath(d.path); browseFolders(d.path); }}
+                        >
+                          <FolderOpen className="h-3 w-3 shrink-0 text-muted-foreground" />
+                          <span className="truncate">{d.name}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {browseLoading && <p className="text-[10px] text-muted-foreground">Loading...</p>}
                 </div>
               )}
             </div>
@@ -899,7 +960,10 @@ export function ClaudeCodeWidget() {
                 <div className="space-y-1.5">
                   {worktrees.length > 0 && (
                     <div className="space-y-0.5 max-h-32 overflow-y-auto">
-                      {worktrees.map((wt) => (
+                      {worktrees.map((wt) => {
+                        const labels = JSON.parse(localStorage.getItem("claude-code-worktree-labels") || "{}");
+                        const label = labels[wt.path];
+                        return (
                         <div
                           key={wt.path}
                           className={cn(
@@ -909,7 +973,7 @@ export function ClaudeCodeWidget() {
                           onClick={() => switchToWorktree(wt)}
                         >
                           <GitBranch className="h-3 w-3 shrink-0 text-muted-foreground" />
-                          <span className="flex-1 truncate">{wt.branch || wt.path.split("/").pop()}</span>
+                          <span className="flex-1 truncate">{label || wt.branch || wt.path.split("/").pop()}</span>
                           {!wt.bare && worktrees.length > 1 && (
                             <Button
                               variant="ghost"
@@ -921,21 +985,35 @@ export function ClaudeCodeWidget() {
                             </Button>
                           )}
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                   <div className="space-y-1 pt-1 border-t border-border">
                     <Input
                       className="h-6 text-xs"
-                      placeholder="Path (e.g. ../my-feature)"
+                      placeholder="Branch name"
+                      value={newWorktreeBranch}
+                      onChange={(e) => {
+                        setNewWorktreeBranch(e.target.value);
+                        // Auto-fill path from branch name if not manually edited
+                        if (e.target.value && activeFolder) {
+                          const parent = activeFolder.split("/").slice(0, -1).join("/");
+                          setNewWorktreePath(`${parent}/${e.target.value}`);
+                        }
+                      }}
+                    />
+                    <Input
+                      className="h-6 text-xs"
+                      placeholder="Path (auto-filled from branch)"
                       value={newWorktreePath}
                       onChange={(e) => setNewWorktreePath(e.target.value)}
                     />
                     <Input
                       className="h-6 text-xs"
-                      placeholder="New branch name (optional)"
-                      value={newWorktreeBranch}
-                      onChange={(e) => setNewWorktreeBranch(e.target.value)}
+                      placeholder="Label (optional)"
+                      value={newWorktreeLabel}
+                      onChange={(e) => setNewWorktreeLabel(e.target.value)}
                     />
                     <Button
                       size="sm"
