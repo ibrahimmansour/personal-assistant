@@ -433,6 +433,10 @@ export function ClaudeCodeWidget() {
   const configsRef = useRef(configs);
   const activeConfigIdxRef = useRef(activeConfigIdx);
   const activeSessionIdRef = useRef(activeSessionId);
+  // The requestId of the query that the current view is waiting for a sessionId on.
+  // Used to disambiguate "view this pending session" from "view a different pending session"
+  // when multiple new sessions are running concurrently.
+  const currentPendingRequestIdRef = useRef<string | null>(null);
 
   // Keep refs in sync
   activeFolderRef.current = activeFolder;
@@ -578,9 +582,12 @@ export function ClaudeCodeWidget() {
             sessionStreamsRef.current.delete(oldKey);
           }
           requestIdToSessionRef.current.set(reqId, realSessId);
-          // If the user was viewing this pending session, switch to the real ID
-          if (activeSessionIdRef.current === oldKey || activeSessionIdRef.current === null) {
+          // Only auto-switch the view if this requestId is the one the current
+          // view is waiting for (i.e. the user clicked "new session" and sent
+          // a prompt — they expect to see this session, not some other parallel one)
+          if (currentPendingRequestIdRef.current === reqId && activeSessionIdRef.current === null) {
             setActiveSessionId(realSessId);
+            currentPendingRequestIdRef.current = null;
           }
         }
         setBackgroundSessions(new Set(sessionStreamsRef.current.keys()));
@@ -685,7 +692,13 @@ export function ClaudeCodeWidget() {
         const data = msg.data as Record<string, unknown>;
         const reqId = msg.requestId as string | undefined;
         const sessKey = (msg.sessionId as string) || (reqId ? requestIdToSessionRef.current.get(reqId) : null);
-        const isViewingThisSession = sessKey && (sessKey === activeSessionIdRef.current || (activeSessionIdRef.current === null && sessKey.startsWith("pending:")));
+        // A message is "viewable" only if:
+        //   - the session matches the active sessionId, OR
+        //   - we're on a fresh new-session view AND this requestId is the one we're awaiting
+        const isViewingThisSession = sessKey && (
+          sessKey === activeSessionIdRef.current ||
+          (activeSessionIdRef.current === null && reqId === currentPendingRequestIdRef.current)
+        );
 
         // Get or create per-session stream
         let stream = sessKey ? sessionStreamsRef.current.get(sessKey) : null;
@@ -819,7 +832,10 @@ export function ClaudeCodeWidget() {
         const reqId = msg.requestId as string | undefined;
         const sessKey = (msg.sessionId as string) || (reqId ? requestIdToSessionRef.current.get(reqId) : null);
         const stream = sessKey ? sessionStreamsRef.current.get(sessKey) : null;
-        const isViewingThisSession = sessKey && (sessKey === activeSessionIdRef.current);
+        const isViewingThisSession = sessKey && (
+          sessKey === activeSessionIdRef.current ||
+          (activeSessionIdRef.current === null && reqId === currentPendingRequestIdRef.current)
+        );
 
         // Use blocks from per-session stream if available
         const finalBlocks = stream?.blocks.length
@@ -1030,6 +1046,11 @@ export function ClaudeCodeWidget() {
     // If resuming an isolated session, force isolated=true so the relay finds the right HOME
     const activeSessInfo = activeSessionId ? sessions.find(s => s.sessionId === activeSessionId) : null;
     const useIsolated = isolatedMode || activeSessInfo?.isolated === true;
+    // Track this requestId as the current pending one (so we know which "new session"
+    // stream belongs to the current view when multiple new sessions are streaming).
+    if (!activeSessionId) {
+      currentPendingRequestIdRef.current = requestId;
+    }
     ws.send(JSON.stringify({
       type: "query",
       requestId,
@@ -1115,6 +1136,7 @@ export function ClaudeCodeWidget() {
   const loadSession = (sessionId: string) => {
     // DON'T abort - let other sessions continue streaming in background
     setActiveSessionId(sessionId);
+    currentPendingRequestIdRef.current = null;
 
     // Restore the streaming state for this session if it has one running
     const stream = sessionStreamsRef.current.get(sessionId);
@@ -1168,6 +1190,7 @@ export function ClaudeCodeWidget() {
     streamingTextRef.current = "";
     streamingToolCallsRef.current = [];
     streamingBlocksRef.current = [];
+    currentPendingRequestIdRef.current = null;
     setStreaming(false);
     setTokenUsage(0);
     inputRef.current?.focus();
