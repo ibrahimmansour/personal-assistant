@@ -878,20 +878,49 @@ export function ClaudeCodeWidget() {
         break;
       }
 
-      case "error":
-        setError(msg.error as string);
-        setStreaming(false);
+      case "error": {
+        const reqId = msg.requestId as string | undefined;
+        const sessKey = reqId ? requestIdToSessionRef.current.get(reqId) : null;
+        const isViewingThisSession = sessKey && sessKey === activeSessionIdRef.current;
+        // Clean up the per-session stream
+        if (sessKey) {
+          sessionStreamsRef.current.delete(sessKey);
+          if (reqId) requestIdToSessionRef.current.delete(reqId);
+          setBackgroundSessions(new Set(sessionStreamsRef.current.keys()));
+        }
+        // Only show error if user is viewing this session OR it's a generic error
+        if (isViewingThisSession || !sessKey) {
+          setError(msg.error as string);
+          setStreaming(false);
+        } else {
+          // Background session errored — show a less intrusive notification
+          console.warn(`[claude-code] Background session ${sessKey} errored:`, msg.error);
+        }
         break;
+      }
 
-      case "aborted":
-        setStreaming(false);
-        setStreamingText("");
-        setStreamingToolCalls([]);
-        setStreamingBlocks([]);
-        streamingTextRef.current = "";
-        streamingToolCallsRef.current = [];
-        streamingBlocksRef.current = [];
+      case "aborted": {
+        const reqId = msg.requestId as string | undefined;
+        const sessKey = (msg.sessionId as string) || (reqId ? requestIdToSessionRef.current.get(reqId) : null);
+        const isViewingThisSession = sessKey && sessKey === activeSessionIdRef.current;
+        // Clean up the per-session stream
+        if (sessKey) {
+          sessionStreamsRef.current.delete(sessKey);
+          if (reqId) requestIdToSessionRef.current.delete(reqId);
+          setBackgroundSessions(new Set(sessionStreamsRef.current.keys()));
+        }
+        // Only clear UI state if viewing the aborted session
+        if (isViewingThisSession || !sessKey) {
+          setStreaming(false);
+          setStreamingText("");
+          setStreamingToolCalls([]);
+          setStreamingBlocks([]);
+          streamingTextRef.current = "";
+          streamingToolCallsRef.current = [];
+          streamingBlocksRef.current = [];
+        }
         break;
+      }
 
       case "renamed":
         setSessions((prev) =>
@@ -948,6 +977,29 @@ export function ClaudeCodeWidget() {
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
 
     const content = input.trim();
+    const targetCwd = activeFolder || configs[activeConfigIdx]?.defaultCwd;
+
+    // Warn if there's already a session running in this cwd (Claude CLI doesn't
+    // handle two parallel sessions in the same working directory well — they
+    // can abort each other or corrupt session state)
+    let hasConflict = false;
+    for (const [sid, stream] of sessionStreamsRef.current.entries()) {
+      if (stream.streaming && sid !== activeSessionId) {
+        // Check if the conflicting session shares the same cwd
+        const s = sessions.find(x => x.sessionId === sid);
+        if (s?.cwd === targetCwd || (!s?.cwd && targetCwd === activeFolder)) {
+          hasConflict = true;
+          break;
+        }
+      }
+    }
+    if (hasConflict) {
+      const ok = window.confirm(
+        "Another session is already running in this folder. Running parallel sessions in the same folder can cause them to abort each other or corrupt session state.\n\nUse a git worktree for true parallel sessions.\n\nContinue anyway?"
+      );
+      if (!ok) return;
+    }
+
     setInput("");
     setError(null);
 
@@ -965,14 +1017,13 @@ export function ClaudeCodeWidget() {
     streamingToolCallsRef.current = [];
     streamingBlocksRef.current = [];
 
-    const config = configs[activeConfigIdx];
     const requestId = `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     ws.send(JSON.stringify({
       type: "query",
       requestId,
       prompt: content,
       sessionId: activeSessionId || undefined,
-      cwd: activeFolder || config?.defaultCwd,
+      cwd: targetCwd,
       model: selectedModel,
     }));
   };
