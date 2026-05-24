@@ -119,11 +119,56 @@ wss.on("connection", (ws, req) => {
           const abortController = new AbortController();
 
           const cwd = msg.cwd || DEFAULT_CWD;
-          console.log(`[relay] Query [${requestId}] cwd: ${cwd}, model: ${msg.model || "default"}, sessionId: ${msg.sessionId || "new"}`);
+          const isolated = msg.isolated === true;
+          console.log(`[relay] Query [${requestId}] cwd: ${cwd}, model: ${msg.model || "default"}, sessionId: ${msg.sessionId || "new"}, isolated: ${isolated}`);
+
+          // Build per-query env. By default inherit process.env.
+          const queryEnv = { ...process.env };
+          let isolatedHomeDir = null;
+
+          // ── Isolated mode ─────────────────────────────────────────
+          // When enabled, each query gets its own HOME directory so the bundled
+          // CLI writes session state to a private ~/.claude/projects/ tree,
+          // preventing two parallel sessions in the same cwd from corrupting
+          // each other's session files.
+          //
+          // We symlink ~/.claude.json (auth credentials) and ~/.claude/CLAUDE.md
+          // (user memory) into the isolated HOME so the agent stays authenticated
+          // and respects user-level config, but ~/.claude/projects/ stays private.
+          if (isolated) {
+            const { mkdirSync, symlinkSync, existsSync, readlinkSync } = await import("fs");
+            const { join } = await import("path");
+            const { homedir } = await import("os");
+            const realHome = homedir();
+            // Use a stable, sessionId-derived path when resuming so subsequent
+            // turns of the same session reuse the same HOME (and thus the same
+            // session log).
+            const isolationKey = msg.sessionId || `${requestId}`;
+            isolatedHomeDir = join("/tmp", "claude-isolated-homes", isolationKey);
+
+            mkdirSync(isolatedHomeDir, { recursive: true });
+            mkdirSync(join(isolatedHomeDir, ".claude"), { recursive: true });
+
+            // Symlink critical auth/config files from real HOME so we don't
+            // lose authentication
+            const linkIfMissing = (src, dest) => {
+              if (existsSync(src) && !existsSync(dest)) {
+                try { symlinkSync(src, dest); } catch {}
+              }
+            };
+            linkIfMissing(join(realHome, ".claude.json"), join(isolatedHomeDir, ".claude.json"));
+            linkIfMissing(join(realHome, ".claude", "CLAUDE.md"), join(isolatedHomeDir, ".claude", "CLAUDE.md"));
+            linkIfMissing(join(realHome, ".claude", "settings.json"), join(isolatedHomeDir, ".claude", "settings.json"));
+            // Note: NOT symlinking ~/.claude/projects/ — that's the whole point of isolation
+
+            queryEnv.HOME = isolatedHomeDir;
+            console.log(`[relay] [${requestId}] Isolated HOME: ${isolatedHomeDir}`);
+          }
 
           const options = {
             cwd,
             abortController,
+            env: queryEnv,
             permissionMode: "bypassPermissions",
             allowDangerouslySkipPermissions: true,
             includePartialMessages: true,
@@ -138,7 +183,7 @@ wss.on("connection", (ws, req) => {
           let sessionId = msg.sessionId || null;
 
           // Register the query so it can be aborted independently
-          activeQueries.set(requestId, { instance: null, abortController, sessionId });
+          activeQueries.set(requestId, { instance: null, abortController, sessionId, isolatedHomeDir });
 
           // Tell the client which requestId this query has so it can route messages
           send({ type: "query-started", requestId, sessionId });
@@ -244,14 +289,56 @@ wss.on("connection", (ws, req) => {
         case "list-sessions": {
           const dir = msg.dir || DEFAULT_CWD;
           console.log(`[relay] list-sessions dir: ${dir}`);
+
+          // 1. List sessions from main HOME
           const sessions = await listSessions({
             dir,
             limit: msg.limit || 50,
             includeWorktrees: false,
           });
-          // Filter sessions to only those matching the exact dir (worktree support)
           const filtered = sessions.filter(s => !s.cwd || s.cwd === dir);
-          console.log(`[relay] Found ${sessions.length} sessions, ${filtered.length} after dir filter`);
+
+          // 2. Also scan isolated HOMEs for sessions in this cwd
+          const isolatedSessions = [];
+          try {
+            const { readdir, stat } = await import("fs/promises");
+            const { join } = await import("path");
+            const isolatedRoot = "/tmp/claude-isolated-homes";
+            const entries = await readdir(isolatedRoot).catch(() => []);
+            for (const entry of entries) {
+              const isoHome = join(isolatedRoot, entry);
+              try {
+                // Temporarily set HOME so listSessions reads from this isolated dir
+                const originalHome = process.env.HOME;
+                process.env.HOME = isoHome;
+                const isoSessions = await listSessions({
+                  dir,
+                  limit: msg.limit || 50,
+                  includeWorktrees: false,
+                });
+                process.env.HOME = originalHome;
+                for (const s of isoSessions) {
+                  if (!s.cwd || s.cwd === dir) {
+                    isolatedSessions.push({ ...s, isolated: true, isolatedHome: isoHome });
+                  }
+                }
+              } catch {}
+            }
+          } catch {}
+
+          // Merge and dedupe by sessionId
+          const seen = new Set(filtered.map(s => s.sessionId));
+          for (const s of isolatedSessions) {
+            if (!seen.has(s.sessionId)) {
+              filtered.push(s);
+              seen.add(s.sessionId);
+            }
+          }
+
+          // Sort by lastModified desc
+          filtered.sort((a, b) => (b.lastModified || 0) - (a.lastModified || 0));
+
+          console.log(`[relay] Found ${sessions.length} main + ${isolatedSessions.length} isolated, ${filtered.length} total after dir filter`);
           send({ type: "sessions", sessions: filtered });
           break;
         }
@@ -261,17 +348,24 @@ wss.on("connection", (ws, req) => {
             send({ type: "error", error: "Missing sessionId" });
             break;
           }
-          const messages = await getSessionMessages(msg.sessionId, {
-            dir: msg.dir || DEFAULT_CWD,
-            limit: msg.limit || 500,
-          });
+          // If isolatedHome is provided, temporarily set HOME to read from there
+          const originalHome = process.env.HOME;
+          if (msg.isolatedHome) {
+            process.env.HOME = msg.isolatedHome;
+          }
+          let messages;
+          try {
+            messages = await getSessionMessages(msg.sessionId, {
+              dir: msg.dir || DEFAULT_CWD,
+              limit: msg.limit || 500,
+            });
+          } finally {
+            if (msg.isolatedHome) process.env.HOME = originalHome;
+          }
           // Filter out system messages and parent_tool_use sub-messages for cleaner display
           const filtered = messages.filter(m => 
             (m.type === "user" || m.type === "assistant") && !m.parent_tool_use_id
           );
-          // Debug: log first user message structure
-          const firstUser = filtered.find(m => m.type === "user");
-          if (firstUser) console.log("[relay] Sample user message structure:", JSON.stringify(firstUser, null, 2).slice(0, 500));
           send({ type: "messages", messages: filtered, sessionId: msg.sessionId });
           break;
         }

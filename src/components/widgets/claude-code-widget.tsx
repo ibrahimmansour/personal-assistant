@@ -31,6 +31,7 @@ import {
   MessageSquare,
   Zap,
   RefreshCw,
+  Shield,
 } from "lucide-react";
 import { TerminalPanel } from "@/components/terminal-panel";
 import { cn } from "@/lib/utils";
@@ -77,6 +78,8 @@ interface SessionInfo {
   lastModified: number;
   firstPrompt?: string;
   cwd?: string;
+  isolated?: boolean;
+  isolatedHome?: string;
 }
 
 interface RelayConfig {
@@ -382,6 +385,7 @@ export function ClaudeCodeWidget() {
   const [backgroundSessions, setBackgroundSessions] = useState<Set<string>>(new Set());
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [selectedModel, setSelectedModel] = useState(MODELS[0].id);
+  const [isolatedMode, setIsolatedMode] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showConfig, setShowConfig] = useState(false);
   const [mode, setMode] = useState<"chat" | "terminal">("chat");
@@ -446,6 +450,9 @@ export function ClaudeCodeWidget() {
         setFolders(parsed);
         if (parsed.length > 0) setActiveFolder(parsed[0]);
       }
+      // Load isolated mode preference
+      const isoMode = localStorage.getItem("claude-code-isolated-mode");
+      if (isoMode === "true") setIsolatedMode(true);
     } catch {}
 
     fetch("/api/claude-code")
@@ -981,21 +988,23 @@ export function ClaudeCodeWidget() {
 
     // Warn if there's already a session running in this cwd (Claude CLI doesn't
     // handle two parallel sessions in the same working directory well — they
-    // can abort each other or corrupt session state)
+    // can abort each other or corrupt session state). Skip warning if isolated
+    // mode is on (each session gets its own HOME = its own session storage).
     let hasConflict = false;
-    for (const [sid, stream] of sessionStreamsRef.current.entries()) {
-      if (stream.streaming && sid !== activeSessionId) {
-        // Check if the conflicting session shares the same cwd
-        const s = sessions.find(x => x.sessionId === sid);
-        if (s?.cwd === targetCwd || (!s?.cwd && targetCwd === activeFolder)) {
-          hasConflict = true;
-          break;
+    if (!isolatedMode) {
+      for (const [sid, stream] of sessionStreamsRef.current.entries()) {
+        if (stream.streaming && sid !== activeSessionId) {
+          const s = sessions.find(x => x.sessionId === sid);
+          if (s?.cwd === targetCwd || (!s?.cwd && targetCwd === activeFolder)) {
+            hasConflict = true;
+            break;
+          }
         }
       }
     }
     if (hasConflict) {
       const ok = window.confirm(
-        "Another session is already running in this folder. Running parallel sessions in the same folder can cause them to abort each other or corrupt session state.\n\nUse a git worktree for true parallel sessions.\n\nContinue anyway?"
+        "Another session is already running in this folder. Running parallel sessions in the same folder can cause them to abort each other or corrupt session state.\n\nEnable Isolated Mode (in the toolbar) for safe parallel sessions in the same folder.\n\nContinue anyway?"
       );
       if (!ok) return;
     }
@@ -1025,6 +1034,7 @@ export function ClaudeCodeWidget() {
       sessionId: activeSessionId || undefined,
       cwd: targetCwd,
       model: selectedModel,
+      isolated: isolatedMode,
     }));
   };
 
@@ -1135,10 +1145,13 @@ export function ClaudeCodeWidget() {
       return;
     }
     setMessages([]);
+    // Look up isolated home if this session was created in isolated mode
+    const sessInfo = sessions.find(s => s.sessionId === sessionId);
     wsRef.current?.send(JSON.stringify({
       type: "get-messages",
       sessionId,
       dir: activeFolder || configs[activeConfigIdx]?.defaultCwd,
+      isolatedHome: sessInfo?.isolatedHome,
     }));
   };
 
@@ -1268,6 +1281,7 @@ export function ClaudeCodeWidget() {
           sessionId: activeSessionId || undefined,
           cwd: activeFolder || configs[activeConfigIdx]?.defaultCwd,
           model: selectedModel,
+          isolated: isolatedMode,
         }));
       }
       return;
@@ -1713,6 +1727,7 @@ export function ClaudeCodeWidget() {
                       )}
                       <div className="flex-1 min-w-0">
                         <div className="font-medium truncate flex items-center gap-1">
+                          {s.isolated && <Shield className="h-3 w-3 shrink-0 text-blue-500" />}
                           <span className="truncate">{s.summary || s.firstPrompt?.slice(0, 40) || "Untitled"}</span>
                           {backgroundSessions.has(s.sessionId) && (
                             <Loader2 className="h-3 w-3 animate-spin text-blue-500 shrink-0" />
@@ -1772,6 +1787,20 @@ export function ClaudeCodeWidget() {
                 <RefreshCw className="h-3.5 w-3.5" />
               </Button>
             )}
+            {/* Isolated mode toggle */}
+            <Button
+              variant="ghost"
+              size="icon"
+              className={cn("h-7 w-7", isolatedMode && "bg-accent text-accent-foreground")}
+              onClick={() => {
+                const next = !isolatedMode;
+                setIsolatedMode(next);
+                localStorage.setItem("claude-code-isolated-mode", String(next));
+              }}
+              title={isolatedMode ? "Isolated mode ON: parallel sessions safe in same folder" : "Isolated mode OFF: only one session per folder"}
+            >
+              <Shield className="h-3.5 w-3.5" />
+            </Button>
             {/* View mode toggle (Chat vs Activity Feed) */}
             <div className="flex items-center rounded-md border border-input bg-background overflow-hidden">
               <button
