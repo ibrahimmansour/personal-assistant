@@ -90,8 +90,9 @@ wss.on("connection", (ws, req) => {
 
   console.log("Client connected");
 
-  let activeAbortController = null;
-  let activeQuery = null;
+  // Map of active queries by requestId — supports parallel sessions
+  // Key: requestId (provisional UUID), value: { instance, abortController, sessionId }
+  const activeQueries = new Map();
 
   function send(msg) {
     if (ws.readyState === ws.OPEN) {
@@ -111,16 +112,14 @@ wss.on("connection", (ws, req) => {
     try {
       switch (msg.type) {
         case "query": {
-          // Abort any previous active query
-          if (activeAbortController) {
-            activeAbortController.abort();
-          }
+          // Each query gets its own requestId so we can route messages back
+          // and abort independently. Multiple queries can run in parallel.
+          const requestId = msg.requestId || `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
           const abortController = new AbortController();
-          activeAbortController = abortController;
 
           const cwd = msg.cwd || DEFAULT_CWD;
-          console.log(`[relay] Query cwd: ${cwd}, model: ${msg.model || "default"}, sessionId: ${msg.sessionId || "new"}`);
+          console.log(`[relay] Query [${requestId}] cwd: ${cwd}, model: ${msg.model || "default"}, sessionId: ${msg.sessionId || "new"}`);
 
           const options = {
             cwd,
@@ -132,15 +131,22 @@ wss.on("connection", (ws, req) => {
 
           if (msg.model) {
             options.model = msg.model;
-            console.log(`[relay] Setting model to: ${msg.model}`);
+            console.log(`[relay] [${requestId}] Setting model to: ${msg.model}`);
           }
           if (msg.sessionId) options.resume = msg.sessionId;
 
           let sessionId = msg.sessionId || null;
 
+          // Register the query so it can be aborted independently
+          activeQueries.set(requestId, { instance: null, abortController, sessionId });
+
+          // Tell the client which requestId this query has so it can route messages
+          send({ type: "query-started", requestId, sessionId });
+
           try {
             const q = query({ prompt: msg.prompt, options });
-            activeQuery = q;
+            const entry = activeQueries.get(requestId);
+            if (entry) entry.instance = q;
 
             let lastSendTime = 0;
             let pendingMessage = null;
@@ -152,24 +158,23 @@ wss.on("connection", (ws, req) => {
 
               // Debug: log first few message types
               if (msgCount < 5) {
-                console.log(`[relay] Stream msg #${msgCount}: type=${message.type}${message.type === "stream_event" ? ` event=${message.event?.type}` : ""}${message.model ? ` model=${message.model}` : ""}`);
-              }
-              if (msgCount === 0) {
-                // Log full first message to see model info
-                console.log(`[relay] First stream message keys: ${Object.keys(message).join(", ")}`);
-                if (message.model) console.log(`[relay] *** ACTUAL MODEL: ${message.model} ***`);
+                console.log(`[relay] [${requestId}] Stream msg #${msgCount}: type=${message.type}${message.type === "stream_event" ? ` event=${message.event?.type}` : ""}${message.model ? ` model=${message.model}` : ""}`);
               }
               msgCount++;
 
               // Capture session ID from first message
               if (!sessionId && message.session_id) {
                 sessionId = message.session_id;
+                const entry = activeQueries.get(requestId);
+                if (entry) entry.sessionId = sessionId;
+                // Notify client of the resolved session ID
+                send({ type: "session-resolved", requestId, sessionId });
               }
 
               // Throttle: send at most every 50ms to avoid overwhelming the browser
               const now = Date.now();
               if (now - lastSendTime >= 50) {
-                send({ type: "message", data: message });
+                send({ type: "message", requestId, sessionId, data: message });
                 lastSendTime = now;
                 pendingMessage = null;
               } else {
@@ -177,7 +182,7 @@ wss.on("connection", (ws, req) => {
                 if (!flushTimer) {
                   flushTimer = setTimeout(() => {
                     if (pendingMessage) {
-                      send({ type: "message", data: pendingMessage });
+                      send({ type: "message", requestId, sessionId, data: pendingMessage });
                       lastSendTime = Date.now();
                       pendingMessage = null;
                     }
@@ -189,29 +194,50 @@ wss.on("connection", (ws, req) => {
 
             // Flush any remaining message
             if (flushTimer) clearTimeout(flushTimer);
-            if (pendingMessage) send({ type: "message", data: pendingMessage });
+            if (pendingMessage) send({ type: "message", requestId, sessionId, data: pendingMessage });
 
-            send({ type: "done", sessionId: sessionId || "" });
+            send({ type: "done", requestId, sessionId: sessionId || "" });
           } catch (err) {
             if (err.name !== "AbortError") {
-              send({ type: "error", error: err.message || String(err) });
+              send({ type: "error", requestId, error: err.message || String(err) });
             }
           } finally {
-            activeQuery = null;
-            activeAbortController = null;
+            activeQueries.delete(requestId);
           }
           break;
         }
 
         case "abort": {
-          if (activeAbortController) {
-            activeAbortController.abort();
-            activeAbortController = null;
+          // Abort a specific query by requestId, or all if not specified
+          const targetReqId = msg.requestId;
+          const targetSessId = msg.sessionId;
+
+          if (targetReqId && activeQueries.has(targetReqId)) {
+            const entry = activeQueries.get(targetReqId);
+            try { entry.instance?.interrupt?.(); } catch {}
+            entry.abortController.abort();
+            activeQueries.delete(targetReqId);
+            send({ type: "aborted", requestId: targetReqId });
+          } else if (targetSessId) {
+            // Abort by sessionId (find matching query)
+            for (const [rid, entry] of activeQueries.entries()) {
+              if (entry.sessionId === targetSessId) {
+                try { entry.instance?.interrupt?.(); } catch {}
+                entry.abortController.abort();
+                activeQueries.delete(rid);
+                send({ type: "aborted", requestId: rid, sessionId: targetSessId });
+                break;
+              }
+            }
+          } else {
+            // No target specified — abort all (legacy behavior)
+            for (const [rid, entry] of activeQueries.entries()) {
+              try { entry.instance?.interrupt?.(); } catch {}
+              entry.abortController.abort();
+            }
+            activeQueries.clear();
+            send({ type: "aborted" });
           }
-          if (activeQuery && activeQuery.interrupt) {
-            activeQuery.interrupt();
-          }
-          send({ type: "aborted" });
           break;
         }
 
@@ -437,9 +463,11 @@ wss.on("connection", (ws, req) => {
   });
 
   ws.on("close", () => {
-    console.log("Client disconnected");
-    if (activeAbortController) {
-      activeAbortController.abort();
+    console.log("Client disconnected, aborting all active queries");
+    for (const [rid, entry] of activeQueries.entries()) {
+      try { entry.instance?.interrupt?.(); } catch {}
+      try { entry.abortController.abort(); } catch {}
     }
+    activeQueries.clear();
   });
 });

@@ -368,6 +368,18 @@ export function ClaudeCodeWidget() {
   const [streamingText, setStreamingText] = useState("");
   const [streamingToolCalls, setStreamingToolCalls] = useState<ToolCallBlock[]>([]);
   const [streamingBlocks, setStreamingBlocks] = useState<ContentBlock[]>([]);
+  // Per-session streaming state (for parallel sessions)
+  // Key: sessionId (or pending requestId before sessionId is known)
+  const sessionStreamsRef = useRef<Map<string, {
+    blocks: ContentBlock[];
+    requestId: string;
+    streaming: boolean;
+    appendedMessages: Message[]; // messages appended to this session while it was streaming in background
+  }>>(new Map());
+  // Map requestId -> sessionKey (sessionId once known, otherwise pending requestId)
+  const requestIdToSessionRef = useRef<Map<string, string>>(new Map());
+  // Active backgrounded session keys (visual indicator in sidebar)
+  const [backgroundSessions, setBackgroundSessions] = useState<Set<string>>(new Set());
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [selectedModel, setSelectedModel] = useState(MODELS[0].id);
   const [error, setError] = useState<string | null>(null);
@@ -530,6 +542,42 @@ export function ClaudeCodeWidget() {
         setSessions((msg.sessions as SessionInfo[]) || []);
         break;
 
+      case "query-started": {
+        // Relay tells us a query is starting with a specific requestId
+        const reqId = msg.requestId as string;
+        const sessId = (msg.sessionId as string) || `pending:${reqId}`;
+        requestIdToSessionRef.current.set(reqId, sessId);
+        sessionStreamsRef.current.set(sessId, {
+          blocks: [],
+          requestId: reqId,
+          streaming: true,
+          appendedMessages: [],
+        });
+        setBackgroundSessions(new Set(sessionStreamsRef.current.keys()));
+        break;
+      }
+
+      case "session-resolved": {
+        // The relay learned the real sessionId for a previously-pending query
+        const reqId = msg.requestId as string;
+        const realSessId = msg.sessionId as string;
+        const oldKey = requestIdToSessionRef.current.get(reqId);
+        if (oldKey && oldKey !== realSessId) {
+          const stream = sessionStreamsRef.current.get(oldKey);
+          if (stream) {
+            sessionStreamsRef.current.set(realSessId, stream);
+            sessionStreamsRef.current.delete(oldKey);
+          }
+          requestIdToSessionRef.current.set(reqId, realSessId);
+          // If the user was viewing this pending session, switch to the real ID
+          if (activeSessionIdRef.current === oldKey || activeSessionIdRef.current === null) {
+            setActiveSessionId(realSessId);
+          }
+        }
+        setBackgroundSessions(new Set(sessionStreamsRef.current.keys()));
+        break;
+      }
+
       case "messages": {
         const sessionMessages = (msg.messages as Array<Record<string, unknown>>)|| [];
         // Convert SDK messages to our format with tool call blocks
@@ -609,26 +657,57 @@ export function ClaudeCodeWidget() {
               });
             }
         }
-        setMessages(converted);
+        // Append any backgrounded messages from a still-streaming session
+        const sessId = activeSessionIdRef.current;
+        const stream = sessId ? sessionStreamsRef.current.get(sessId) : null;
+        const final = stream?.appendedMessages.length
+          ? [...converted, ...stream.appendedMessages]
+          : converted;
+        if (stream) stream.appendedMessages = [];
+        setMessages(final);
         // Estimate token usage from message count (rough heuristic)
-        const totalChars = converted.reduce((sum, m) => sum + m.content.length, 0);
+        const totalChars = final.reduce((sum, m) => sum + m.content.length, 0);
         setTokenUsage(Math.round(totalChars / 4)); // ~4 chars per token
         break;
       }
 
       case "message": {
-        // Streaming message from the SDK
+        // Streaming message from the SDK - routed by requestId/sessionId
         const data = msg.data as Record<string, unknown>;
-        
+        const reqId = msg.requestId as string | undefined;
+        const sessKey = (msg.sessionId as string) || (reqId ? requestIdToSessionRef.current.get(reqId) : null);
+        const isViewingThisSession = sessKey && (sessKey === activeSessionIdRef.current || (activeSessionIdRef.current === null && sessKey.startsWith("pending:")));
+
+        // Get or create per-session stream
+        let stream = sessKey ? sessionStreamsRef.current.get(sessKey) : null;
+        if (!stream && sessKey) {
+          stream = { blocks: [], requestId: reqId || "", streaming: true, appendedMessages: [] };
+          sessionStreamsRef.current.set(sessKey, stream);
+        }
+        // Fallback: use main streaming refs if no session key (legacy path)
+        const blocksRef = stream ? stream.blocks : streamingBlocksRef.current;
+
+        // Helper to update blocks both in stream and (if viewing) in main state
+        const updateBlocks = (newBlocks: ContentBlock[]) => {
+          if (stream) stream.blocks = newBlocks;
+          if (!sessKey) streamingBlocksRef.current = newBlocks;
+          if (isViewingThisSession || !sessKey) {
+            streamingBlocksRef.current = newBlocks;
+            setStreamingBlocks(newBlocks);
+            const text = newBlocks.filter((b): b is TextBlock => b.type === "text").map(b => b.text).join("\n");
+            streamingTextRef.current = text;
+            setStreamingText(text);
+          }
+        };
+
         // Handle partial/streaming events (SDKPartialAssistantMessage)
         if (data?.type === "stream_event") {
           const event = data.event as Record<string, unknown>;
-          const idx = typeof event?.index === "number" ? event.index : streamingBlocksRef.current.length;
+          const idx = typeof event?.index === "number" ? event.index : blocksRef.length;
 
           if (event?.type === "content_block_start") {
             const contentBlock = event.content_block as Record<string, unknown>;
-            const blocks = [...streamingBlocksRef.current];
-            // Ensure array is large enough
+            const blocks = [...blocksRef];
             while (blocks.length <= idx) {
               blocks.push({ type: "text", text: "" });
             }
@@ -643,11 +722,10 @@ export function ClaudeCodeWidget() {
             } else if (contentBlock?.type === "text") {
               blocks[idx] = { type: "text", text: (contentBlock.text as string) || "" };
             }
-            streamingBlocksRef.current = blocks;
-            setStreamingBlocks(blocks);
+            updateBlocks(blocks);
           } else if (event?.type === "content_block_delta") {
             const delta = event.delta as Record<string, unknown>;
-            const blocks = [...streamingBlocksRef.current];
+            const blocks = [...blocksRef];
             while (blocks.length <= idx) {
               blocks.push({ type: "text", text: "" });
             }
@@ -656,44 +734,33 @@ export function ClaudeCodeWidget() {
               if (current.type === "text") {
                 blocks[idx] = { type: "text", text: current.text + (delta.text as string) };
               } else {
-                // delta arrived for a non-text block — shouldn't happen for text_delta
                 blocks[idx] = { type: "text", text: delta.text as string };
               }
-              streamingBlocksRef.current = blocks;
-              setStreamingBlocks(blocks);
-              // Also update the legacy concatenated text for backward compat
-              streamingTextRef.current = blocks
-                .filter((b): b is TextBlock => b.type === "text")
-                .map(b => b.text)
-                .join("\n");
-              setStreamingText(streamingTextRef.current);
+              updateBlocks(blocks);
             }
           } else if (event?.type === "content_block_stop") {
-            // Mark tool call at this index as done
-            const blocks = [...streamingBlocksRef.current];
+            const blocks = [...blocksRef];
             if (blocks[idx]?.type === "tool_call") {
               (blocks[idx] as ToolCallBlock).status = "done";
-              streamingBlocksRef.current = blocks;
-              setStreamingBlocks(blocks);
+              updateBlocks(blocks);
             }
           }
           // Capture session ID
           if (data.session_id && !activeSessionIdRef.current) {
             setActiveSessionId(data.session_id as string);
           }
-          // Update token usage from usage data if present
-          if (data.usage) {
+          // Update token usage from usage data if present (only if viewing)
+          if (isViewingThisSession && data.usage) {
             const usage = data.usage as { input_tokens?: number; output_tokens?: number };
             if (usage.input_tokens) setTokenUsage(usage.input_tokens + (usage.output_tokens || 0));
           }
           break;
         }
-        
+
         if (data?.type === "assistant") {
           const assistantMsg = data.message as { content?: Array<{ type: string; text?: string; name?: string; input?: unknown; id?: string }> } | undefined;
           // Only use this as a fallback if we have NO streaming blocks yet
-          // (otherwise the stream_event deltas already built the full content)
-          if (assistantMsg?.content && streamingBlocksRef.current.length === 0) {
+          if (assistantMsg?.content && blocksRef.length === 0) {
             const blocks: ContentBlock[] = [];
             for (const block of assistantMsg.content) {
               if (block.type === "text" && block.text) {
@@ -708,14 +775,10 @@ export function ClaudeCodeWidget() {
                 });
               }
             }
-            streamingBlocksRef.current = blocks;
-            setStreamingBlocks(blocks);
-            const text = blocks.filter((b): b is TextBlock => b.type === "text").map(b => b.text).join("\n");
-            streamingTextRef.current = text;
-            setStreamingText(text);
-          } else if (assistantMsg?.content && streamingBlocksRef.current.length > 0) {
-            // Stream events already have data — only update tool_use inputs (which arrive complete in assistant msg)
-            const blocks = [...streamingBlocksRef.current];
+            updateBlocks(blocks);
+          } else if (assistantMsg?.content && blocksRef.length > 0) {
+            // Update tool_use inputs (which arrive complete in assistant msg)
+            const blocks = [...blocksRef];
             for (const block of assistantMsg.content) {
               if (block.type === "tool_use" && block.id) {
                 const idx = blocks.findIndex(b => b.type === "tool_call" && b.id === block.id);
@@ -730,15 +793,12 @@ export function ClaudeCodeWidget() {
                 }
               }
             }
-            streamingBlocksRef.current = blocks;
-            setStreamingBlocks(blocks);
+            updateBlocks(blocks);
           }
-          // Capture session ID
           if ((data as { session_id?: string }).session_id && !activeSessionIdRef.current) {
             setActiveSessionId((data as { session_id: string }).session_id);
           }
-          // Update token usage
-          if ((data as { usage?: { input_tokens?: number; output_tokens?: number } }).usage) {
+          if (isViewingThisSession && (data as { usage?: { input_tokens?: number; output_tokens?: number } }).usage) {
             const usage = (data as { usage: { input_tokens?: number; output_tokens?: number } }).usage;
             if (usage.input_tokens) setTokenUsage(usage.input_tokens + (usage.output_tokens || 0));
           }
@@ -747,41 +807,68 @@ export function ClaudeCodeWidget() {
       }
 
       case "done": {
-        // Use the ordered blocks from streaming (preserves text/tool/text/tool order)
-        const finalBlocks = streamingBlocksRef.current.length > 0
-          ? streamingBlocksRef.current
-          : (() => {
-              const fb: ContentBlock[] = [];
-              if (streamingTextRef.current) fb.push({ type: "text", text: streamingTextRef.current });
-              fb.push(...streamingToolCallsRef.current);
-              return fb;
-            })();
+        const reqId = msg.requestId as string | undefined;
+        const sessKey = (msg.sessionId as string) || (reqId ? requestIdToSessionRef.current.get(reqId) : null);
+        const stream = sessKey ? sessionStreamsRef.current.get(sessKey) : null;
+        const isViewingThisSession = sessKey && (sessKey === activeSessionIdRef.current);
+
+        // Use blocks from per-session stream if available
+        const finalBlocks = stream?.blocks.length
+          ? stream.blocks
+          : streamingBlocksRef.current.length > 0
+            ? streamingBlocksRef.current
+            : (() => {
+                const fb: ContentBlock[] = [];
+                if (streamingTextRef.current) fb.push({ type: "text", text: streamingTextRef.current });
+                fb.push(...streamingToolCallsRef.current);
+                return fb;
+              })();
 
         const finalText = finalBlocks
           .filter((b): b is TextBlock => b.type === "text")
           .map(b => b.text)
           .join("\n");
 
+        const newMessage: Message = {
+          id: Math.random().toString(36).slice(2) + Date.now().toString(36),
+          role: "assistant",
+          content: finalText,
+          blocks: finalBlocks,
+          timestamp: new Date().toISOString(),
+        };
+
         if (finalBlocks.length > 0) {
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: Math.random().toString(36).slice(2) + Date.now().toString(36),
-              role: "assistant",
-              content: finalText,
-              blocks: finalBlocks,
-              timestamp: new Date().toISOString(),
-            },
-          ]);
+          if (isViewingThisSession) {
+            // Append directly to visible messages
+            setMessages((prev) => [...prev, newMessage]);
+          } else if (stream) {
+            // Stash for later when user views this session
+            stream.appendedMessages.push(newMessage);
+          } else {
+            // No session key — fallback (legacy)
+            setMessages((prev) => [...prev, newMessage]);
+          }
         }
-        setStreamingText("");
-        setStreamingToolCalls([]);
-        setStreamingBlocks([]);
-        streamingTextRef.current = "";
-        streamingToolCallsRef.current = [];
-        streamingBlocksRef.current = [];
-        setStreaming(false);
-        if (msg.sessionId) setActiveSessionId(msg.sessionId as string);
+
+        // Clean up the per-session stream
+        if (sessKey) {
+          sessionStreamsRef.current.delete(sessKey);
+          if (reqId) requestIdToSessionRef.current.delete(reqId);
+          setBackgroundSessions(new Set(sessionStreamsRef.current.keys()));
+        }
+
+        // Only clear main streaming state if we were viewing this session
+        if (isViewingThisSession || !sessKey) {
+          setStreamingText("");
+          setStreamingToolCalls([]);
+          setStreamingBlocks([]);
+          streamingTextRef.current = "";
+          streamingToolCallsRef.current = [];
+          streamingBlocksRef.current = [];
+          setStreaming(false);
+        }
+
+        if (msg.sessionId && !activeSessionIdRef.current) setActiveSessionId(msg.sessionId as string);
         // Refresh session list
         if (wsRef.current?.readyState === WebSocket.OPEN) {
           wsRef.current.send(JSON.stringify({ type: "list-sessions", dir: activeFolderRef.current || configsRef.current[activeConfigIdxRef.current]?.defaultCwd }));
@@ -877,8 +964,10 @@ export function ClaudeCodeWidget() {
     streamingBlocksRef.current = [];
 
     const config = configs[activeConfigIdx];
+    const requestId = `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     ws.send(JSON.stringify({
       type: "query",
+      requestId,
       prompt: content,
       sessionId: activeSessionId || undefined,
       cwd: activeFolder || config?.defaultCwd,
@@ -887,7 +976,9 @@ export function ClaudeCodeWidget() {
   };
 
   const abortQuery = () => {
-    wsRef.current?.send(JSON.stringify({ type: "abort" }));
+    // Abort only the current session, not all of them
+    const sid = activeSessionIdRef.current;
+    wsRef.current?.send(JSON.stringify({ type: "abort", sessionId: sid || undefined }));
   };
 
   const browseFolders = async (dir: string) => {
@@ -956,30 +1047,35 @@ export function ClaudeCodeWidget() {
   };
 
   const loadSession = (sessionId: string) => {
-    // Abort any in-progress query to prevent its output bleeding into new session view
-    if (streaming && wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: "abort" }));
-    }
+    // DON'T abort - let other sessions continue streaming in background
     setActiveSessionId(sessionId);
-    setStreamingText("");
-    setStreamingToolCalls([]);
-    setStreamingBlocks([]);
-    streamingTextRef.current = "";
-    streamingToolCallsRef.current = [];
-    streamingBlocksRef.current = [];
-    setStreaming(false);
+
+    // Restore the streaming state for this session if it has one running
+    const stream = sessionStreamsRef.current.get(sessionId);
+    if (stream && stream.streaming) {
+      setStreamingBlocks(stream.blocks);
+      streamingBlocksRef.current = stream.blocks;
+      const text = stream.blocks.filter((b): b is TextBlock => b.type === "text").map(b => b.text).join("\n");
+      streamingTextRef.current = text;
+      setStreamingText(text);
+      setStreaming(true);
+    } else {
+      setStreamingText("");
+      setStreamingToolCalls([]);
+      setStreamingBlocks([]);
+      streamingTextRef.current = "";
+      streamingToolCallsRef.current = [];
+      streamingBlocksRef.current = [];
+      setStreaming(false);
+    }
+
     if (mode === "terminal") {
       if (terminalPasteRef.current) {
         const dir = activeFolder || configs[activeConfigIdx]?.defaultCwd || "";
-        // Step 1: Kill current claude CLI session (Ctrl+C x3 + newline to ensure we get shell prompt back)
         terminalPasteRef.current("\x03\x03\x03");
-        // Step 2: Wait for CLI to fully exit and shell prompt to appear
         setTimeout(() => { terminalPasteRef.current?.("\n"); }, 600);
-        // Step 3: Navigate to correct directory
         setTimeout(() => { terminalPasteRef.current?.(`cd ${dir}\n`); }, 1200);
-        // Step 4: Clear terminal
         setTimeout(() => { terminalPasteRef.current?.("clear\n"); }, 1800);
-        // Step 5: Resume session in the correct directory
         setTimeout(() => { terminalPasteRef.current?.(`claude --resume ${sessionId}\n`); }, 2200);
       }
       setTerminalSessionId(sessionId);
@@ -994,10 +1090,7 @@ export function ClaudeCodeWidget() {
   };
 
   const newSession = () => {
-    // Abort any in-progress query to prevent its output from bleeding into new session
-    if (streaming && wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: "abort" }));
-    }
+    // Don't abort - let other sessions continue streaming in background
     setActiveSessionId(null);
     setMessages([]);
     setStreamingText("");
@@ -1117,6 +1210,7 @@ export function ClaudeCodeWidget() {
         streamingBlocksRef.current = [];
         wsRef.current.send(JSON.stringify({
           type: "query",
+          requestId: `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
           prompt: cmd,
           sessionId: activeSessionId || undefined,
           cwd: activeFolder || configs[activeConfigIdx]?.defaultCwd,
@@ -1565,8 +1659,11 @@ export function ClaudeCodeWidget() {
                         </div>
                       )}
                       <div className="flex-1 min-w-0">
-                        <div className="font-medium truncate">
-                          {s.summary || s.firstPrompt?.slice(0, 40) || "Untitled"}
+                        <div className="font-medium truncate flex items-center gap-1">
+                          <span className="truncate">{s.summary || s.firstPrompt?.slice(0, 40) || "Untitled"}</span>
+                          {backgroundSessions.has(s.sessionId) && (
+                            <Loader2 className="h-3 w-3 animate-spin text-blue-500 shrink-0" />
+                          )}
                         </div>
                         <div className="text-muted-foreground mt-0.5">
                           {formatTime(s.lastModified)}
