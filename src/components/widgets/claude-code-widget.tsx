@@ -475,12 +475,14 @@ export function ClaudeCodeWidget() {
       });
   }, []);
 
-  // Refresh sessions when active folder changes
+  // Refresh sessions and worktrees when active folder changes
   useEffect(() => {
     if (!connected || !activeFolder) return;
     const ws = wsRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
     ws.send(JSON.stringify({ type: "list-sessions", dir: activeFolder }));
+    ws.send(JSON.stringify({ type: "list-worktrees", dir: activeFolder }));
+    ws.send(JSON.stringify({ type: "list-branches", dir: activeFolder }));
     setActiveSessionId(null);
     setMessages([]);
   }, [activeFolder, connected]);
@@ -1456,77 +1458,78 @@ export function ClaudeCodeWidget() {
                     fetchWorktrees();
                     setShowWorktreePanel(!showWorktreePanel);
                   }}
-                  title="Manage worktrees"
+                  title="Add new worktree"
                 >
-                  <GitFork className="h-3 w-3" />
+                  <Plus className="h-3 w-3" />
                 </Button>
               </div>
-              {showWorktreePanel && (
-                <div className="space-y-1.5">
-                  {worktrees.length > 0 && (
-                    <div className="space-y-0.5 max-h-32 overflow-y-auto">
-                      {worktrees.map((wt) => {
-                        const labels = JSON.parse(localStorage.getItem("claude-code-worktree-labels") || "{}");
-                        const label = labels[wt.path];
-                        return (
-                        <div
-                          key={wt.path}
-                          className={cn(
-                            "flex items-center gap-1.5 text-[11px] px-1.5 py-1 rounded cursor-pointer group",
-                            activeFolder === wt.path ? "bg-accent text-accent-foreground" : "hover:bg-muted"
-                          )}
-                          onClick={() => switchToWorktree(wt)}
+              {/* Always-visible worktree list */}
+              {worktrees.length > 0 && (
+                <div className="space-y-0.5 max-h-32 overflow-y-auto">
+                  {worktrees.map((wt) => {
+                    const labels = JSON.parse(localStorage.getItem("claude-code-worktree-labels") || "{}");
+                    const label = labels[wt.path];
+                    return (
+                    <div
+                      key={wt.path}
+                      className={cn(
+                        "flex items-center gap-1.5 text-[11px] px-1.5 py-1 rounded cursor-pointer group",
+                        activeFolder === wt.path ? "bg-accent text-accent-foreground" : "hover:bg-muted"
+                      )}
+                      onClick={() => switchToWorktree(wt)}
+                    >
+                      <GitBranch className="h-3 w-3 shrink-0 text-muted-foreground" />
+                      <span className="flex-1 truncate">{label || wt.branch || wt.path.split("/").pop()}</span>
+                      {!wt.bare && worktrees.length > 1 && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-4 w-4 opacity-0 group-hover:opacity-100 shrink-0"
+                          onClick={(e) => { e.stopPropagation(); removeWorktree(wt.path); }}
                         >
-                          <GitBranch className="h-3 w-3 shrink-0 text-muted-foreground" />
-                          <span className="flex-1 truncate">{label || wt.branch || wt.path.split("/").pop()}</span>
-                          {!wt.bare && worktrees.length > 1 && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-4 w-4 opacity-0 group-hover:opacity-100 shrink-0"
-                              onClick={(e) => { e.stopPropagation(); removeWorktree(wt.path); }}
-                            >
-                              <Trash2 className="h-2.5 w-2.5 text-destructive" />
-                            </Button>
-                          )}
-                        </div>
-                        );
-                      })}
+                          <Trash2 className="h-2.5 w-2.5 text-destructive" />
+                        </Button>
+                      )}
                     </div>
-                  )}
-                  <div className="space-y-1 pt-1 border-t border-border">
-                    {/* Branch picker with create-new option */}
-                    <DropdownMenu>
-                      <DropdownMenuTrigger className="w-full flex items-center gap-1.5 rounded-md border border-input bg-background px-2 h-6 text-xs hover:bg-accent hover:text-accent-foreground">
-                        <GitBranch className="h-3 w-3 shrink-0 text-muted-foreground" />
-                        <span className="flex-1 truncate text-left">{newWorktreeBranch || "Select or create branch..."}</span>
-                        <ChevronDown className="h-3 w-3 shrink-0" />
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="start" className="w-48 max-h-40 overflow-y-auto">
-                        {branches.map((b) => (
-                          <DropdownMenuItem
-                            key={b}
-                            onClick={() => {
-                              setNewWorktreeBranch(b);
-                              if (activeFolder) {
-                                const parent = activeFolder.split("/").slice(0, -1).join("/");
-                                setNewWorktreePath(`${parent}/${b.replace(/\//g, "-")}`);
-                              }
-                            }}
-                          >
-                            <GitBranch className="h-3 w-3 mr-1.5" />
-                            <span className="truncate">{b}</span>
-                          </DropdownMenuItem>
-                        ))}
-                        {branches.length > 0 && <div className="border-t border-border my-1" />}
-                        <DropdownMenuItem onClick={() => inputRef.current?.focus()} className="text-muted-foreground">
-                          <Plus className="h-3 w-3 mr-1.5" />
-                          Create new branch...
+                    );
+                  })}
+                </div>
+              )}
+              {/* Toggleable add form */}
+              {showWorktreePanel && (
+                <div className="space-y-1 pt-1.5 mt-1.5 border-t border-border">
+                  {/* Branch picker with create-new option */}
+                  <DropdownMenu>
+                    <DropdownMenuTrigger className="w-full flex items-center gap-1.5 rounded-md border border-input bg-background px-2 h-6 text-xs hover:bg-accent hover:text-accent-foreground">
+                      <GitBranch className="h-3 w-3 shrink-0 text-muted-foreground" />
+                      <span className="flex-1 truncate text-left">{newWorktreeBranch || "Select or create branch..."}</span>
+                      <ChevronDown className="h-3 w-3 shrink-0" />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="w-48 max-h-40 overflow-y-auto">
+                      {branches.map((b) => (
+                        <DropdownMenuItem
+                          key={b}
+                          onClick={() => {
+                            setNewWorktreeBranch(b);
+                            if (activeFolder) {
+                              const parent = activeFolder.split("/").slice(0, -1).join("/");
+                              setNewWorktreePath(`${parent}/${b.replace(/\//g, "-")}`);
+                            }
+                          }}
+                        >
+                          <GitBranch className="h-3 w-3 mr-1.5" />
+                          <span className="truncate">{b}</span>
                         </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                    <Input
-                      className="h-6 text-xs"
+                      ))}
+                      {branches.length > 0 && <div className="border-t border-border my-1" />}
+                      <DropdownMenuItem onClick={() => inputRef.current?.focus()} className="text-muted-foreground">
+                        <Plus className="h-3 w-3 mr-1.5" />
+                        Create new branch...
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  <Input
+                    className="h-6 text-xs"
                       placeholder="New branch name (or picked above)"
                       value={newWorktreeBranch}
                       onChange={(e) => {
@@ -1558,7 +1561,6 @@ export function ClaudeCodeWidget() {
                       <Plus className="h-3 w-3 mr-1" />
                       Add Worktree
                     </Button>
-                  </div>
                 </div>
               )}
             </div>
@@ -1623,7 +1625,7 @@ export function ClaudeCodeWidget() {
                 )}
               </div>
             </div>
-            <ScrollArea className="flex-1">
+            <div className="flex-1 min-h-0 overflow-y-auto">
               <div className="p-1.5 space-y-0.5">
                 {sessions.map((s) => (
                   <div
@@ -1676,7 +1678,7 @@ export function ClaudeCodeWidget() {
                   <p className="text-xs text-muted-foreground text-center py-4">No sessions yet</p>
                 )}
               </div>
-            </ScrollArea>
+            </div>
           </div>
         )}
 
