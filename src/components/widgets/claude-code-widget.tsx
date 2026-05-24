@@ -367,6 +367,7 @@ export function ClaudeCodeWidget() {
   const [streaming, setStreaming] = useState(false);
   const [streamingText, setStreamingText] = useState("");
   const [streamingToolCalls, setStreamingToolCalls] = useState<ToolCallBlock[]>([]);
+  const [streamingBlocks, setStreamingBlocks] = useState<ContentBlock[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [selectedModel, setSelectedModel] = useState(MODELS[0].id);
   const [error, setError] = useState<string | null>(null);
@@ -410,6 +411,7 @@ export function ClaudeCodeWidget() {
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const streamingTextRef = useRef("");
+  const streamingBlocksRef = useRef<ContentBlock[]>([]);
   const streamingToolCallsRef = useRef<ToolCallBlock[]>([]);
   const activeFolderRef = useRef(activeFolder);
   const configsRef = useRef(configs);
@@ -471,13 +473,16 @@ export function ClaudeCodeWidget() {
     setMessages([]);
   }, [activeFolder, connected]);
 
-  // Auto-scroll chat area
+  // Smart auto-scroll: only scroll if user is at (or near) the bottom
   useEffect(() => {
     const container = chatScrollRef.current;
-    if (container) {
+    if (!container) return;
+    // Threshold: within 100px of bottom counts as "at the bottom"
+    const isAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
+    if (isAtBottom) {
       container.scrollTop = container.scrollHeight;
     }
-  }, [messages, streamingText, streamingToolCalls]);
+  }, [messages, streamingBlocks, streamingText, streamingToolCalls]);
 
   // ─── WebSocket connection ──────────────────────────────────────────────────
 
@@ -618,32 +623,58 @@ export function ClaudeCodeWidget() {
         // Handle partial/streaming events (SDKPartialAssistantMessage)
         if (data?.type === "stream_event") {
           const event = data.event as Record<string, unknown>;
-          if (event?.type === "content_block_delta") {
-            const delta = event.delta as Record<string, unknown>;
-            if (delta?.type === "text_delta" && delta.text) {
-              streamingTextRef.current += delta.text as string;
-              setStreamingText(streamingTextRef.current);
-            }
-          } else if (event?.type === "content_block_start") {
+          const idx = typeof event?.index === "number" ? event.index : streamingBlocksRef.current.length;
+
+          if (event?.type === "content_block_start") {
             const contentBlock = event.content_block as Record<string, unknown>;
+            const blocks = [...streamingBlocksRef.current];
+            // Ensure array is large enough
+            while (blocks.length <= idx) {
+              blocks.push({ type: "text", text: "" });
+            }
             if (contentBlock?.type === "tool_use") {
-              const toolCall: ToolCallBlock = {
+              blocks[idx] = {
                 type: "tool_call",
                 id: (contentBlock.id as string) || Math.random().toString(36).slice(2),
                 name: contentBlock.name as string,
                 input: {},
                 status: "running",
               };
-              streamingToolCallsRef.current = [...streamingToolCallsRef.current, toolCall];
-              setStreamingToolCalls([...streamingToolCallsRef.current]);
+            } else if (contentBlock?.type === "text") {
+              blocks[idx] = { type: "text", text: (contentBlock.text as string) || "" };
+            }
+            streamingBlocksRef.current = blocks;
+            setStreamingBlocks(blocks);
+          } else if (event?.type === "content_block_delta") {
+            const delta = event.delta as Record<string, unknown>;
+            const blocks = [...streamingBlocksRef.current];
+            while (blocks.length <= idx) {
+              blocks.push({ type: "text", text: "" });
+            }
+            if (delta?.type === "text_delta" && delta.text) {
+              const current = blocks[idx];
+              if (current.type === "text") {
+                blocks[idx] = { type: "text", text: current.text + (delta.text as string) };
+              } else {
+                // delta arrived for a non-text block — shouldn't happen for text_delta
+                blocks[idx] = { type: "text", text: delta.text as string };
+              }
+              streamingBlocksRef.current = blocks;
+              setStreamingBlocks(blocks);
+              // Also update the legacy concatenated text for backward compat
+              streamingTextRef.current = blocks
+                .filter((b): b is TextBlock => b.type === "text")
+                .map(b => b.text)
+                .join("\n");
+              setStreamingText(streamingTextRef.current);
             }
           } else if (event?.type === "content_block_stop") {
-            // Mark last tool call as done
-            const calls = streamingToolCallsRef.current;
-            if (calls.length > 0) {
-              calls[calls.length - 1].status = "done";
-              streamingToolCallsRef.current = [...calls];
-              setStreamingToolCalls([...calls]);
+            // Mark tool call at this index as done
+            const blocks = [...streamingBlocksRef.current];
+            if (blocks[idx]?.type === "tool_call") {
+              (blocks[idx] as ToolCallBlock).status = "done";
+              streamingBlocksRef.current = blocks;
+              setStreamingBlocks(blocks);
             }
           }
           // Capture session ID
@@ -660,14 +691,15 @@ export function ClaudeCodeWidget() {
         
         if (data?.type === "assistant") {
           const assistantMsg = data.message as { content?: Array<{ type: string; text?: string; name?: string; input?: unknown; id?: string }> } | undefined;
-          if (assistantMsg?.content) {
-            let text = "";
-            const toolCalls: ToolCallBlock[] = [];
+          // Only use this as a fallback if we have NO streaming blocks yet
+          // (otherwise the stream_event deltas already built the full content)
+          if (assistantMsg?.content && streamingBlocksRef.current.length === 0) {
+            const blocks: ContentBlock[] = [];
             for (const block of assistantMsg.content) {
               if (block.type === "text" && block.text) {
-                text += block.text;
+                blocks.push({ type: "text", text: block.text });
               } else if (block.type === "tool_use") {
-                toolCalls.push({
+                blocks.push({
                   type: "tool_call",
                   id: block.id || Math.random().toString(36).slice(2),
                   name: block.name || "tool",
@@ -676,14 +708,30 @@ export function ClaudeCodeWidget() {
                 });
               }
             }
-            if (text) {
-              streamingTextRef.current = text;
-              setStreamingText(text);
+            streamingBlocksRef.current = blocks;
+            setStreamingBlocks(blocks);
+            const text = blocks.filter((b): b is TextBlock => b.type === "text").map(b => b.text).join("\n");
+            streamingTextRef.current = text;
+            setStreamingText(text);
+          } else if (assistantMsg?.content && streamingBlocksRef.current.length > 0) {
+            // Stream events already have data — only update tool_use inputs (which arrive complete in assistant msg)
+            const blocks = [...streamingBlocksRef.current];
+            for (const block of assistantMsg.content) {
+              if (block.type === "tool_use" && block.id) {
+                const idx = blocks.findIndex(b => b.type === "tool_call" && b.id === block.id);
+                if (idx >= 0) {
+                  blocks[idx] = {
+                    type: "tool_call",
+                    id: block.id,
+                    name: block.name || "tool",
+                    input: (block.input as Record<string, unknown>) || {},
+                    status: "done",
+                  };
+                }
+              }
             }
-            if (toolCalls.length > 0) {
-              streamingToolCallsRef.current = toolCalls;
-              setStreamingToolCalls(toolCalls);
-            }
+            streamingBlocksRef.current = blocks;
+            setStreamingBlocks(blocks);
           }
           // Capture session ID
           if ((data as { session_id?: string }).session_id && !activeSessionIdRef.current) {
@@ -699,28 +747,39 @@ export function ClaudeCodeWidget() {
       }
 
       case "done": {
-        const finalText = streamingTextRef.current;
-        const finalToolCalls = streamingToolCallsRef.current;
-        const blocks: ContentBlock[] = [];
-        if (finalText) blocks.push({ type: "text", text: finalText });
-        blocks.push(...finalToolCalls);
+        // Use the ordered blocks from streaming (preserves text/tool/text/tool order)
+        const finalBlocks = streamingBlocksRef.current.length > 0
+          ? streamingBlocksRef.current
+          : (() => {
+              const fb: ContentBlock[] = [];
+              if (streamingTextRef.current) fb.push({ type: "text", text: streamingTextRef.current });
+              fb.push(...streamingToolCallsRef.current);
+              return fb;
+            })();
 
-        if (finalText || finalToolCalls.length > 0) {
+        const finalText = finalBlocks
+          .filter((b): b is TextBlock => b.type === "text")
+          .map(b => b.text)
+          .join("\n");
+
+        if (finalBlocks.length > 0) {
           setMessages((prev) => [
             ...prev,
             {
               id: Math.random().toString(36).slice(2) + Date.now().toString(36),
               role: "assistant",
               content: finalText,
-              blocks,
+              blocks: finalBlocks,
               timestamp: new Date().toISOString(),
             },
           ]);
         }
         setStreamingText("");
         setStreamingToolCalls([]);
+        setStreamingBlocks([]);
         streamingTextRef.current = "";
         streamingToolCallsRef.current = [];
+        streamingBlocksRef.current = [];
         setStreaming(false);
         if (msg.sessionId) setActiveSessionId(msg.sessionId as string);
         // Refresh session list
@@ -739,8 +798,10 @@ export function ClaudeCodeWidget() {
         setStreaming(false);
         setStreamingText("");
         setStreamingToolCalls([]);
+        setStreamingBlocks([]);
         streamingTextRef.current = "";
         streamingToolCallsRef.current = [];
+        streamingBlocksRef.current = [];
         break;
 
       case "renamed":
@@ -810,8 +871,10 @@ export function ClaudeCodeWidget() {
     setStreaming(true);
     setStreamingText("");
     setStreamingToolCalls([]);
+    setStreamingBlocks([]);
     streamingTextRef.current = "";
     streamingToolCallsRef.current = [];
+    streamingBlocksRef.current = [];
 
     const config = configs[activeConfigIdx];
     ws.send(JSON.stringify({
@@ -893,7 +956,18 @@ export function ClaudeCodeWidget() {
   };
 
   const loadSession = (sessionId: string) => {
+    // Abort any in-progress query to prevent its output bleeding into new session view
+    if (streaming && wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: "abort" }));
+    }
     setActiveSessionId(sessionId);
+    setStreamingText("");
+    setStreamingToolCalls([]);
+    setStreamingBlocks([]);
+    streamingTextRef.current = "";
+    streamingToolCallsRef.current = [];
+    streamingBlocksRef.current = [];
+    setStreaming(false);
     if (mode === "terminal") {
       if (terminalPasteRef.current) {
         const dir = activeFolder || configs[activeConfigIdx]?.defaultCwd || "";
@@ -920,10 +994,19 @@ export function ClaudeCodeWidget() {
   };
 
   const newSession = () => {
+    // Abort any in-progress query to prevent its output from bleeding into new session
+    if (streaming && wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: "abort" }));
+    }
     setActiveSessionId(null);
     setMessages([]);
     setStreamingText("");
     setStreamingToolCalls([]);
+    setStreamingBlocks([]);
+    streamingTextRef.current = "";
+    streamingToolCallsRef.current = [];
+    streamingBlocksRef.current = [];
+    setStreaming(false);
     setTokenUsage(0);
     inputRef.current?.focus();
   };
@@ -1027,8 +1110,11 @@ export function ClaudeCodeWidget() {
         }]);
         setStreaming(true);
         setStreamingText("");
+        setStreamingToolCalls([]);
+        setStreamingBlocks([]);
         streamingTextRef.current = "";
         streamingToolCallsRef.current = [];
+        streamingBlocksRef.current = [];
         wsRef.current.send(JSON.stringify({
           type: "query",
           prompt: cmd,
@@ -1046,6 +1132,8 @@ export function ClaudeCodeWidget() {
         setMessages([]);
         setStreamingText("");
         setStreamingToolCalls([]);
+        setStreamingBlocks([]);
+        streamingBlocksRef.current = [];
         setTokenUsage(0);
         break;
       case "/new":
@@ -1117,6 +1205,19 @@ export function ClaudeCodeWidget() {
     return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
   };
 
+  // Get display name for a folder path - prefers worktree label if available
+  const getFolderDisplayName = (path: string) => {
+    if (typeof window === "undefined") return path.split("/").pop() || path;
+    try {
+      const labels = JSON.parse(localStorage.getItem("claude-code-worktree-labels") || "{}");
+      if (labels[path]) return labels[path];
+    } catch {}
+    // Check if it's a known worktree branch
+    const wt = worktrees.find(w => w.path === path);
+    if (wt?.branch) return wt.branch;
+    return path.split("/").pop() || path;
+  };
+
   // Collect all tool calls for activity feed
   const allToolCalls: ToolCallBlock[] = [
     ...messages.flatMap(m => (m.blocks || []).filter((b): b is ToolCallBlock => b.type === "tool_call")),
@@ -1131,10 +1232,10 @@ export function ClaudeCodeWidget() {
       icon={<ClaudeIcon className="h-4 w-4" />}
       widgetType="claude-code"
     >
-      <div className="flex h-full min-h-[400px]">
+      <div className="flex h-full min-h-[400px] overflow-hidden">
         {/* ─── Session Sidebar ─────────────────────────────────── */}
         {sidebarOpen && (
-          <div className="w-56 border-r border-border flex flex-col shrink-0">
+          <div className="w-56 border-r border-border flex flex-col shrink-0 min-h-0 overflow-hidden">
             {/* Folder switcher */}
             <div className="p-2 border-b border-border">
               <div className="flex items-center justify-between mb-1">
@@ -1153,7 +1254,7 @@ export function ClaudeCodeWidget() {
                 <DropdownMenu>
                   <DropdownMenuTrigger className="w-full flex items-center gap-1.5 rounded-md border border-input bg-background px-2 h-7 text-xs hover:bg-accent hover:text-accent-foreground">
                     <FolderOpen className="h-3 w-3 shrink-0 text-muted-foreground" />
-                    <span className="flex-1 truncate text-left">{activeFolder.split("/").pop() || activeFolder}</span>
+                    <span className="flex-1 truncate text-left">{getFolderDisplayName(activeFolder)}</span>
                     <ChevronDown className="h-3 w-3 shrink-0" />
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="start" className="w-52">
@@ -1164,7 +1265,7 @@ export function ClaudeCodeWidget() {
                         className={cn(activeFolder === f && "bg-accent")}
                       >
                         <FolderOpen className="h-3 w-3 mr-1.5" />
-                        <span className="truncate">{f.split("/").pop() || f}</span>
+                        <span className="truncate">{getFolderDisplayName(f)}</span>
                       </DropdownMenuItem>
                     ))}
                   </DropdownMenuContent>
@@ -1483,7 +1584,7 @@ export function ClaudeCodeWidget() {
         )}
 
         {/* ─── Main Chat Area ──────────────────────────────────── */}
-        <div className="flex-1 flex flex-col min-w-0">
+        <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
           {/* Header */}
           <div className="flex items-center gap-2 p-2 border-b border-border shrink-0">
             {!sidebarOpen && (
@@ -1764,25 +1865,31 @@ export function ClaudeCodeWidget() {
                   </div>
                 ))}
                 {/* Streaming */}
-                {streaming && (streamingText || streamingToolCalls.length > 0) && (
+                {streaming && streamingBlocks.length > 0 && (
                   <div className="flex gap-3">
                     <div className="shrink-0 h-7 w-7 rounded-full flex items-center justify-center bg-muted">
                       <ClaudeIcon className="h-4 w-4" />
                     </div>
                     <div className="max-w-[85%] rounded-lg px-3 py-2 text-sm bg-muted">
-                      {streamingText && (
-                        <>
-                          {renderContent(streamingText)}
-                          <span className="inline-block w-1.5 h-4 bg-foreground/70 animate-pulse ml-0.5" />
-                        </>
-                      )}
-                      {streamingToolCalls.map((tc, i) => (
-                        <ToolCallPill key={tc.id + i} block={tc} />
-                      ))}
+                      {streamingBlocks.map((block, bi) => {
+                        if (block.type === "text") {
+                          const isLast = bi === streamingBlocks.length - 1;
+                          return (
+                            <div key={bi}>
+                              {renderContent(block.text)}
+                              {isLast && <span className="inline-block w-1.5 h-4 bg-foreground/70 animate-pulse ml-0.5" />}
+                            </div>
+                          );
+                        }
+                        if (block.type === "tool_call") {
+                          return <ToolCallPill key={block.id + bi} block={block} />;
+                        }
+                        return null;
+                      })}
                     </div>
                   </div>
                 )}
-                {streaming && !streamingText && streamingToolCalls.length === 0 && (
+                {streaming && streamingBlocks.length === 0 && (
                   <div className="flex gap-3">
                     <div className="shrink-0 h-7 w-7 rounded-full flex items-center justify-center bg-muted">
                       <ClaudeIcon className="h-4 w-4" />
