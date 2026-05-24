@@ -132,34 +132,47 @@ wss.on("connection", (ws, req) => {
           // preventing two parallel sessions in the same cwd from corrupting
           // each other's session files.
           //
-          // We symlink ~/.claude.json (auth credentials) and ~/.claude/CLAUDE.md
-          // (user memory) into the isolated HOME so the agent stays authenticated
-          // and respects user-level config, but ~/.claude/projects/ stays private.
+          // Strategy: create an isolated HOME with symlinks to EVERYTHING in
+          // ~/.claude/ except `projects/`, plus ~/.claude.json and ~/.claude/.credentials.json.
+          // This preserves auth, settings, history, MCP config, plugins etc.
           if (isolated) {
-            const { mkdirSync, symlinkSync, existsSync, readlinkSync } = await import("fs");
+            const { mkdirSync, symlinkSync, existsSync, readdirSync, lstatSync } = await import("fs");
             const { join } = await import("path");
             const { homedir } = await import("os");
             const realHome = homedir();
-            // Use a stable, sessionId-derived path when resuming so subsequent
-            // turns of the same session reuse the same HOME (and thus the same
-            // session log).
-            const isolationKey = msg.sessionId || `${requestId}`;
+            // Use sessionId when resuming so the same HOME is reused
+            const isolationKey = msg.sessionId || requestId;
             isolatedHomeDir = join("/tmp", "claude-isolated-homes", isolationKey);
 
             mkdirSync(isolatedHomeDir, { recursive: true });
             mkdirSync(join(isolatedHomeDir, ".claude"), { recursive: true });
+            // Create a private projects dir (this is the ONLY thing not shared)
+            mkdirSync(join(isolatedHomeDir, ".claude", "projects"), { recursive: true });
 
-            // Symlink critical auth/config files from real HOME so we don't
-            // lose authentication
             const linkIfMissing = (src, dest) => {
               if (existsSync(src) && !existsSync(dest)) {
-                try { symlinkSync(src, dest); } catch {}
+                try { symlinkSync(src, dest); } catch (e) {
+                  console.log(`[relay] symlink failed ${src} -> ${dest}: ${e.message}`);
+                }
               }
             };
+
+            // 1. Symlink top-level files in $HOME (auth, config)
             linkIfMissing(join(realHome, ".claude.json"), join(isolatedHomeDir, ".claude.json"));
-            linkIfMissing(join(realHome, ".claude", "CLAUDE.md"), join(isolatedHomeDir, ".claude", "CLAUDE.md"));
-            linkIfMissing(join(realHome, ".claude", "settings.json"), join(isolatedHomeDir, ".claude", "settings.json"));
-            // Note: NOT symlinking ~/.claude/projects/ — that's the whole point of isolation
+            linkIfMissing(join(realHome, ".claude.json.backup"), join(isolatedHomeDir, ".claude.json.backup"));
+
+            // 2. Symlink everything in ~/.claude/ EXCEPT projects/
+            try {
+              const claudeContents = readdirSync(join(realHome, ".claude"));
+              for (const item of claudeContents) {
+                if (item === "projects") continue; // skip — we want isolated projects
+                const src = join(realHome, ".claude", item);
+                const dest = join(isolatedHomeDir, ".claude", item);
+                linkIfMissing(src, dest);
+              }
+            } catch (e) {
+              console.log(`[relay] failed to scan ~/.claude: ${e.message}`);
+            }
 
             queryEnv.HOME = isolatedHomeDir;
             console.log(`[relay] [${requestId}] Isolated HOME: ${isolatedHomeDir}`);
@@ -212,8 +225,26 @@ wss.on("connection", (ws, req) => {
                 sessionId = message.session_id;
                 const entry = activeQueries.get(requestId);
                 if (entry) entry.sessionId = sessionId;
+
+                // For isolated new sessions: create a symlink from
+                // /tmp/claude-isolated-homes/<sessionId> to .../<requestId>
+                // so future resumes can find this HOME via the stable sessionId.
+                if (isolated && isolatedHomeDir) {
+                  const { symlinkSync, existsSync } = await import("fs");
+                  const { join, dirname, basename } = await import("path");
+                  const sessionAlias = join(dirname(isolatedHomeDir), sessionId);
+                  try {
+                    if (!existsSync(sessionAlias) && basename(isolatedHomeDir) !== sessionId) {
+                      symlinkSync(isolatedHomeDir, sessionAlias);
+                      console.log(`[relay] [${requestId}] Created session alias: ${sessionAlias} -> ${isolatedHomeDir}`);
+                    }
+                  } catch (e) {
+                    console.log(`[relay] session alias failed: ${e.message}`);
+                  }
+                }
+
                 // Notify client of the resolved session ID
-                send({ type: "session-resolved", requestId, sessionId });
+                send({ type: "session-resolved", requestId, sessionId, isolatedHome: isolatedHomeDir });
               }
 
               // Throttle: send at most every 50ms to avoid overwhelming the browser

@@ -1027,6 +1027,9 @@ export function ClaudeCodeWidget() {
     streamingBlocksRef.current = [];
 
     const requestId = `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    // If resuming an isolated session, force isolated=true so the relay finds the right HOME
+    const activeSessInfo = activeSessionId ? sessions.find(s => s.sessionId === activeSessionId) : null;
+    const useIsolated = isolatedMode || activeSessInfo?.isolated === true;
     ws.send(JSON.stringify({
       type: "query",
       requestId,
@@ -1034,7 +1037,7 @@ export function ClaudeCodeWidget() {
       sessionId: activeSessionId || undefined,
       cwd: targetCwd,
       model: selectedModel,
-      isolated: isolatedMode,
+      isolated: useIsolated,
     }));
   };
 
@@ -1281,7 +1284,7 @@ export function ClaudeCodeWidget() {
           sessionId: activeSessionId || undefined,
           cwd: activeFolder || configs[activeConfigIdx]?.defaultCwd,
           model: selectedModel,
-          isolated: isolatedMode,
+          isolated: isolatedMode || sessions.find(s => s.sessionId === activeSessionId)?.isolated === true,
         }));
       }
       return;
