@@ -321,7 +321,7 @@ wss.on("connection", (ws, req) => {
           const dir = msg.dir || DEFAULT_CWD;
           console.log(`[relay] list-sessions dir: ${dir}`);
 
-          // 1. List sessions from main HOME
+          // 1. List sessions from main HOME via SDK
           const sessions = await listSessions({
             dir,
             limit: msg.limit || 50,
@@ -329,48 +329,100 @@ wss.on("connection", (ws, req) => {
           });
           const filtered = sessions.filter(s => !s.cwd || s.cwd === dir);
 
-          // 2. Also scan isolated HOMEs for sessions in this cwd
+          // 2. Scan isolated HOMEs by reading their session JSONL files directly.
+          // Don't use listSessions() here because it uses os.homedir() (cached
+          // at process start) and ignores process.env.HOME mutations.
           const isolatedSessions = [];
           try {
-            const { readdir, stat } = await import("fs/promises");
+            const { readdir, readFile, stat } = await import("fs/promises");
             const { join } = await import("path");
             const isolatedRoot = "/tmp/claude-isolated-homes";
+            // Sanitize cwd the same way Claude Code does:
+            // /home/user/foo -> -home-user-foo (replace / with -)
+            const sanitizedCwd = dir.replace(/\//g, "-");
             const entries = await readdir(isolatedRoot).catch(() => []);
+            console.log(`[relay] Scanning ${entries.length} isolated HOMEs for cwd ${dir} (sanitized: ${sanitizedCwd})`);
+
             for (const entry of entries) {
               const isoHome = join(isolatedRoot, entry);
+              const projectsDir = join(isoHome, ".claude", "projects", sanitizedCwd);
               try {
-                // Temporarily set HOME so listSessions reads from this isolated dir
-                const originalHome = process.env.HOME;
-                process.env.HOME = isoHome;
-                const isoSessions = await listSessions({
-                  dir,
-                  limit: msg.limit || 50,
-                  includeWorktrees: false,
-                });
-                process.env.HOME = originalHome;
-                for (const s of isoSessions) {
-                  if (!s.cwd || s.cwd === dir) {
-                    isolatedSessions.push({ ...s, isolated: true, isolatedHome: isoHome });
+                const projectStat = await stat(projectsDir).catch(() => null);
+                if (!projectStat || !projectStat.isDirectory()) continue;
+                const sessionFiles = await readdir(projectsDir).catch(() => []);
+                for (const f of sessionFiles) {
+                  if (!f.endsWith(".jsonl") && !f.endsWith(".json")) continue;
+                  const sessionId = f.replace(/\.(jsonl|json)$/, "");
+                  const filePath = join(projectsDir, f);
+                  try {
+                    const fStat = await stat(filePath);
+                    // Read first line to extract first prompt as summary
+                    const content = await readFile(filePath, "utf-8");
+                    const lines = content.split("\n").filter(Boolean);
+                    let firstPrompt = "";
+                    let summary = "";
+                    for (const line of lines) {
+                      try {
+                        const parsed = JSON.parse(line);
+                        if (parsed.type === "user" && !firstPrompt) {
+                          // Extract first text prompt
+                          const m = parsed.message;
+                          if (typeof m === "string") firstPrompt = m;
+                          else if (typeof m?.content === "string") firstPrompt = m.content;
+                          else if (Array.isArray(m?.content)) {
+                            const t = m.content.find(b => b.type === "text");
+                            if (t?.text) firstPrompt = t.text;
+                          } else if (typeof parsed.prompt === "string") {
+                            firstPrompt = parsed.prompt;
+                          }
+                          if (firstPrompt) firstPrompt = firstPrompt.slice(0, 100);
+                        }
+                        if (parsed.type === "summary" || parsed.customTitle) {
+                          summary = parsed.summary || parsed.customTitle || summary;
+                        }
+                      } catch {}
+                      if (firstPrompt && summary) break;
+                    }
+                    isolatedSessions.push({
+                      sessionId,
+                      summary: summary || firstPrompt.slice(0, 60) || "Untitled",
+                      firstPrompt,
+                      lastModified: fStat.mtimeMs,
+                      cwd: dir,
+                      isolated: true,
+                      isolatedHome: isoHome,
+                    });
+                  } catch (e) {
+                    console.log(`[relay] error reading ${filePath}: ${e.message}`);
                   }
                 }
               } catch {}
             }
-          } catch {}
+          } catch (e) {
+            console.log(`[relay] isolated scan error: ${e.message}`);
+          }
 
-          // Merge and dedupe by sessionId
-          const seen = new Set(filtered.map(s => s.sessionId));
+          // Merge and dedupe by sessionId (prefer isolated entry since it has the home path)
+          const seen = new Set();
+          const merged = [];
           for (const s of isolatedSessions) {
             if (!seen.has(s.sessionId)) {
-              filtered.push(s);
+              merged.push(s);
+              seen.add(s.sessionId);
+            }
+          }
+          for (const s of filtered) {
+            if (!seen.has(s.sessionId)) {
+              merged.push(s);
               seen.add(s.sessionId);
             }
           }
 
           // Sort by lastModified desc
-          filtered.sort((a, b) => (b.lastModified || 0) - (a.lastModified || 0));
+          merged.sort((a, b) => (b.lastModified || 0) - (a.lastModified || 0));
 
-          console.log(`[relay] Found ${sessions.length} main + ${isolatedSessions.length} isolated, ${filtered.length} total after dir filter`);
-          send({ type: "sessions", sessions: filtered });
+          console.log(`[relay] Found ${sessions.length} main + ${isolatedSessions.length} isolated, ${merged.length} total after dedupe`);
+          send({ type: "sessions", sessions: merged });
           break;
         }
 
@@ -379,19 +431,43 @@ wss.on("connection", (ws, req) => {
             send({ type: "error", error: "Missing sessionId" });
             break;
           }
-          // If isolatedHome is provided, temporarily set HOME to read from there
-          const originalHome = process.env.HOME;
-          if (msg.isolatedHome) {
-            process.env.HOME = msg.isolatedHome;
-          }
           let messages;
-          try {
+          if (msg.isolatedHome) {
+            // Read directly from the isolated HOME's session file
+            // (don't trust process.env.HOME mutation — SDK caches os.homedir())
+            const { readFile, readdir } = await import("fs/promises");
+            const { join } = await import("path");
+            const dir = msg.dir || DEFAULT_CWD;
+            const sanitizedCwd = dir.replace(/\//g, "-");
+            const projectsDir = join(msg.isolatedHome, ".claude", "projects", sanitizedCwd);
+            console.log(`[relay] get-messages from isolated: ${projectsDir} session=${msg.sessionId}`);
+            messages = [];
+            try {
+              const files = await readdir(projectsDir).catch(() => []);
+              const sessionFile = files.find(f => f.startsWith(msg.sessionId));
+              if (sessionFile) {
+                const content = await readFile(join(projectsDir, sessionFile), "utf-8");
+                const lines = content.split("\n").filter(Boolean);
+                for (const line of lines) {
+                  try {
+                    const parsed = JSON.parse(line);
+                    if (parsed.type === "user" || parsed.type === "assistant") {
+                      messages.push(parsed);
+                    }
+                  } catch {}
+                }
+                console.log(`[relay] read ${messages.length} messages from isolated session`);
+              } else {
+                console.log(`[relay] isolated session file not found in ${projectsDir}`);
+              }
+            } catch (e) {
+              console.log(`[relay] isolated read error: ${e.message}`);
+            }
+          } else {
             messages = await getSessionMessages(msg.sessionId, {
               dir: msg.dir || DEFAULT_CWD,
               limit: msg.limit || 500,
             });
-          } finally {
-            if (msg.isolatedHome) process.env.HOME = originalHome;
           }
           // Filter out system messages and parent_tool_use sub-messages for cleaner display
           const filtered = messages.filter(m => 
