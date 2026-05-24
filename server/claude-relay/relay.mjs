@@ -557,101 +557,208 @@ wss.on("connection", (ws, req) => {
           break;
         }
 
+        case "archive-sessions":
         case "delete-sessions": {
-          // Delete session JSON files
+          // Archive (move to .archive/) — keeping 'delete-sessions' as alias for backward compat
           const dir = msg.dir || DEFAULT_CWD;
           const sessionIds = msg.sessionIds || [];
           if (!Array.isArray(sessionIds) || sessionIds.length === 0) {
             send({ type: "error", error: "Missing sessionIds array" });
             break;
           }
-          const { readdir, unlink, stat } = await import("fs/promises");
+          const { readdir, rename, mkdir, stat } = await import("fs/promises");
           const { join } = await import("path");
           const { homedir } = await import("os");
 
-          // Claude stores sessions in ~/.claude/projects/<sanitized>/sessions/
-          // The sanitization varies — try multiple patterns to find the right dir
           const home = homedir();
-          const claudeProjectsDir = join(home, ".claude", "projects");
-          let sessionsDir = null;
+          const realProjectsDir = join(home, ".claude", "projects");
+          const sanitizedCwd = dir.replace(/^\//, "").replace(/\//g, "-");
+          const altSanitized = dir.replace(/\//g, "-").replace(/^-/, "");
 
+          // Collect candidate session dirs: real HOME + all isolated HOMEs
+          const candidateDirs = [];
+          // Try main HOME
+          for (const sanit of [sanitizedCwd, altSanitized]) {
+            candidateDirs.push(join(realProjectsDir, sanit));
+            candidateDirs.push(join(realProjectsDir, sanit, "sessions"));
+          }
+          // Try all isolated HOMEs
           try {
-            const projectDirs = await readdir(claudeProjectsDir);
-            // Find the project dir that matches our cwd
-            // Claude uses various sanitization: replace / with -, or URL-encode, etc.
-            const sanitizations = [
-              dir.replace(/^\//, "").replace(/\//g, "-"),  // /home/user/foo -> home-user-foo
-              dir.replace(/\//g, "-").replace(/^-/, ""),    // same
-              encodeURIComponent(dir),                       // URL encoded
-              dir.replaceAll("/", "%2F"),                   // percent-encoded slashes
-            ];
-
-            for (const projDir of projectDirs) {
-              if (sanitizations.includes(projDir)) {
-                // Check if it has a sessions subdirectory or session files directly
-                const candidate = join(claudeProjectsDir, projDir);
-                try {
-                  const subItems = await readdir(candidate);
-                  if (subItems.includes("sessions")) {
-                    sessionsDir = join(candidate, "sessions");
-                  } else if (subItems.some(f => f.endsWith(".jsonl") || f.endsWith(".json"))) {
-                    sessionsDir = candidate;
-                  }
-                } catch {}
-                if (sessionsDir) break;
+            const isoEntries = await readdir("/tmp/claude-isolated-homes").catch(() => []);
+            for (const e of isoEntries) {
+              for (const sanit of [sanitizedCwd, altSanitized]) {
+                candidateDirs.push(join("/tmp/claude-isolated-homes", e, ".claude", "projects", sanit));
               }
             }
+          } catch {}
 
-            // Fallback: scan all project dirs for matching session IDs
-            if (!sessionsDir) {
-              for (const projDir of projectDirs) {
-                const candidate = join(claudeProjectsDir, projDir);
-                try {
-                  // Check sessions/ subdir first
-                  const sessSubDir = join(candidate, "sessions");
-                  const sessFiles = await readdir(sessSubDir).catch(() => null);
-                  if (sessFiles && sessFiles.some(f => sessionIds.some(id => f.includes(id)))) {
-                    sessionsDir = sessSubDir;
-                    break;
-                  }
-                  // Check top-level
-                  const topFiles = await readdir(candidate);
-                  if (topFiles.some(f => sessionIds.some(id => f.includes(id)))) {
-                    sessionsDir = candidate;
-                    break;
-                  }
-                } catch {}
+          let archived = 0;
+          for (const sessId of sessionIds) {
+            for (const candidate of candidateDirs) {
+              try {
+                const files = await readdir(candidate).catch(() => null);
+                if (!files) continue;
+                const match = files.find(f => f.startsWith(sessId));
+                if (!match) continue;
+                // Move to <candidate>/.archive/<filename>
+                const archiveDir = join(candidate, ".archive");
+                await mkdir(archiveDir, { recursive: true });
+                await rename(join(candidate, match), join(archiveDir, match));
+                archived++;
+                console.log(`[relay] Archived ${match} to ${archiveDir}`);
+                break; // session found and archived; move to next sessionId
+              } catch (err) {
+                console.log(`[relay] archive attempt failed for ${candidate}: ${err.message}`);
               }
             }
-          } catch (err) {
-            console.log(`[relay] Could not read projects dir: ${err.message}`);
           }
 
-          let deleted = 0;
-          if (sessionsDir) {
-            console.log(`[relay] Found sessions dir: ${sessionsDir}`);
-            try {
-              const files = await readdir(sessionsDir);
-              for (const id of sessionIds) {
-                const filename = files.find(f => f.includes(id));
-                if (filename) {
-                  await unlink(join(sessionsDir, filename));
-                  deleted++;
-                  console.log(`[relay] Deleted session file: ${filename}`);
-                }
-              }
-            } catch (err) {
-              console.log(`[relay] delete error: ${err.message}`);
-            }
-          } else {
-            console.log(`[relay] Could not find sessions directory for cwd: ${dir}`);
-          }
-
-          console.log(`[relay] Deleted ${deleted}/${sessionIds.length} sessions`);
+          console.log(`[relay] Archived ${archived}/${sessionIds.length} sessions`);
           // Return refreshed session list
           const sessions = await listSessions({ dir, limit: 50, includeWorktrees: false });
           const filtered = sessions.filter(s => !s.cwd || s.cwd === dir);
-          send({ type: "sessions-deleted", deleted, sessions: filtered });
+          // Backward-compat: send both event names
+          send({ type: "sessions-archived", archived, sessionIds, sessions: filtered });
+          send({ type: "sessions-deleted", deleted: archived, sessionIds, sessions: filtered });
+          break;
+        }
+
+        case "list-archived-sessions": {
+          const dir = msg.dir || DEFAULT_CWD;
+          const { readdir, readFile, stat } = await import("fs/promises");
+          const { join } = await import("path");
+          const { homedir } = await import("os");
+          const home = homedir();
+          const sanitizedCwd = dir.replace(/^\//, "").replace(/\//g, "-");
+          const altSanitized = dir.replace(/\//g, "-").replace(/^-/, "");
+
+          // Collect all archive dirs to scan
+          const archiveDirs = [];
+          for (const sanit of new Set([sanitizedCwd, altSanitized])) {
+            archiveDirs.push(join(home, ".claude", "projects", sanit, ".archive"));
+            archiveDirs.push(join(home, ".claude", "projects", sanit, "sessions", ".archive"));
+          }
+          try {
+            const isoEntries = await readdir("/tmp/claude-isolated-homes").catch(() => []);
+            for (const e of isoEntries) {
+              for (const sanit of new Set([sanitizedCwd, altSanitized])) {
+                archiveDirs.push(join("/tmp/claude-isolated-homes", e, ".claude", "projects", sanit, ".archive"));
+              }
+            }
+          } catch {}
+
+          const archivedSessions = [];
+          const seen = new Set();
+          for (const archiveDir of archiveDirs) {
+            try {
+              const files = await readdir(archiveDir).catch(() => null);
+              if (!files) continue;
+              for (const f of files) {
+                if (!f.endsWith(".jsonl") && !f.endsWith(".json")) continue;
+                const sessionId = f.replace(/\.(jsonl|json)$/, "");
+                if (seen.has(sessionId)) continue;
+                seen.add(sessionId);
+                const filePath = join(archiveDir, f);
+                try {
+                  const fStat = await stat(filePath);
+                  const content = await readFile(filePath, "utf-8");
+                  const lines = content.split("\n").filter(Boolean);
+                  let firstPrompt = "";
+                  let summary = "";
+                  for (const line of lines) {
+                    try {
+                      const parsed = JSON.parse(line);
+                      if (parsed.type === "user" && !firstPrompt) {
+                        const m = parsed.message;
+                        if (typeof m === "string") firstPrompt = m;
+                        else if (typeof m?.content === "string") firstPrompt = m.content;
+                        else if (Array.isArray(m?.content)) {
+                          const t = m.content.find(b => b.type === "text");
+                          if (t?.text) firstPrompt = t.text;
+                        }
+                        if (firstPrompt) firstPrompt = firstPrompt.slice(0, 100);
+                      }
+                      if (parsed.summary || parsed.customTitle) {
+                        summary = parsed.summary || parsed.customTitle || summary;
+                      }
+                    } catch {}
+                    if (firstPrompt && summary) break;
+                  }
+                  const isolated = archiveDir.startsWith("/tmp/claude-isolated-homes");
+                  const isolatedHome = isolated ? archiveDir.split("/.claude/")[0] : undefined;
+                  archivedSessions.push({
+                    sessionId,
+                    summary: summary || firstPrompt.slice(0, 60) || "Untitled",
+                    firstPrompt,
+                    lastModified: fStat.mtimeMs,
+                    cwd: dir,
+                    archived: true,
+                    archivePath: filePath,
+                    isolated,
+                    isolatedHome,
+                  });
+                } catch {}
+              }
+            } catch {}
+          }
+
+          archivedSessions.sort((a, b) => (b.lastModified || 0) - (a.lastModified || 0));
+          console.log(`[relay] Found ${archivedSessions.length} archived sessions for ${dir}`);
+          send({ type: "archived-sessions", sessions: archivedSessions });
+          break;
+        }
+
+        case "unarchive-sessions": {
+          const dir = msg.dir || DEFAULT_CWD;
+          const sessionIds = msg.sessionIds || [];
+          if (!Array.isArray(sessionIds) || sessionIds.length === 0) {
+            send({ type: "error", error: "Missing sessionIds array" });
+            break;
+          }
+          const { readdir, rename } = await import("fs/promises");
+          const { join, dirname } = await import("path");
+          const { homedir } = await import("os");
+          const home = homedir();
+          const sanitizedCwd = dir.replace(/^\//, "").replace(/\//g, "-");
+          const altSanitized = dir.replace(/\//g, "-").replace(/^-/, "");
+
+          // Same candidate dirs as archive
+          const archiveDirs = [];
+          for (const sanit of new Set([sanitizedCwd, altSanitized])) {
+            archiveDirs.push(join(home, ".claude", "projects", sanit, ".archive"));
+            archiveDirs.push(join(home, ".claude", "projects", sanit, "sessions", ".archive"));
+          }
+          try {
+            const isoEntries = await readdir("/tmp/claude-isolated-homes").catch(() => []);
+            for (const e of isoEntries) {
+              for (const sanit of new Set([sanitizedCwd, altSanitized])) {
+                archiveDirs.push(join("/tmp/claude-isolated-homes", e, ".claude", "projects", sanit, ".archive"));
+              }
+            }
+          } catch {}
+
+          let unarchived = 0;
+          for (const sessId of sessionIds) {
+            for (const archiveDir of archiveDirs) {
+              try {
+                const files = await readdir(archiveDir).catch(() => null);
+                if (!files) continue;
+                const match = files.find(f => f.startsWith(sessId));
+                if (!match) continue;
+                // Move back from .archive/ to its parent
+                const parentDir = dirname(archiveDir);
+                await rename(join(archiveDir, match), join(parentDir, match));
+                unarchived++;
+                console.log(`[relay] Unarchived ${match} from ${archiveDir}`);
+                break;
+              } catch (err) {
+                console.log(`[relay] unarchive attempt failed: ${err.message}`);
+              }
+            }
+          }
+
+          console.log(`[relay] Unarchived ${unarchived}/${sessionIds.length} sessions`);
+          send({ type: "sessions-unarchived", unarchived, sessionIds });
           break;
         }
 

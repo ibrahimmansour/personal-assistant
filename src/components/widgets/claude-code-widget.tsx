@@ -32,6 +32,8 @@ import {
   Zap,
   RefreshCw,
   Shield,
+  Archive,
+  ArchiveRestore,
 } from "lucide-react";
 import { TerminalPanel } from "@/components/terminal-panel";
 import { cn } from "@/lib/utils";
@@ -80,6 +82,8 @@ interface SessionInfo {
   cwd?: string;
   isolated?: boolean;
   isolatedHome?: string;
+  archived?: boolean;
+  archivePath?: string;
 }
 
 interface RelayConfig {
@@ -422,6 +426,9 @@ export function ClaudeCodeWidget() {
   // Bulk delete state
   const [selectMode, setSelectMode] = useState(false);
   const [selectedSessions, setSelectedSessions] = useState<Set<string>>(new Set());
+  // Archived sessions
+  const [archivedSessions, setArchivedSessions] = useState<SessionInfo[]>([]);
+  const [showArchived, setShowArchived] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatScrollRef = useRef<HTMLDivElement>(null);
@@ -979,15 +986,31 @@ export function ClaudeCodeWidget() {
         setBranches((msg.branches as string[]) || []);
         break;
 
+      case "sessions-archived":
       case "sessions-deleted":
         setSessions((msg.sessions as SessionInfo[]) || []);
         setSelectedSessions(new Set());
         setSelectMode(false);
-        // If active session was deleted, clear it
+        // If active session was archived, clear it
         if (activeSessionId && (msg.sessionIds as string[] || []).includes(activeSessionId)) {
           setActiveSessionId(null);
           setMessages([]);
         }
+        break;
+
+      case "archived-sessions":
+        setArchivedSessions((msg.sessions as SessionInfo[]) || []);
+        break;
+
+      case "sessions-unarchived":
+        // Refresh both lists
+        if (wsRef.current?.readyState === WebSocket.OPEN) {
+          const dir = activeFolderRef.current || configsRef.current[activeConfigIdxRef.current]?.defaultCwd;
+          wsRef.current.send(JSON.stringify({ type: "list-sessions", dir }));
+          wsRef.current.send(JSON.stringify({ type: "list-archived-sessions", dir }));
+        }
+        setSelectedSessions(new Set());
+        setSelectMode(false);
         break;
     }
   }, [configs, activeConfigIdx, activeSessionId]);
@@ -1657,38 +1680,40 @@ export function ClaudeCodeWidget() {
             </div>
             {/* Sessions header */}
             <div className="p-2 border-b border-border flex items-center justify-between">
-              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Sessions</span>
+              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                {showArchived ? "Archived" : "Sessions"}
+              </span>
               <div className="flex gap-1">
                 {selectMode ? (
                   <>
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-6 w-6 text-destructive"
+                      className="h-6 w-6"
                       onClick={() => {
                         if (selectedSessions.size > 0 && wsRef.current?.readyState === WebSocket.OPEN) {
                           wsRef.current.send(JSON.stringify({
-                            type: "delete-sessions",
+                            type: showArchived ? "unarchive-sessions" : "archive-sessions",
                             sessionIds: Array.from(selectedSessions),
                             dir: activeFolder || configs[activeConfigIdx]?.defaultCwd,
                           }));
                         }
                       }}
                       disabled={selectedSessions.size === 0}
-                      title={`Delete ${selectedSessions.size} session(s)`}
+                      title={showArchived ? `Unarchive ${selectedSessions.size} session(s)` : `Archive ${selectedSessions.size} session(s)`}
                     >
-                      <Trash2 className="h-3.5 w-3.5" />
+                      {showArchived ? <ArchiveRestore className="h-3.5 w-3.5" /> : <Archive className="h-3.5 w-3.5" />}
                     </Button>
                     <Button
                       variant="ghost"
                       size="icon"
                       className="h-6 w-6"
                       onClick={() => {
-                        // Select all / deselect all
-                        if (selectedSessions.size === sessions.length) {
+                        const list = showArchived ? archivedSessions : sessions;
+                        if (selectedSessions.size === list.length) {
                           setSelectedSessions(new Set());
                         } else {
-                          setSelectedSessions(new Set(sessions.map(s => s.sessionId)));
+                          setSelectedSessions(new Set(list.map(s => s.sessionId)));
                         }
                       }}
                       title="Select all"
@@ -1701,14 +1726,42 @@ export function ClaudeCodeWidget() {
                   </>
                 ) : (
                   <>
-                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={newSession} title="New session">
-                      <Plus className="h-3.5 w-3.5" />
-                    </Button>
-                    {sessions.length > 0 && (
-                      <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setSelectMode(true)} title="Select sessions to delete">
-                        <Trash2 className="h-3.5 w-3.5" />
+                    {!showArchived && (
+                      <Button variant="ghost" size="icon" className="h-6 w-6" onClick={newSession} title="New session">
+                        <Plus className="h-3.5 w-3.5" />
                       </Button>
                     )}
+                    {(showArchived ? archivedSessions : sessions).length > 0 && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6"
+                        onClick={() => setSelectMode(true)}
+                        title={showArchived ? "Select sessions to unarchive" : "Select sessions to archive"}
+                      >
+                        {showArchived ? <ArchiveRestore className="h-3.5 w-3.5" /> : <Archive className="h-3.5 w-3.5" />}
+                      </Button>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className={cn("h-6 w-6", showArchived && "bg-accent")}
+                      onClick={() => {
+                        const next = !showArchived;
+                        setShowArchived(next);
+                        setSelectedSessions(new Set());
+                        setSelectMode(false);
+                        if (next && wsRef.current?.readyState === WebSocket.OPEN) {
+                          wsRef.current.send(JSON.stringify({
+                            type: "list-archived-sessions",
+                            dir: activeFolder || configs[activeConfigIdx]?.defaultCwd,
+                          }));
+                        }
+                      }}
+                      title={showArchived ? "Show active sessions" : "Show archived sessions"}
+                    >
+                      <Archive className="h-3.5 w-3.5" />
+                    </Button>
                     <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setSidebarOpen(false)}>
                       <PanelLeftClose className="h-3.5 w-3.5" />
                     </Button>
@@ -1718,13 +1771,13 @@ export function ClaudeCodeWidget() {
             </div>
             <div className="flex-1 min-h-0 overflow-y-auto">
               <div className="p-1.5 space-y-0.5">
-                {sessions.map((s) => (
+                {(showArchived ? archivedSessions : sessions).map((s) => (
                   <div
                     key={s.sessionId}
                     className={cn(
                       "group relative rounded-md px-2.5 py-2 cursor-pointer text-xs transition-colors",
                       selectMode && selectedSessions.has(s.sessionId)
-                        ? "bg-destructive/10 border border-destructive/30"
+                        ? "bg-accent/30 border border-accent"
                         : activeSessionId === s.sessionId
                           ? "bg-accent text-accent-foreground"
                           : "hover:bg-muted"
@@ -1746,9 +1799,9 @@ export function ClaudeCodeWidget() {
                       {selectMode && (
                         <div className={cn(
                           "w-3.5 h-3.5 rounded border shrink-0 flex items-center justify-center",
-                          selectedSessions.has(s.sessionId) ? "bg-destructive border-destructive" : "border-muted-foreground/40"
+                          selectedSessions.has(s.sessionId) ? "bg-primary border-primary" : "border-muted-foreground/40"
                         )}>
-                          {selectedSessions.has(s.sessionId) && <Check className="h-2.5 w-2.5 text-destructive-foreground" />}
+                          {selectedSessions.has(s.sessionId) && <Check className="h-2.5 w-2.5 text-primary-foreground" />}
                         </div>
                       )}
                       <div className="flex-1 min-w-0">
@@ -1766,8 +1819,10 @@ export function ClaudeCodeWidget() {
                     </div>
                   </div>
                 ))}
-                {sessions.length === 0 && connected && (
-                  <p className="text-xs text-muted-foreground text-center py-4">No sessions yet</p>
+                {(showArchived ? archivedSessions : sessions).length === 0 && connected && (
+                  <p className="text-xs text-muted-foreground text-center py-4">
+                    {showArchived ? "No archived sessions" : "No sessions yet"}
+                  </p>
                 )}
               </div>
             </div>
