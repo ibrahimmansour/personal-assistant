@@ -4522,6 +4522,7 @@ export function FilesWidget() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchMode, setSearchMode] = useState<"name" | "content" | "ai">("name");
+  const [showToolbar, setShowToolbar] = useState(false);
   const [searchGlobal, setSearchGlobal] = useState(false);
   const [searchResults, setSearchResults] = useState<SearchResultEntry[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -5315,148 +5316,6 @@ export function FilesWidget() {
       onExpandChange={(expanded) => { if (!expanded) setSplitTerminal(null); }}
       headerAction={
         <div className="flex items-center gap-0.5">
-          {/* VS Code mode toggle */}
-          <button
-            onClick={() => setMonacoMode(!monacoMode)}
-            className={cn(
-              "px-1.5 py-0.5 rounded-md text-[10px] font-medium transition-colors",
-              monacoMode ? "text-primary bg-primary/10 border border-primary/30" : "text-muted-foreground hover:text-foreground hover:bg-muted"
-            )}
-            title={monacoMode ? "Exit VS Code mode" : "VS Code mode"}
-          >
-            VS Code
-          </button>
-           {/* View toggle */}
-          <ViewToggle view={viewMode} onChange={handleViewModeChange} />
-          {/* Sort controls */}
-          <select
-            value={mainSortField}
-            onChange={(e) => setMainSortField(e.target.value as SortField)}
-            className="text-[10px] bg-muted/50 border border-border rounded px-1 py-0.5 outline-none h-6"
-            title="Sort by"
-          >
-            <option value="name">Name</option>
-            <option value="size">Size</option>
-            <option value="modified">Modified</option>
-            <option value="type">Type</option>
-          </select>
-          <button
-            onClick={() => setMainSortDir(d => d === "asc" ? "desc" : "asc")}
-            className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-            title={mainSortDir === "asc" ? "Sort ascending" : "Sort descending"}
-          >
-            {mainSortDir === "asc" ? <ArrowDownAZ className="h-3.5 w-3.5" /> : <ArrowUpAZ className="h-3.5 w-3.5" />}
-          </button>
-          {/* Dual-pane toggle */}
-          <button
-            onClick={() => setDualPaneMode(!dualPaneMode)}
-            className={cn(
-              "p-1 rounded-md transition-colors",
-              dualPaneMode ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground hover:bg-muted"
-            )}
-            title={dualPaneMode ? "Exit dual-pane mode" : "Dual-pane mode (side-by-side)"}
-          >
-            {dualPaneMode ? <PanelLeftClose className="h-3.5 w-3.5" /> : <PanelLeftOpen className="h-3.5 w-3.5" />}
-          </button>
-          {/* VPS connections */}
-          <button
-            onClick={() => { setShowVpsDialog(true); setEditingVpsConn(null); }}
-            className={cn(
-              "p-1 rounded-md transition-colors",
-              vpsConnections.length > 0 ? "text-green-500 hover:text-green-400 hover:bg-muted" : "text-muted-foreground hover:text-foreground hover:bg-muted"
-            )}
-            title={`VPS Connections (${vpsConnections.length})`}
-          >
-            <Server className="h-3.5 w-3.5" />
-          </button>
-          {/* New file / folder — only when not in recent view */}
-          {viewMode !== "recent" && (
-            <>
-              <button
-                onClick={() => startNewEntry("file", resolvedPath)}
-                className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-                title="New file in current folder"
-              >
-                <FilePlus className="h-3.5 w-3.5" />
-              </button>
-              <button
-                onClick={() => startNewEntry("folder", resolvedPath)}
-                className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-                title="New folder in current folder"
-              >
-                <FolderPlus className="h-3.5 w-3.5" />
-              </button>
-            </>
-          )}
-          {/* Claude Code */}
-          <button
-            onClick={() => openInTool("claude")}
-            className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-            title={`Open Claude Code in ${shortenPath(resolvedPath)}`}
-          >
-            <ClaudeIcon className="h-3.5 w-3.5" />
-          </button>
-          {/* OpenCode */}
-          <button
-            onClick={() => openInTool("opencode")}
-            className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-            title={`Open OpenCode in ${shortenPath(resolvedPath)}`}
-          >
-            <OpenCodeIcon className="h-3.5 w-3.5" />
-          </button>
-          {/* Git status */}
-          {gitStatus?.isGitRepo && (
-            <button
-              onClick={() => setGitOpen(!gitOpen)}
-              className={cn(
-                "p-1 rounded-md transition-colors flex items-center gap-1",
-                gitOpen ? "text-foreground bg-muted" : "text-muted-foreground hover:text-foreground hover:bg-muted"
-              )}
-              title={`Git: ${gitStatus.branch || "unknown"}`}
-            >
-              <GitBranch className="h-3.5 w-3.5" />
-              {gitChangedCount > 0 && (
-                <span className="text-[9px] font-medium text-yellow-500">{gitChangedCount}</span>
-              )}
-            </button>
-          )}
-          {/* Git Actions */}
-          {gitStatus?.isGitRepo && (
-            <button
-              onClick={() => setShowGitActions(!showGitActions)}
-              className={cn(
-                "p-1 rounded-md transition-colors",
-                showGitActions ? "text-foreground bg-muted" : "text-muted-foreground hover:text-foreground hover:bg-muted"
-              )}
-              title="Git Actions (commit, stash, branch)"
-            >
-              <GitCommit className="h-3.5 w-3.5" />
-            </button>
-          )}
-          {/* Bookmarks */}
-          <button
-            onClick={() => setShowBookmarks(!showBookmarks)}
-            className={cn(
-              "p-1 rounded-md transition-colors",
-              showBookmarks ? "text-foreground bg-muted" : "text-muted-foreground hover:text-foreground hover:bg-muted"
-            )}
-            title="Pinned files"
-          >
-            <Bookmark className="h-3.5 w-3.5" />
-          </button>
-          {/* Language Stats */}
-          {gitStatus?.isGitRepo && (
-            <button
-              onClick={() => { if (showLangStats) setShowLangStats(false); else fetchLangStats(); }}
-              className={cn(
-                "p-1 rounded-md transition-colors",
-                showLangStats ? "text-foreground bg-muted" : "text-muted-foreground hover:text-foreground hover:bg-muted"
-              )}
-              title="Language statistics"
-            >
-              <BarChart3 className="h-3.5 w-3.5" />
-            </button>
-          )}
           {/* Search */}
           <button
             onClick={() => setSearchOpen(!searchOpen)}
@@ -5468,48 +5327,16 @@ export function FilesWidget() {
           >
             <Search className="h-3.5 w-3.5" />
           </button>
-          {/* Hidden files */}
+          {/* Toolbar toggle */}
           <button
-            onClick={() => setShowHidden(!showHidden)}
+            onClick={() => setShowToolbar(!showToolbar)}
             className={cn(
               "p-1 rounded-md transition-colors",
-              showHidden ? "text-foreground bg-muted" : "text-muted-foreground hover:text-foreground hover:bg-muted"
+              showToolbar ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground hover:bg-muted"
             )}
-            title={showHidden ? "Hide hidden files" : "Show hidden files"}
+            title={showToolbar ? "Hide toolbar" : "Show toolbar"}
           >
-            {showHidden ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
-          </button>
-          {/* Gitignore-aware filtering */}
-          {gitStatus?.isGitRepo && (
-            <button
-              onClick={() => setHideGitignored(!hideGitignored)}
-              className={cn(
-                "p-1 rounded-md transition-colors",
-                hideGitignored ? "text-foreground bg-muted" : "text-muted-foreground hover:text-foreground hover:bg-muted"
-              )}
-              title={hideGitignored ? "Show gitignored files" : "Hide gitignored files"}
-            >
-              <Ban className="h-3.5 w-3.5" />
-            </button>
-          )}
-          {/* Auto-refresh (file watcher) */}
-          <button
-            onClick={() => setAutoRefresh(!autoRefresh)}
-            className={cn(
-              "p-1 rounded-md transition-colors",
-              autoRefresh ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground hover:bg-muted"
-            )}
-            title={autoRefresh ? "Stop auto-refresh" : "Auto-refresh (watch for changes)"}
-          >
-            <RotateCcw className="h-3.5 w-3.5" />
-          </button>
-          {/* Refresh */}
-          <button
-            onClick={refresh}
-            className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted"
-            title="Refresh"
-          >
-            <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
+            <LayoutList className="h-3.5 w-3.5" />
           </button>
         </div>
       }
@@ -5566,6 +5393,196 @@ export function FilesWidget() {
         />
       ) : (
       <div className="flex flex-col h-full gap-1">
+        {/* Collapsible toolbar */}
+        {showToolbar && (
+          <div className="shrink-0 flex flex-wrap items-center gap-0.5 px-1 py-1 bg-muted/30 border-b border-border rounded-md">
+            {/* VS Code mode toggle */}
+            <button
+              onClick={() => setMonacoMode(!monacoMode)}
+              className={cn(
+                "px-1.5 py-0.5 rounded-md text-[10px] font-medium transition-colors",
+                monacoMode ? "text-primary bg-primary/10 border border-primary/30" : "text-muted-foreground hover:text-foreground hover:bg-muted"
+              )}
+              title={monacoMode ? "Exit VS Code mode" : "VS Code mode"}
+            >
+              VS Code
+            </button>
+            {/* View toggle */}
+            <ViewToggle view={viewMode} onChange={handleViewModeChange} />
+            {/* Sort controls */}
+            <select
+              value={mainSortField}
+              onChange={(e) => setMainSortField(e.target.value as SortField)}
+              className="text-[10px] bg-muted/50 border border-border rounded px-1 py-0.5 outline-none h-6"
+              title="Sort by"
+            >
+              <option value="name">Name</option>
+              <option value="size">Size</option>
+              <option value="modified">Modified</option>
+              <option value="type">Type</option>
+            </select>
+            <button
+              onClick={() => setMainSortDir(d => d === "asc" ? "desc" : "asc")}
+              className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              title={mainSortDir === "asc" ? "Sort ascending" : "Sort descending"}
+            >
+              {mainSortDir === "asc" ? <ArrowDownAZ className="h-3.5 w-3.5" /> : <ArrowUpAZ className="h-3.5 w-3.5" />}
+            </button>
+            {/* Dual-pane toggle */}
+            <button
+              onClick={() => setDualPaneMode(!dualPaneMode)}
+              className={cn(
+                "p-1 rounded-md transition-colors",
+                dualPaneMode ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground hover:bg-muted"
+              )}
+              title={dualPaneMode ? "Exit dual-pane mode" : "Dual-pane mode (side-by-side)"}
+            >
+              {dualPaneMode ? <PanelLeftClose className="h-3.5 w-3.5" /> : <PanelLeftOpen className="h-3.5 w-3.5" />}
+            </button>
+            {/* VPS connections */}
+            <button
+              onClick={() => { setShowVpsDialog(true); setEditingVpsConn(null); }}
+              className={cn(
+                "p-1 rounded-md transition-colors",
+                vpsConnections.length > 0 ? "text-green-500 hover:text-green-400 hover:bg-muted" : "text-muted-foreground hover:text-foreground hover:bg-muted"
+              )}
+              title={`VPS Connections (${vpsConnections.length})`}
+            >
+              <Server className="h-3.5 w-3.5" />
+            </button>
+            {/* New file / folder */}
+            {viewMode !== "recent" && (
+              <>
+                <button
+                  onClick={() => startNewEntry("file", resolvedPath)}
+                  className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                  title="New file in current folder"
+                >
+                  <FilePlus className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  onClick={() => startNewEntry("folder", resolvedPath)}
+                  className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                  title="New folder in current folder"
+                >
+                  <FolderPlus className="h-3.5 w-3.5" />
+                </button>
+              </>
+            )}
+            {/* Claude Code */}
+            <button
+              onClick={() => openInTool("claude")}
+              className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              title={`Open Claude Code in ${shortenPath(resolvedPath)}`}
+            >
+              <ClaudeIcon className="h-3.5 w-3.5" />
+            </button>
+            {/* OpenCode */}
+            <button
+              onClick={() => openInTool("opencode")}
+              className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              title={`Open OpenCode in ${shortenPath(resolvedPath)}`}
+            >
+              <OpenCodeIcon className="h-3.5 w-3.5" />
+            </button>
+            {/* Git status */}
+            {gitStatus?.isGitRepo && (
+              <button
+                onClick={() => setGitOpen(!gitOpen)}
+                className={cn(
+                  "p-1 rounded-md transition-colors flex items-center gap-1",
+                  gitOpen ? "text-foreground bg-muted" : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                )}
+                title={`Git: ${gitStatus.branch || "unknown"}`}
+              >
+                <GitBranch className="h-3.5 w-3.5" />
+                {gitChangedCount > 0 && (
+                  <span className="text-[9px] font-medium text-yellow-500">{gitChangedCount}</span>
+                )}
+              </button>
+            )}
+            {/* Git Actions */}
+            {gitStatus?.isGitRepo && (
+              <button
+                onClick={() => setShowGitActions(!showGitActions)}
+                className={cn(
+                  "p-1 rounded-md transition-colors",
+                  showGitActions ? "text-foreground bg-muted" : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                )}
+                title="Git Actions (commit, stash, branch)"
+              >
+                <GitCommit className="h-3.5 w-3.5" />
+              </button>
+            )}
+            {/* Bookmarks */}
+            <button
+              onClick={() => setShowBookmarks(!showBookmarks)}
+              className={cn(
+                "p-1 rounded-md transition-colors",
+                showBookmarks ? "text-foreground bg-muted" : "text-muted-foreground hover:text-foreground hover:bg-muted"
+              )}
+              title="Pinned files"
+            >
+              <Bookmark className="h-3.5 w-3.5" />
+            </button>
+            {/* Language Stats */}
+            {gitStatus?.isGitRepo && (
+              <button
+                onClick={() => { if (showLangStats) setShowLangStats(false); else fetchLangStats(); }}
+                className={cn(
+                  "p-1 rounded-md transition-colors",
+                  showLangStats ? "text-foreground bg-muted" : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                )}
+                title="Language statistics"
+              >
+                <BarChart3 className="h-3.5 w-3.5" />
+              </button>
+            )}
+            {/* Hidden files */}
+            <button
+              onClick={() => setShowHidden(!showHidden)}
+              className={cn(
+                "p-1 rounded-md transition-colors",
+                showHidden ? "text-foreground bg-muted" : "text-muted-foreground hover:text-foreground hover:bg-muted"
+              )}
+              title={showHidden ? "Hide hidden files" : "Show hidden files"}
+            >
+              {showHidden ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+            </button>
+            {/* Gitignore-aware filtering */}
+            {gitStatus?.isGitRepo && (
+              <button
+                onClick={() => setHideGitignored(!hideGitignored)}
+                className={cn(
+                  "p-1 rounded-md transition-colors",
+                  hideGitignored ? "text-foreground bg-muted" : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                )}
+                title={hideGitignored ? "Show gitignored files" : "Hide gitignored files"}
+              >
+                <Ban className="h-3.5 w-3.5" />
+              </button>
+            )}
+            {/* Auto-refresh */}
+            <button
+              onClick={() => setAutoRefresh(!autoRefresh)}
+              className={cn(
+                "p-1 rounded-md transition-colors",
+                autoRefresh ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground hover:bg-muted"
+              )}
+              title={autoRefresh ? "Stop auto-refresh" : "Auto-refresh (watch for changes)"}
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+            </button>
+            {/* Refresh */}
+            <button
+              onClick={refresh}
+              className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted"
+              title="Refresh"
+            >
+              <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
+            </button>
+          </div>
+        )}
         {/* Search bar */}
         {searchOpen && (
           <div className="shrink-0 space-y-1">
