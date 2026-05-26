@@ -774,9 +774,15 @@ export function ClaudeCodeWidget() {
               updateBlocks(blocks);
             }
           }
-          // Capture session ID
-          if (data.session_id && !activeSessionIdRef.current) {
+          // Only let the currently pending new-session request claim the view.
+          if (
+            data.session_id &&
+            !activeSessionIdRef.current &&
+            reqId &&
+            reqId === currentPendingRequestIdRef.current
+          ) {
             setActiveSessionId(data.session_id as string);
+            currentPendingRequestIdRef.current = null;
           }
           // Update token usage from usage data if present (only if viewing)
           if (isViewingThisSession && data.usage) {
@@ -824,8 +830,14 @@ export function ClaudeCodeWidget() {
             }
             updateBlocks(blocks);
           }
-          if ((data as { session_id?: string }).session_id && !activeSessionIdRef.current) {
+          if (
+            (data as { session_id?: string }).session_id &&
+            !activeSessionIdRef.current &&
+            reqId &&
+            reqId === currentPendingRequestIdRef.current
+          ) {
             setActiveSessionId((data as { session_id: string }).session_id);
+            currentPendingRequestIdRef.current = null;
           }
           if (isViewingThisSession && (data as { usage?: { input_tokens?: number; output_tokens?: number } }).usage) {
             const usage = (data as { usage: { input_tokens?: number; output_tokens?: number } }).usage;
@@ -900,7 +912,15 @@ export function ClaudeCodeWidget() {
           setStreaming(false);
         }
 
-        if (msg.sessionId && !activeSessionIdRef.current) setActiveSessionId(msg.sessionId as string);
+        if (
+          msg.sessionId &&
+          !activeSessionIdRef.current &&
+          reqId &&
+          reqId === currentPendingRequestIdRef.current
+        ) {
+          setActiveSessionId(msg.sessionId as string);
+          currentPendingRequestIdRef.current = null;
+        }
         // Refresh session list
         if (wsRef.current?.readyState === WebSocket.OPEN) {
           wsRef.current.send(JSON.stringify({ type: "list-sessions", dir: activeFolderRef.current || configsRef.current[activeConfigIdxRef.current]?.defaultCwd }));
@@ -1323,9 +1343,13 @@ export function ClaudeCodeWidget() {
         streamingTextRef.current = "";
         streamingToolCallsRef.current = [];
         streamingBlocksRef.current = [];
+        const requestId = `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        if (!activeSessionId) {
+          currentPendingRequestIdRef.current = requestId;
+        }
         wsRef.current.send(JSON.stringify({
           type: "query",
-          requestId: `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          requestId,
           prompt: cmd,
           sessionId: activeSessionId || undefined,
           cwd: activeFolder || configs[activeConfigIdx]?.defaultCwd,

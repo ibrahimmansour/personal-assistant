@@ -76,6 +76,13 @@ function parseWorktrees(output) {
   return worktrees;
 }
 
+function getSanitizedCwdVariants(dir) {
+  return [...new Set([
+    dir.replace(/\//g, "-"),
+    dir.replace(/^\//, "").replace(/\//g, "-"),
+  ])];
+}
+
 wss.on("connection", (ws, req) => {
   // Auth check
   if (AUTH_TOKEN) {
@@ -339,64 +346,66 @@ wss.on("connection", (ws, req) => {
             const isolatedRoot = "/tmp/claude-isolated-homes";
             // Sanitize cwd the same way Claude Code does:
             // /home/user/foo -> -home-user-foo (replace / with -)
-            const sanitizedCwd = dir.replace(/\//g, "-");
+            const sanitizedVariants = getSanitizedCwdVariants(dir);
             const entries = await readdir(isolatedRoot).catch(() => []);
-            console.log(`[relay] Scanning ${entries.length} isolated HOMEs for cwd ${dir} (sanitized: ${sanitizedCwd})`);
+            console.log(`[relay] Scanning ${entries.length} isolated HOMEs for cwd ${dir} (sanitized: ${sanitizedVariants.join(", ")})`);
 
             for (const entry of entries) {
               const isoHome = join(isolatedRoot, entry);
-              const projectsDir = join(isoHome, ".claude", "projects", sanitizedCwd);
-              try {
-                const projectStat = await stat(projectsDir).catch(() => null);
-                if (!projectStat || !projectStat.isDirectory()) continue;
-                const sessionFiles = await readdir(projectsDir).catch(() => []);
-                for (const f of sessionFiles) {
-                  if (!f.endsWith(".jsonl") && !f.endsWith(".json")) continue;
-                  const sessionId = f.replace(/\.(jsonl|json)$/, "");
-                  const filePath = join(projectsDir, f);
-                  try {
-                    const fStat = await stat(filePath);
-                    // Read first line to extract first prompt as summary
-                    const content = await readFile(filePath, "utf-8");
-                    const lines = content.split("\n").filter(Boolean);
-                    let firstPrompt = "";
-                    let summary = "";
-                    for (const line of lines) {
-                      try {
-                        const parsed = JSON.parse(line);
-                        if (parsed.type === "user" && !firstPrompt) {
-                          // Extract first text prompt
-                          const m = parsed.message;
-                          if (typeof m === "string") firstPrompt = m;
-                          else if (typeof m?.content === "string") firstPrompt = m.content;
-                          else if (Array.isArray(m?.content)) {
-                            const t = m.content.find(b => b.type === "text");
-                            if (t?.text) firstPrompt = t.text;
-                          } else if (typeof parsed.prompt === "string") {
-                            firstPrompt = parsed.prompt;
+              for (const sanitizedCwd of sanitizedVariants) {
+                const projectsDir = join(isoHome, ".claude", "projects", sanitizedCwd);
+                try {
+                  const projectStat = await stat(projectsDir).catch(() => null);
+                  if (!projectStat || !projectStat.isDirectory()) continue;
+                  const sessionFiles = await readdir(projectsDir).catch(() => []);
+                  for (const f of sessionFiles) {
+                    if (!f.endsWith(".jsonl") && !f.endsWith(".json")) continue;
+                    const sessionId = f.replace(/\.(jsonl|json)$/, "");
+                    const filePath = join(projectsDir, f);
+                    try {
+                      const fStat = await stat(filePath);
+                      // Read first line to extract first prompt as summary
+                      const content = await readFile(filePath, "utf-8");
+                      const lines = content.split("\n").filter(Boolean);
+                      let firstPrompt = "";
+                      let summary = "";
+                      for (const line of lines) {
+                        try {
+                          const parsed = JSON.parse(line);
+                          if (parsed.type === "user" && !firstPrompt) {
+                            // Extract first text prompt
+                            const m = parsed.message;
+                            if (typeof m === "string") firstPrompt = m;
+                            else if (typeof m?.content === "string") firstPrompt = m.content;
+                            else if (Array.isArray(m?.content)) {
+                              const t = m.content.find(b => b.type === "text");
+                              if (t?.text) firstPrompt = t.text;
+                            } else if (typeof parsed.prompt === "string") {
+                              firstPrompt = parsed.prompt;
+                            }
+                            if (firstPrompt) firstPrompt = firstPrompt.slice(0, 100);
                           }
-                          if (firstPrompt) firstPrompt = firstPrompt.slice(0, 100);
-                        }
-                        if (parsed.type === "summary" || parsed.customTitle) {
-                          summary = parsed.summary || parsed.customTitle || summary;
-                        }
-                      } catch {}
-                      if (firstPrompt && summary) break;
+                          if (parsed.type === "summary" || parsed.customTitle) {
+                            summary = parsed.summary || parsed.customTitle || summary;
+                          }
+                        } catch {}
+                        if (firstPrompt && summary) break;
+                      }
+                      isolatedSessions.push({
+                        sessionId,
+                        summary: summary || firstPrompt.slice(0, 60) || "Untitled",
+                        firstPrompt,
+                        lastModified: fStat.mtimeMs,
+                        cwd: dir,
+                        isolated: true,
+                        isolatedHome: isoHome,
+                      });
+                    } catch (e) {
+                      console.log(`[relay] error reading ${filePath}: ${e.message}`);
                     }
-                    isolatedSessions.push({
-                      sessionId,
-                      summary: summary || firstPrompt.slice(0, 60) || "Untitled",
-                      firstPrompt,
-                      lastModified: fStat.mtimeMs,
-                      cwd: dir,
-                      isolated: true,
-                      isolatedHome: isoHome,
-                    });
-                  } catch (e) {
-                    console.log(`[relay] error reading ${filePath}: ${e.message}`);
                   }
-                }
-              } catch {}
+                } catch {}
+              }
             }
           } catch (e) {
             console.log(`[relay] isolated scan error: ${e.message}`);
@@ -438,14 +447,15 @@ wss.on("connection", (ws, req) => {
             const { readFile, readdir } = await import("fs/promises");
             const { join } = await import("path");
             const dir = msg.dir || DEFAULT_CWD;
-            const sanitizedCwd = dir.replace(/\//g, "-");
-            const projectsDir = join(msg.isolatedHome, ".claude", "projects", sanitizedCwd);
-            console.log(`[relay] get-messages from isolated: ${projectsDir} session=${msg.sessionId}`);
             messages = [];
             try {
-              const files = await readdir(projectsDir).catch(() => []);
-              const sessionFile = files.find(f => f.startsWith(msg.sessionId));
-              if (sessionFile) {
+              for (const sanitizedCwd of getSanitizedCwdVariants(dir)) {
+                const projectsDir = join(msg.isolatedHome, ".claude", "projects", sanitizedCwd);
+                console.log(`[relay] get-messages from isolated: ${projectsDir} session=${msg.sessionId}`);
+                const files = await readdir(projectsDir).catch(() => []);
+                const sessionFile = files.find(f => f.startsWith(msg.sessionId));
+                if (!sessionFile) continue;
+
                 const content = await readFile(join(projectsDir, sessionFile), "utf-8");
                 const lines = content.split("\n").filter(Boolean);
                 for (const line of lines) {
@@ -457,8 +467,10 @@ wss.on("connection", (ws, req) => {
                   } catch {}
                 }
                 console.log(`[relay] read ${messages.length} messages from isolated session`);
-              } else {
-                console.log(`[relay] isolated session file not found in ${projectsDir}`);
+                break;
+              }
+              if (messages.length === 0) {
+                console.log(`[relay] isolated session file not found for ${msg.sessionId}`);
               }
             } catch (e) {
               console.log(`[relay] isolated read error: ${e.message}`);
@@ -572,13 +584,10 @@ wss.on("connection", (ws, req) => {
 
           const home = homedir();
           const realProjectsDir = join(home, ".claude", "projects");
-          const sanitizedCwd = dir.replace(/^\//, "").replace(/\//g, "-");
-          const altSanitized = dir.replace(/\//g, "-").replace(/^-/, "");
-
           // Collect candidate session dirs: real HOME + all isolated HOMEs
           const candidateDirs = [];
           // Try main HOME
-          for (const sanit of [sanitizedCwd, altSanitized]) {
+          for (const sanit of getSanitizedCwdVariants(dir)) {
             candidateDirs.push(join(realProjectsDir, sanit));
             candidateDirs.push(join(realProjectsDir, sanit, "sessions"));
           }
@@ -586,7 +595,7 @@ wss.on("connection", (ws, req) => {
           try {
             const isoEntries = await readdir("/tmp/claude-isolated-homes").catch(() => []);
             for (const e of isoEntries) {
-              for (const sanit of [sanitizedCwd, altSanitized]) {
+              for (const sanit of getSanitizedCwdVariants(dir)) {
                 candidateDirs.push(join("/tmp/claude-isolated-homes", e, ".claude", "projects", sanit));
               }
             }
@@ -629,19 +638,16 @@ wss.on("connection", (ws, req) => {
           const { join } = await import("path");
           const { homedir } = await import("os");
           const home = homedir();
-          const sanitizedCwd = dir.replace(/^\//, "").replace(/\//g, "-");
-          const altSanitized = dir.replace(/\//g, "-").replace(/^-/, "");
-
           // Collect all archive dirs to scan
           const archiveDirs = [];
-          for (const sanit of new Set([sanitizedCwd, altSanitized])) {
+          for (const sanit of getSanitizedCwdVariants(dir)) {
             archiveDirs.push(join(home, ".claude", "projects", sanit, ".archive"));
             archiveDirs.push(join(home, ".claude", "projects", sanit, "sessions", ".archive"));
           }
           try {
             const isoEntries = await readdir("/tmp/claude-isolated-homes").catch(() => []);
             for (const e of isoEntries) {
-              for (const sanit of new Set([sanitizedCwd, altSanitized])) {
+              for (const sanit of getSanitizedCwdVariants(dir)) {
                 archiveDirs.push(join("/tmp/claude-isolated-homes", e, ".claude", "projects", sanit, ".archive"));
               }
             }
@@ -719,19 +725,16 @@ wss.on("connection", (ws, req) => {
           const { join, dirname } = await import("path");
           const { homedir } = await import("os");
           const home = homedir();
-          const sanitizedCwd = dir.replace(/^\//, "").replace(/\//g, "-");
-          const altSanitized = dir.replace(/\//g, "-").replace(/^-/, "");
-
           // Same candidate dirs as archive
           const archiveDirs = [];
-          for (const sanit of new Set([sanitizedCwd, altSanitized])) {
+          for (const sanit of getSanitizedCwdVariants(dir)) {
             archiveDirs.push(join(home, ".claude", "projects", sanit, ".archive"));
             archiveDirs.push(join(home, ".claude", "projects", sanit, "sessions", ".archive"));
           }
           try {
             const isoEntries = await readdir("/tmp/claude-isolated-homes").catch(() => []);
             for (const e of isoEntries) {
-              for (const sanit of new Set([sanitizedCwd, altSanitized])) {
+              for (const sanit of getSanitizedCwdVariants(dir)) {
                 archiveDirs.push(join("/tmp/claude-isolated-homes", e, ".claude", "projects", sanit, ".archive"));
               }
             }

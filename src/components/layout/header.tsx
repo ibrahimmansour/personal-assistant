@@ -1,7 +1,7 @@
 "use client";
 
 import { useTheme } from "next-themes";
-import { LayoutDashboard, Moon, Sun, Briefcase, Home, Search, Sparkles, Settings } from "lucide-react";
+import { LayoutDashboard, Moon, Sun, Briefcase, Home, Search, Sparkles, Settings, Maximize, Minimize } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AppearancePicker } from "@/components/layout/appearance-picker";
 import { useProfile, profiles, type ProfileId } from "@/components/profile-context";
@@ -24,6 +24,15 @@ export function Header() {
   const { toggle: toggleAI, isOpen: aiOpen } = useAIChat();
   const [mounted, setMounted] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    function onFsChange() {
+      setIsFullscreen(!!document.fullscreenElement);
+    }
+    document.addEventListener("fullscreenchange", onFsChange);
+    return () => document.removeEventListener("fullscreenchange", onFsChange);
+  }, []);
 
   useEffect(() => setMounted(true), []);
 
@@ -112,6 +121,19 @@ export function Header() {
             </kbd>
           </button>
           <AppearancePicker />
+          <button
+            className="inline-flex items-center justify-center h-8 w-8 p-0 rounded-md text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
+            onClick={() => {
+              if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen();
+              } else {
+                document.exitFullscreen();
+              }
+            }}
+            title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
+          >
+            {isFullscreen ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
+          </button>
           <button
             className="inline-flex items-center justify-center h-8 w-8 p-0 rounded-md text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
             onClick={() => setSettingsOpen(true)}
