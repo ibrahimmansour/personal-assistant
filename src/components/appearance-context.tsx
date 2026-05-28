@@ -15,20 +15,27 @@ export type ColorTheme =
 
 export type FontFamily = "geist" | "inter" | "mono" | "system" | "serif";
 
+export type FontSize = "xs" | "sm" | "base" | "lg" | "xl";
+
 export interface AppearanceConfig {
   colorTheme: ColorTheme;
   fontFamily: FontFamily;
+  fontSize: FontSize;
 }
 
 const defaultAppearance: AppearanceConfig = {
   colorTheme: "zinc",
   fontFamily: "geist",
+  fontSize: "base",
 };
 
 interface AppearanceContextType {
   appearance: AppearanceConfig;
   setColorTheme: (theme: ColorTheme) => void;
   setFontFamily: (font: FontFamily) => void;
+  setFontSize: (size: FontSize) => void;
+  increaseFontSize: () => void;
+  decreaseFontSize: () => void;
 }
 
 const AppearanceContext = createContext<AppearanceContextType | null>(null);
@@ -59,6 +66,16 @@ export const fontFamilies: { id: FontFamily; label: string; className: string }[
   { id: "serif", label: "Serif", className: "font-serif" },
 ];
 
+export const fontSizes: { id: FontSize; label: string; scale: number }[] = [
+  { id: "xs", label: "Extra Small", scale: 0.85 },
+  { id: "sm", label: "Small", scale: 0.92 },
+  { id: "base", label: "Default", scale: 1 },
+  { id: "lg", label: "Large", scale: 1.08 },
+  { id: "xl", label: "Extra Large", scale: 1.18 },
+];
+
+const fontSizeOrder: FontSize[] = ["xs", "sm", "base", "lg", "xl"];
+
 export function AppearanceProvider({ children }: { children: React.ReactNode }) {
   const [appearance, setAppearance] = useState<AppearanceConfig>(defaultAppearance);
   const [mounted, setMounted] = useState(false);
@@ -79,9 +96,9 @@ export function AppearanceProvider({ children }: { children: React.ReactNode }) 
     if (!mounted) return;
     const html = document.documentElement;
 
-    // Remove old theme classes
+    // Remove old theme/font/size classes
     html.classList.forEach((cls) => {
-      if (cls.startsWith("theme-") || cls.startsWith("font-choice-")) {
+      if (cls.startsWith("theme-") || cls.startsWith("font-choice-") || cls.startsWith("font-size-")) {
         html.classList.remove(cls);
       }
     });
@@ -91,6 +108,9 @@ export function AppearanceProvider({ children }: { children: React.ReactNode }) 
       html.classList.add(`theme-${appearance.colorTheme}`);
     }
     html.classList.add(`font-choice-${appearance.fontFamily}`);
+    if (appearance.fontSize !== "base") {
+      html.classList.add(`font-size-${appearance.fontSize}`);
+    }
   }, [appearance, mounted]);
 
   const persist = useCallback((updated: AppearanceConfig) => {
@@ -112,8 +132,29 @@ export function AppearanceProvider({ children }: { children: React.ReactNode }) 
     [appearance, persist]
   );
 
+  const setFontSize = useCallback(
+    (size: FontSize) => {
+      persist({ ...appearance, fontSize: size });
+    },
+    [appearance, persist]
+  );
+
+  const increaseFontSize = useCallback(() => {
+    const idx = fontSizeOrder.indexOf(appearance.fontSize);
+    if (idx < fontSizeOrder.length - 1) {
+      persist({ ...appearance, fontSize: fontSizeOrder[idx + 1] });
+    }
+  }, [appearance, persist]);
+
+  const decreaseFontSize = useCallback(() => {
+    const idx = fontSizeOrder.indexOf(appearance.fontSize);
+    if (idx > 0) {
+      persist({ ...appearance, fontSize: fontSizeOrder[idx - 1] });
+    }
+  }, [appearance, persist]);
+
   return (
-    <AppearanceContext.Provider value={{ appearance, setColorTheme, setFontFamily }}>
+    <AppearanceContext.Provider value={{ appearance, setColorTheme, setFontFamily, setFontSize, increaseFontSize, decreaseFontSize }}>
       {children}
     </AppearanceContext.Provider>
   );

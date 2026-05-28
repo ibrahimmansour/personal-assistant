@@ -22,6 +22,7 @@ import {
   useAppearance,
   colorThemes,
   fontFamilies,
+  fontSizes,
 } from "@/components/appearance-context";
 import { useWidgetNav } from "@/components/widget-nav-context";
 import { useCommandPalette } from "@/components/command-palette-context";
@@ -74,6 +75,8 @@ import {
   Play,
   Loader2,
   Bot,
+  AArrowUp,
+  AArrowDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -531,7 +534,7 @@ export function CommandPalette() {
   const { widgets, ensureWidgetVisible, resetLayout, autoArrange } =
     useDashboard();
   const { activeProfile, setActiveProfile } = useProfile();
-  const { appearance, setColorTheme, setFontFamily } = useAppearance();
+  const { appearance, setColorTheme, setFontFamily, setFontSize, increaseFontSize, decreaseFontSize } = useAppearance();
   const { theme, setTheme } = useTheme();
   const { navigateTo } = useWidgetNav();
   const {
@@ -1475,6 +1478,38 @@ export function CommandPalette() {
               >
                 <Type className="h-4 w-4 text-muted-foreground" />
                 <span>{ff.label}</span>
+              </CommandItem>
+            ))}
+          </CommandGroup>
+
+          {/* ─── Commands: Font Size ─────────────────────────── */}
+          <CommandGroup heading="Font Size">
+            <CommandItem
+              value="increase font size"
+              keywords={["font", "size", "bigger", "larger", "zoom in", "scale up"]}
+              onSelect={() => runAndClose(() => increaseFontSize())}
+            >
+              <AArrowUp className="h-4 w-4 text-muted-foreground" />
+              <span>Increase Font Size</span>
+            </CommandItem>
+            <CommandItem
+              value="decrease font size"
+              keywords={["font", "size", "smaller", "zoom out", "scale down"]}
+              onSelect={() => runAndClose(() => decreaseFontSize())}
+            >
+              <AArrowDown className="h-4 w-4 text-muted-foreground" />
+              <span>Decrease Font Size</span>
+            </CommandItem>
+            {fontSizes.map((fs) => (
+              <CommandItem
+                key={fs.id}
+                value={`font size ${fs.label}`}
+                keywords={["font", "size", "text"]}
+                data-checked={appearance.fontSize === fs.id}
+                onSelect={() => runAndClose(() => setFontSize(fs.id))}
+              >
+                <Type className="h-4 w-4 text-muted-foreground" />
+                <span>{fs.label}</span>
               </CommandItem>
             ))}
           </CommandGroup>

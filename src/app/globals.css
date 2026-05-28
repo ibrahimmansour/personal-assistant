@@ -845,3 +845,25 @@
     display: inline !important;
   }
 }
+
+/* ─── Font size scaling ────────────────────────────────────────────────── */
+/* Applied via class on <html> element. Uses font-size on :root so all rem-based
+   sizing throughout the app scales proportionally. */
+
+html.font-size-xs {
+  font-size: 13.6px; /* 0.85 × 16 */
+}
+
+html.font-size-sm {
+  font-size: 14.72px; /* 0.92 × 16 */
+}
+
+/* base = 16px (browser default, no class needed) */
+
+html.font-size-lg {
+  font-size: 17.28px; /* 1.08 × 16 */
+}
+
+html.font-size-xl {
+  font-size: 18.88px; /* 1.18 × 16 */
+}

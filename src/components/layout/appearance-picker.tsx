@@ -4,8 +4,10 @@ import {
   useAppearance,
   colorThemes,
   fontFamilies,
+  fontSizes,
   type ColorTheme,
   type FontFamily,
+  type FontSize,
 } from "@/components/appearance-context";
 import {
   DropdownMenu,
@@ -13,11 +15,14 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Separator } from "@/components/ui/separator";
-import { Paintbrush, Check } from "lucide-react";
+import { Paintbrush, Check, Minus, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export function AppearancePicker() {
-  const { appearance, setColorTheme, setFontFamily } = useAppearance();
+  const { appearance, setColorTheme, setFontFamily, setFontSize, increaseFontSize, decreaseFontSize } = useAppearance();
+
+  const currentSizeIdx = fontSizes.findIndex((s) => s.id === appearance.fontSize);
+  const currentSizeLabel = fontSizes[currentSizeIdx]?.label ?? "Default";
 
   return (
     <DropdownMenu>
@@ -86,6 +91,61 @@ export function AppearancePicker() {
                 <Check className="h-3 w-3 text-primary" />
               )}
             </button>
+          ))}
+        </div>
+
+        <Separator className="my-3" />
+
+        {/* Font size */}
+        <div className="mb-2">
+          <h3 className="text-sm font-semibold">Font Size</h3>
+          <p className="text-xs text-muted-foreground">Adjust text size across the app</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={decreaseFontSize}
+            disabled={currentSizeIdx <= 0}
+            className={cn(
+              "flex items-center justify-center h-8 w-8 rounded-md border transition-colors",
+              currentSizeIdx <= 0
+                ? "border-border/50 text-muted-foreground/30 cursor-not-allowed"
+                : "border-border text-foreground hover:bg-muted"
+            )}
+            title="Decrease font size"
+          >
+            <Minus className="h-3.5 w-3.5" />
+          </button>
+          <div className="flex-1 text-center">
+            <span className="text-sm font-medium">{currentSizeLabel}</span>
+          </div>
+          <button
+            onClick={increaseFontSize}
+            disabled={currentSizeIdx >= fontSizes.length - 1}
+            className={cn(
+              "flex items-center justify-center h-8 w-8 rounded-md border transition-colors",
+              currentSizeIdx >= fontSizes.length - 1
+                ? "border-border/50 text-muted-foreground/30 cursor-not-allowed"
+                : "border-border text-foreground hover:bg-muted"
+            )}
+            title="Increase font size"
+          >
+            <Plus className="h-3.5 w-3.5" />
+          </button>
+        </div>
+        {/* Size indicator dots */}
+        <div className="flex items-center justify-center gap-1.5 mt-2">
+          {fontSizes.map((size, idx) => (
+            <button
+              key={size.id}
+              onClick={() => setFontSize(size.id)}
+              className={cn(
+                "rounded-full transition-all",
+                idx === currentSizeIdx
+                  ? "h-2 w-2 bg-primary"
+                  : "h-1.5 w-1.5 bg-muted-foreground/30 hover:bg-muted-foreground/60"
+              )}
+              title={size.label}
+            />
           ))}
         </div>
       </DropdownMenuContent>
