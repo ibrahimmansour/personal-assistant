@@ -1,7 +1,7 @@
 "use client";
 
 import { useTheme } from "next-themes";
-import { LayoutDashboard, Moon, Sun, Briefcase, Home, Search, Sparkles, Settings, Maximize, Minimize } from "lucide-react";
+import { LayoutDashboard, Moon, Sun, Briefcase, Home, Search, Sparkles, Settings, Maximize, Minimize, Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AppearancePicker } from "@/components/layout/appearance-picker";
 import { useProfile, profiles, type ProfileId } from "@/components/profile-context";
@@ -52,13 +52,21 @@ export function Header() {
 
   return (
     <header className="sticky top-0 z-50 border-b border-border/50 bg-background/80 backdrop-blur-xl">
-      <div className="flex items-center justify-between h-14 px-6">
+      <div className="flex items-center justify-between h-12 md:h-14 px-3 md:px-6">
         {/* Left side */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 md:gap-3">
+          {/* Mobile hamburger menu */}
+          <button
+            className="inline-flex items-center justify-center h-8 w-8 p-0 rounded-md text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground md:hidden"
+            onClick={() => window.dispatchEvent(new Event("toggle-mobile-sidebar"))}
+            title="Menu"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
           <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-primary text-primary-foreground">
             <LayoutDashboard className="h-4 w-4" />
           </div>
-          <div>
+          <div className="hidden sm:block">
             <h1 className="text-sm font-semibold leading-none">
               Personal Assistant
             </h1>
@@ -78,7 +86,7 @@ export function Header() {
                 key={p.id}
                 onClick={() => setActiveProfile(p.id)}
                 className={cn(
-                  "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all",
+                  "flex items-center gap-1.5 px-2 md:px-3 py-1.5 rounded-md text-xs font-medium transition-all",
                   isActive
                     ? "bg-background text-foreground shadow-sm"
                     : "text-muted-foreground hover:text-foreground"
@@ -86,7 +94,7 @@ export function Header() {
                 title={p.description}
               >
                 <Icon className="h-3.5 w-3.5" />
-                {p.name}
+                <span className="hidden xs:inline">{p.name}</span>
               </button>
             );
           })}
@@ -96,18 +104,18 @@ export function Header() {
         <div className="flex items-center gap-1">
           <button
             onClick={() => openSearch()}
-            className="inline-flex items-center gap-2 h-8 px-3 rounded-md text-xs text-muted-foreground bg-muted/50 border border-border/50 hover:bg-muted hover:text-foreground transition-colors"
+            className="inline-flex items-center gap-2 h-8 px-2 md:px-3 rounded-md text-xs text-muted-foreground bg-muted/50 border border-border/50 hover:bg-muted hover:text-foreground transition-colors"
           >
             <Search className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">Search...</span>
-            <kbd className="pointer-events-none hidden sm:inline-flex h-5 items-center gap-0.5 rounded border border-border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
+            <kbd className="pointer-events-none hidden md:inline-flex h-5 items-center gap-0.5 rounded border border-border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
               <span className="text-xs">⌘</span>P
             </kbd>
           </button>
           <button
             onClick={toggleAI}
             className={cn(
-              "inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md text-xs border transition-colors",
+              "inline-flex items-center gap-1.5 h-8 px-2 md:px-2.5 rounded-md text-xs border transition-colors",
               aiOpen
                 ? "text-primary bg-primary/10 border-primary/30 hover:bg-primary/15"
                 : "text-muted-foreground bg-muted/50 border-border/50 hover:bg-muted hover:text-foreground"
@@ -116,13 +124,15 @@ export function Header() {
           >
             <Sparkles className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">AI</span>
-            <kbd className="pointer-events-none hidden sm:inline-flex h-5 items-center gap-0.5 rounded border border-border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
+            <kbd className="pointer-events-none hidden md:inline-flex h-5 items-center gap-0.5 rounded border border-border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
               <span className="text-xs">⌘</span>I
             </kbd>
           </button>
-          <AppearancePicker />
+          <span className="hidden md:inline-flex">
+            <AppearancePicker />
+          </span>
           <button
-            className="inline-flex items-center justify-center h-8 w-8 p-0 rounded-md text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
+            className="hidden md:inline-flex items-center justify-center h-8 w-8 p-0 rounded-md text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
             onClick={() => {
               if (!document.fullscreenElement) {
                 document.documentElement.requestFullscreen();

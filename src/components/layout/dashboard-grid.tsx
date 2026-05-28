@@ -9,7 +9,7 @@ import {
   type LayoutItem,
   type ResponsiveLayouts,
 } from "react-grid-layout";
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { WidgetType } from "@/types/widget";
 import { useDashboard } from "@/components/dashboard-context";
 import { useWidgetNav } from "@/components/widget-nav-context";
@@ -260,29 +260,63 @@ export function DashboardGrid() {
     [updateLayouts, isDashboard]   // ← layouts intentionally removed
   );
 
+  // Detect mobile for different row height and disabling drag
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const mql = window.matchMedia("(max-width: 767px)");
+    setIsMobile(mql.matches);
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    mql.addEventListener("change", handler);
+    return () => mql.removeEventListener("change", handler);
+  }, []);
+
+  // Generate a single-column mobile layout
+  const mobileLayouts = useMemo(() => {
+    const items: LayoutItem[] = [];
+    let y = 0;
+    for (const widget of visibleWidgets) {
+      items.push({
+        i: widget.id,
+        x: 0,
+        y,
+        w: 1,
+        h: 4,
+        minW: 1,
+        minH: 3,
+      });
+      y += 4;
+    }
+    return items as Layout;
+  }, [visibleWidgets]);
+
   return (
     <div className="flex flex-col h-full">
       {/* ─── Grid ─────────────────────────────────────────────── */}
-      <div className="flex-1 overflow-auto p-4" ref={containerRef}>
+      <div className="flex-1 overflow-auto p-2 md:p-4" ref={containerRef}>
         {width > 0 && visibleWidgets.length > 0 && (
           <ResponsiveGridLayout
             className="layout"
             width={width}
-            layouts={{ lg: effectiveLayouts, md: effectiveLayouts, sm: effectiveLayouts }}
-            breakpoints={{ lg: 1200, md: 996, sm: 768 }}
-            cols={{ lg: 12, md: 8, sm: 4 }}
-            rowHeight={80}
-            margin={[16, 16]}
+            layouts={{
+              lg: effectiveLayouts,
+              md: effectiveLayouts,
+              sm: effectiveLayouts,
+              xs: mobileLayouts,
+            }}
+            breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 0 }}
+            cols={{ lg: 12, md: 8, sm: 4, xs: 1 }}
+            rowHeight={isMobile ? 70 : 80}
+            margin={isMobile ? [12, 12] : [16, 16]}
             containerPadding={[0, 0]}
             compactor={activeCompactor}
             dragConfig={{
-              enabled: isDashboard,
+              enabled: isDashboard && !isMobile,
               handle: ".drag-handle",
               bounded: false,
               threshold: 3,
             }}
             resizeConfig={{
-              enabled: isDashboard,
+              enabled: isDashboard && !isMobile,
               handles: ["se"],
             }}
             onLayoutChange={handleLayoutChange}

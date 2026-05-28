@@ -238,7 +238,7 @@ export function InboxView() {
       {/* ─── Left: List ─────────────────────────────────────── */}
       <div className={cn(
         "flex flex-col border-r border-border/50 overflow-hidden transition-all min-h-0",
-        selectedItem ? "w-[380px]" : "flex-1 max-w-2xl mx-auto"
+        selectedItem ? "hidden md:flex w-full md:w-[380px]" : "flex-1 max-w-2xl mx-auto"
       )}>
         {/* Filter tabs */}
         <div className="shrink-0 flex items-center gap-1 px-3 py-2 border-b border-border/50 overflow-x-auto">

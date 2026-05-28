@@ -3,6 +3,7 @@
 import { Header } from "@/components/layout/header";
 import { DashboardGrid } from "@/components/layout/dashboard-grid";
 import { Sidebar } from "@/components/layout/sidebar";
+import { MobileBottomNav } from "@/components/layout/mobile-bottom-nav";
 import { FocusMode } from "@/components/focus-mode";
 import { TodayView } from "@/components/views/today-view";
 import { InboxView } from "@/components/views/inbox-view";
@@ -40,10 +41,11 @@ function MainContent() {
       <Header />
       <div className="flex flex-1 overflow-hidden">
         <Sidebar />
-        <main className="flex-1 overflow-hidden">
+        <main className="flex-1 overflow-hidden pb-14 md:pb-0">
           {content}
         </main>
       </div>
+      <MobileBottomNav />
     </div>
   );
 }

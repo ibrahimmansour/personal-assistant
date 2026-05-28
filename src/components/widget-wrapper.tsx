@@ -311,13 +311,13 @@ export function WidgetWrapper({
             ref={fullscreenRef}
             className={cn(
               "fixed inset-0 z-[200] flex items-center justify-center",
-              isFullscreen ? "p-0 bg-card" : "p-6 md:p-12"
+              isFullscreen ? "p-0 bg-card" : "p-0 md:p-6 lg:p-12"
             )}
           >
-            {/* Backdrop – click to close */}
+            {/* Backdrop – click to close (hidden on mobile since it's full screen) */}
             {!isFullscreen && (
               <div
-                className="absolute inset-0 bg-background/80 backdrop-blur-sm"
+                className="absolute inset-0 bg-background/80 backdrop-blur-sm hidden md:block"
                 onClick={collapse}
               />
             )}
@@ -325,37 +325,39 @@ export function WidgetWrapper({
             {/* Expanded content — split view when sidePanel or splitWidget is active */}
             <div className={cn(
               "relative z-10 w-full h-full flex gap-3",
-              isFullscreen ? "max-w-full max-h-full" : cn("max-h-[90vh]", hasSplit ? "max-w-[95vw]" : "max-w-[90vw]")
+              isFullscreen ? "max-w-full max-h-full" : cn("md:max-h-[90vh]", hasSplit ? "md:max-w-[95vw]" : "md:max-w-[90vw]")
             )}>
               {/* Main card */}
               <Card
                 className={cn(
                   "h-full flex flex-col overflow-hidden border-border shadow-2xl bg-card",
                   hasSplit ? "flex-1 min-w-0" : "w-full",
+                  // On mobile, round corners only on desktop
+                  "rounded-none md:rounded-xl",
                   className
                 )}
               >
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 px-5 pt-4">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 px-4 md:px-5 pt-3 md:pt-4">
                   <div className="flex items-center gap-2">
                     {icon && <span className="text-muted-foreground">{icon}</span>}
-                    <CardTitle className="text-base font-semibold">{title}</CardTitle>
+                    <CardTitle className="text-sm md:text-base font-semibold">{title}</CardTitle>
                   </div>
                   <div className="flex items-center gap-1">
                     {headerAction}
-                    {splitButton}
-                    {fullscreenButton}
+                    <span className="hidden md:inline-flex">{splitButton}</span>
+                    <span className="hidden md:inline-flex">{fullscreenButton}</span>
                     {pinButton}
                     {expandButton}
                   </div>
                 </CardHeader>
-                <CardContent className="flex-1 overflow-auto px-5 pb-4">
+                <CardContent className="flex-1 overflow-auto px-4 md:px-5 pb-3 md:pb-4">
                   {children}
                 </CardContent>
               </Card>
 
-              {/* Dynamic split panel from picker */}
+              {/* Dynamic split panel from picker (hidden on mobile) */}
               {SplitComponent && (
-                <Card className="w-[45%] min-w-[350px] max-w-[600px] h-full shrink-0 flex flex-col overflow-hidden border-border shadow-2xl bg-card">
+                <Card className="hidden md:flex w-[45%] min-w-[350px] max-w-[600px] h-full shrink-0 flex-col overflow-hidden border-border shadow-2xl bg-card">
                   <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 px-5 pt-4">
                     <div className="flex items-center gap-2">
                       <CardTitle className="text-base font-semibold">{widgetLabels[splitWidget!]}</CardTitle>
@@ -374,9 +376,9 @@ export function WidgetWrapper({
                 </Card>
               )}
 
-              {/* Side panel (e.g. terminal from files widget) */}
+              {/* Side panel (e.g. terminal from files widget) - hidden on mobile */}
               {!SplitComponent && sidePanel && (
-                <div className="w-[45%] min-w-[350px] max-w-[600px] h-full shrink-0">
+                <div className="hidden md:block w-[45%] min-w-[350px] max-w-[600px] h-full shrink-0">
                   {sidePanel}
                 </div>
               )}
@@ -397,15 +399,15 @@ export function WidgetWrapper({
       )}
       data-widget-type={widgetType}
     >
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 px-4 pt-3">
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 px-3 md:px-4 pt-2.5 md:pt-3">
         <div className="flex items-center gap-2">
-          <div className="cursor-grab active:cursor-grabbing drag-handle text-muted-foreground hover:text-foreground transition-colors">
+          <div className="cursor-grab active:cursor-grabbing drag-handle text-muted-foreground hover:text-foreground transition-colors hidden md:block">
             <GripVertical className="h-4 w-4" />
           </div>
           {icon && (
             <span className="text-muted-foreground">{icon}</span>
           )}
-          <CardTitle className="text-sm font-semibold">{title}</CardTitle>
+          <CardTitle className="text-xs md:text-sm font-semibold">{title}</CardTitle>
         </div>
         <div className="flex items-center gap-1">
           {headerAction}
@@ -413,7 +415,7 @@ export function WidgetWrapper({
           {expandButton}
         </div>
       </CardHeader>
-      <CardContent className="flex-1 overflow-auto px-4 pb-3">
+      <CardContent className="flex-1 overflow-auto px-3 md:px-4 pb-2.5 md:pb-3">
         {children}
       </CardContent>
     </Card>

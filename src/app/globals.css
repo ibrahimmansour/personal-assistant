@@ -814,3 +814,34 @@
 .ai-markdown h1 { font-size: 1.1em; }
 .ai-markdown h2 { font-size: 1.05em; }
 .ai-markdown h3 { font-size: 1em; }
+
+/* ─── Mobile utilities ─────────────────────────────────────────────────── */
+
+/* Safe area padding for bottom nav on notched devices */
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Prevent text selection on touch-drag areas */
+@media (max-width: 767px) {
+  .layout {
+    touch-action: pan-y;
+  }
+
+  /* Smoother transitions for mobile grid items */
+  .react-grid-item {
+    transition: none !important;
+  }
+
+  /* Hide resize handles on mobile */
+  .react-resizable-handle {
+    display: none !important;
+  }
+}
+
+/* Custom xs breakpoint for very small devices */
+@media (min-width: 480px) and (max-width: 767px) {
+  .xs\:inline {
+    display: inline !important;
+  }
+}

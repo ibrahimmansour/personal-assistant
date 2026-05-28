@@ -260,12 +260,48 @@ export function Sidebar() {
     (a, b) => widgetCategories[a].order - widgetCategories[b].order
   );
 
+  // Mobile sidebar state – controlled via a simple local state + event from header
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  // Listen for custom event from header hamburger button
+  useEffect(() => {
+    const handler = () => setMobileOpen((prev) => !prev);
+    window.addEventListener("toggle-mobile-sidebar", handler);
+    return () => window.removeEventListener("toggle-mobile-sidebar", handler);
+  }, []);
+
+  // Close mobile sidebar on workspace selection
+  const handleWorkspaceClick = (wsId: string) => {
+    setActiveWorkspace(wsId);
+    setMobileOpen(false);
+  };
+
+  const handleFocusClick = (comboId: string, isActive: boolean) => {
+    if (isActive) {
+      exitFocusMode();
+    } else {
+      enterFocusMode(comboId);
+    }
+    setMobileOpen(false);
+  };
+
   return (
     <>
+      {/* Mobile backdrop */}
+      {mobileOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-background/60 backdrop-blur-sm md:hidden"
+          onClick={() => setMobileOpen(false)}
+        />
+      )}
       <aside
         className={cn(
-          "h-full flex flex-col border-r border-border/50 bg-background/50 backdrop-blur-sm transition-all duration-200 shrink-0 overflow-hidden",
-          sidebarExpanded ? "w-[200px]" : "w-[48px]"
+          "h-full flex flex-col border-r border-border/50 bg-background/95 backdrop-blur-sm transition-all duration-200 shrink-0 overflow-hidden",
+          // Desktop: normal sidebar behavior
+          "hidden md:flex",
+          sidebarExpanded ? "md:w-[200px]" : "md:w-[48px]",
+          // Mobile: overlay drawer
+          mobileOpen && "!flex fixed inset-y-0 left-0 z-50 w-[260px] shadow-2xl"
         )}
       >
         {/* ─── Workspace tabs ──────────────────────────────────── */}
@@ -277,21 +313,21 @@ export function Sidebar() {
             return (
               <div key={ws.id} className="relative group/ws">
                 <div
-                  onClick={() => setActiveWorkspace(ws.id)}
+                  onClick={() => handleWorkspaceClick(ws.id)}
                   role="button"
                   tabIndex={0}
-                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setActiveWorkspace(ws.id); } }}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleWorkspaceClick(ws.id); } }}
                   className={cn(
                     "flex items-center gap-2 w-full rounded-md transition-colors cursor-pointer",
-                    sidebarExpanded ? "px-2.5 py-1.5" : "px-0 py-1.5 justify-center",
+                    (sidebarExpanded || mobileOpen) ? "px-2.5 py-1.5" : "px-0 py-1.5 justify-center",
                     isActive
                       ? "bg-primary/10 text-primary"
                       : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
                   )}
-                  title={sidebarExpanded ? undefined : `${ws.name}${ws.shortcut ? ` (⌘${ws.shortcut})` : ""}`}
+                  title={(sidebarExpanded || mobileOpen) ? undefined : `${ws.name}${ws.shortcut ? ` (⌘${ws.shortcut})` : ""}`}
                 >
                   <Icon className="h-4 w-4 shrink-0" />
-                  {sidebarExpanded && (
+                  {(sidebarExpanded || mobileOpen) && (
                     <>
                       <span className="text-xs font-medium truncate flex-1 text-left">
                         {ws.name}
@@ -310,7 +346,7 @@ export function Sidebar() {
                           <MoreHorizontal className="h-3 w-3" />
                         </span>
                       ) : ws.shortcut ? (
-                        <kbd className="text-[9px] text-muted-foreground/60 font-mono">
+                        <kbd className="text-[9px] text-muted-foreground/60 font-mono hidden md:inline">
                           ⌘{ws.shortcut}
                         </kbd>
                       ) : null}
@@ -349,18 +385,18 @@ export function Sidebar() {
             onClick={openCreateWorkspace}
             className={cn(
               "flex items-center gap-2 w-full rounded-md text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted/30 transition-colors",
-              sidebarExpanded ? "px-2.5 py-1.5" : "px-0 py-1.5 justify-center"
+              (sidebarExpanded || mobileOpen) ? "px-2.5 py-1.5" : "px-0 py-1.5 justify-center"
             )}
-            title={sidebarExpanded ? undefined : "New workspace"}
+            title={(sidebarExpanded || mobileOpen) ? undefined : "New workspace"}
           >
             <Plus className="h-3.5 w-3.5 shrink-0" />
-            {sidebarExpanded && <span className="text-xs">New workspace</span>}
+            {(sidebarExpanded || mobileOpen) && <span className="text-xs">New workspace</span>}
           </button>
         </div>
 
         {/* ─── Focus combos ────────────────────────────────────── */}
         <div className="shrink-0 border-b border-border/50 p-1.5 space-y-0.5">
-          {sidebarExpanded && (
+          {(sidebarExpanded || mobileOpen) && (
             <div className="text-[9px] uppercase tracking-wider text-muted-foreground/50 px-2.5 py-0.5">
               Focus
             </div>
@@ -370,21 +406,21 @@ export function Sidebar() {
             return (
               <div key={combo.id} className="relative group/fc">
                 <div
-                  onClick={() => isActive ? exitFocusMode() : enterFocusMode(combo.id)}
+                  onClick={() => handleFocusClick(combo.id, isActive)}
                   role="button"
                   tabIndex={0}
-                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); isActive ? exitFocusMode() : enterFocusMode(combo.id); } }}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleFocusClick(combo.id, isActive); } }}
                   className={cn(
                     "flex items-center gap-2 w-full rounded-md transition-colors cursor-pointer",
-                    sidebarExpanded ? "px-2.5 py-1.5" : "px-0 py-1.5 justify-center",
+                    (sidebarExpanded || mobileOpen) ? "px-2.5 py-1.5" : "px-0 py-1.5 justify-center",
                     isActive
                       ? "bg-primary/10 text-primary"
                       : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
                   )}
-                  title={sidebarExpanded ? undefined : combo.name}
+                  title={(sidebarExpanded || mobileOpen) ? undefined : combo.name}
                 >
                   <Focus className="h-3.5 w-3.5 shrink-0" />
-                  {sidebarExpanded && (
+                  {(sidebarExpanded || mobileOpen) && (
                     <>
                       <span className="text-xs truncate flex-1 text-left">
                         {combo.name}
@@ -427,12 +463,12 @@ export function Sidebar() {
             onClick={openCreateFocus}
             className={cn(
               "flex items-center gap-2 w-full rounded-md text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted/30 transition-colors",
-              sidebarExpanded ? "px-2.5 py-1.5" : "px-0 py-1.5 justify-center"
+              (sidebarExpanded || mobileOpen) ? "px-2.5 py-1.5" : "px-0 py-1.5 justify-center"
             )}
-            title={sidebarExpanded ? undefined : "New focus combo"}
+            title={(sidebarExpanded || mobileOpen) ? undefined : "New focus combo"}
           >
             <Plus className="h-3.5 w-3.5 shrink-0" />
-            {sidebarExpanded && <span className="text-xs">New combo</span>}
+            {(sidebarExpanded || mobileOpen) && <span className="text-xs">New combo</span>}
           </button>
         </div>
 
@@ -442,7 +478,7 @@ export function Sidebar() {
             const categoryWidgets = widgetsByCategory.get(cat)!;
             return (
               <div key={cat}>
-                {sidebarExpanded && (
+                {(sidebarExpanded || mobileOpen) && (
                   <div className="text-[9px] uppercase tracking-wider text-muted-foreground/50 px-2.5 py-0.5 mb-0.5">
                     {widgetCategories[cat].label}
                   </div>
@@ -453,15 +489,15 @@ export function Sidebar() {
                     return (
                       <button
                         key={widgetType}
-                        onClick={() => scrollToWidget(widgetType)}
+                        onClick={() => { scrollToWidget(widgetType); setMobileOpen(false); }}
                         className={cn(
                           "flex items-center gap-2 w-full rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors",
-                          sidebarExpanded ? "px-2.5 py-1" : "px-0 py-1 justify-center"
+                          (sidebarExpanded || mobileOpen) ? "px-2.5 py-1" : "px-0 py-1 justify-center"
                         )}
-                        title={sidebarExpanded ? undefined : widgetTitles[widgetType]}
+                        title={(sidebarExpanded || mobileOpen) ? undefined : widgetTitles[widgetType]}
                       >
                         <Icon className="h-3.5 w-3.5 shrink-0" />
-                        {sidebarExpanded && (
+                        {(sidebarExpanded || mobileOpen) && (
                           <span className="text-[11px] truncate">
                             {widgetTitles[widgetType]}
                           </span>
@@ -475,8 +511,8 @@ export function Sidebar() {
           })}
         </div>
 
-        {/* ─── Collapse toggle ─────────────────────────────────── */}
-        <div className="shrink-0 border-t border-border/50 p-1.5">
+        {/* ─── Collapse toggle (hidden on mobile drawer) ──────── */}
+        <div className="shrink-0 border-t border-border/50 p-1.5 hidden md:block">
           <button
             onClick={toggleSidebar}
             className={cn(
@@ -493,6 +529,17 @@ export function Sidebar() {
             ) : (
               <PanelLeft className="h-3.5 w-3.5" />
             )}
+          </button>
+        </div>
+
+        {/* Mobile: close button at bottom */}
+        <div className="shrink-0 border-t border-border/50 p-1.5 md:hidden">
+          <button
+            onClick={() => setMobileOpen(false)}
+            className="flex items-center gap-2 w-full rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors px-2.5 py-1.5"
+          >
+            <X className="h-3.5 w-3.5 shrink-0" />
+            <span className="text-[11px]">Close</span>
           </button>
         </div>
       </aside>

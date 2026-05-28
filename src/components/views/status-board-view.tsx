@@ -230,8 +230,8 @@ export function StatusBoardView() {
   const taskPct = tasks.total > 0 ? Math.round((tasks.completed / tasks.total) * 100) : 0;
 
   return (
-    <div className="h-full p-5 flex flex-col gap-5">
-      <div className="flex-1 grid grid-cols-3 grid-rows-2 gap-5 min-h-0">
+    <div className="h-full p-3 md:p-5 flex flex-col gap-3 md:gap-5">
+      <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 md:grid-rows-2 gap-3 md:gap-5 min-h-0 overflow-auto md:overflow-hidden">
         {/* ─── Clock ─────────────────────────────────────────── */}
         <div
           className="rounded-2xl border bg-card flex flex-col items-center justify-center cursor-pointer hover:bg-accent/5 transition-colors"
@@ -339,7 +339,7 @@ export function StatusBoardView() {
           <span className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-4">
             Unread
           </span>
-          <div className="flex gap-10">
+          <div className="flex gap-6 md:gap-10">
             <button
               onClick={() => setActiveWorkspace("comms")}
               className="text-center group cursor-pointer"
