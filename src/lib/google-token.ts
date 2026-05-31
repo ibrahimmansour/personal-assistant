@@ -28,6 +28,7 @@ export async function getAuthUrl(): Promise<string> {
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/gmail.send",
     "https://www.googleapis.com/auth/calendar.readonly",
+    "https://www.googleapis.com/auth/drive.file",
   ];
   const params = new URLSearchParams({
     client_id: await getGoogleClientId(),

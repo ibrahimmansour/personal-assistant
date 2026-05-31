@@ -12,7 +12,6 @@ import {
   Pin,
   PinOff,
   Copy,
-  ExternalLink,
   Loader2,
   AlertCircle,
   Bold,
@@ -35,6 +34,9 @@ import {
   Undo2,
   Redo2,
   MoreHorizontal,
+  CloudUpload,
+  CloudDownload,
+  Cloud,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useEffect, useState, useCallback, useRef } from "react";
@@ -502,6 +504,9 @@ export function NotesWidget() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [showSearch, setShowSearch] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<Record<string, boolean>>({});
+  const [lastSync, setLastSync] = useState<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const { activeProfile } = useProfile();
   const { expandRequested, onExpandHandled, pendingItemId, clearPendingItem, pendingSearchQuery, clearPendingSearch } =
@@ -634,6 +639,74 @@ export function NotesWidget() {
     [fetchNotes]
   );
 
+  // ─── Sync Functions ──────────────────────────────────────────────────────────
+
+  const fetchSyncStatus = useCallback(async () => {
+    try {
+      const res = await fetch("/api/notes/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "status", profile: activeProfile }),
+      });
+      const data = await res.json();
+      if (data.statuses) {
+        const map: Record<string, boolean> = {};
+        for (const s of data.statuses) {
+          map[s.noteId] = s.synced;
+        }
+        setSyncStatus(map);
+        setLastSync(data.lastFullSync);
+      }
+    } catch {}
+  }, [activeProfile]);
+
+  useEffect(() => {
+    fetchSyncStatus();
+  }, [fetchSyncStatus, notes]);
+
+  const syncPushAll = useCallback(async () => {
+    setSyncing(true);
+    try {
+      const res = await fetch("/api/notes/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "push", profile: activeProfile }),
+      });
+      const data = await res.json();
+      if (data.error) {
+        setError(data.error);
+      } else {
+        await fetchSyncStatus();
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Sync failed");
+    } finally {
+      setSyncing(false);
+    }
+  }, [activeProfile, fetchSyncStatus]);
+
+  const syncPullAll = useCallback(async () => {
+    setSyncing(true);
+    try {
+      const res = await fetch("/api/notes/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "pull", profile: activeProfile }),
+      });
+      const data = await res.json();
+      if (data.error) {
+        setError(data.error);
+      } else if (data.notes) {
+        setNotes(data.notes);
+        await fetchSyncStatus();
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Sync failed");
+    } finally {
+      setSyncing(false);
+    }
+  }, [activeProfile, fetchSyncStatus]);
+
   // Editor view
   const selectedNote = selectedId ? notes.find((n) => n.id === selectedId) : null;
   if (selectedNote) {
@@ -677,6 +750,28 @@ export function NotesWidget() {
             title="Search notes"
           >
             <Search className="h-3.5 w-3.5" />
+          </button>
+          <button
+            onClick={syncPushAll}
+            disabled={syncing}
+            className={cn(
+              "text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted",
+              syncing && "animate-pulse"
+            )}
+            title="Push all notes to Google Docs"
+          >
+            <CloudUpload className="h-3.5 w-3.5" />
+          </button>
+          <button
+            onClick={syncPullAll}
+            disabled={syncing}
+            className={cn(
+              "text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted",
+              syncing && "animate-pulse"
+            )}
+            title="Pull changes from Google Docs"
+          >
+            <CloudDownload className="h-3.5 w-3.5" />
           </button>
           <button
             onClick={createNote}
@@ -761,6 +856,7 @@ export function NotesWidget() {
                       note={note}
                       onClick={() => setSelectedId(note.id)}
                       onDelete={deleteNote}
+                      isSynced={syncStatus[note.id]}
                     />
                   ))}
                   {unpinnedNotes.length > 0 && (
@@ -777,6 +873,7 @@ export function NotesWidget() {
                   note={note}
                   onClick={() => setSelectedId(note.id)}
                   onDelete={deleteNote}
+                  isSynced={syncStatus[note.id]}
                 />
               ))}
             </div>
@@ -789,7 +886,7 @@ export function NotesWidget() {
 
 // ─── Note List Item ──────────────────────────────────────────────────────────
 
-function NoteListItem({ note, onClick, onDelete }: { note: Note; onClick: () => void; onDelete: (id: string) => void }) {
+function NoteListItem({ note, onClick, onDelete, isSynced }: { note: Note; onClick: () => void; onDelete: (id: string) => void; isSynced?: boolean }) {
   const preview = stripHtml(note.content).slice(0, 100);
 
   return (
@@ -801,6 +898,11 @@ function NoteListItem({ note, onClick, onDelete }: { note: Note; onClick: () => 
         <p className="text-sm font-medium truncate flex-1 group-hover:text-primary transition-colors">
           {note.title || "Untitled"}
         </p>
+        {isSynced && (
+          <span title="Synced to Google Docs" className="shrink-0 mt-0.5">
+            <Cloud className="h-3 w-3 text-muted-foreground" />
+          </span>
+        )}
         <button
           onClick={(e) => {
             e.stopPropagation();

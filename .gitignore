@@ -42,3 +42,4 @@ next-env.d.ts
 
 # bun build output
 /dist/
+personal-assistant-linux-x64.tar.gz
