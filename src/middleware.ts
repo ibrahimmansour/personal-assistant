@@ -54,8 +54,8 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Always allow auth API
-  if (pathname === "/api/auth") {
+  // Always allow auth API and OAuth callbacks
+  if (pathname === "/api/auth" || pathname.startsWith("/api/google/auth")) {
     return NextResponse.next();
   }
 
