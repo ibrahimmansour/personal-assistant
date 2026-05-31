@@ -13,12 +13,11 @@ When creating a new release, bumping a version, or tagging:
 2. Run `npm install --package-lock-only` to sync `package-lock.json`
 3. Stage **both** files: `git add package.json package-lock.json`
 4. Commit with the format: `chore: bump version to X.Y.Z` (or include it in the feature commit)
-5. Tag with `git tag vX.Y.Z`
-6. Push: `git push origin main --tags`
+5. Push: `git push origin main`
 
 ## Rules
 
 - NEVER commit `package.json` without also updating and committing `package-lock.json`
 - ALWAYS run `npm install --package-lock-only` after editing the version in `package.json` to regenerate the lockfile
 - Both files must be in the SAME commit
-- The tag must point to the commit that contains both file changes
+- Do NOT create or push tags locally — the GitHub Actions workflow detects the version bump and creates the tag + release automatically

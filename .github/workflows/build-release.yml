@@ -12,11 +12,8 @@ permissions:
   contents: write
 
 jobs:
-  check-version:
+  build:
     runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.version.outputs.version }}
-      tag_exists: ${{ steps.check_tag.outputs.exists }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -26,7 +23,7 @@ jobs:
         id: version
         run: echo "version=v$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
 
-      - name: Check if tag exists
+      - name: Check if tag already exists
         id: check_tag
         run: |
           if git rev-parse "${{ steps.version.outputs.version }}" >/dev/null 2>&1; then
@@ -35,38 +32,38 @@ jobs:
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
-  build:
-    needs: check-version
-    if: needs.check-version.outputs.tag_exists == 'false'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
       - uses: oven-sh/setup-bun@v2
+        if: steps.check_tag.outputs.exists == 'false'
         with:
           bun-version: latest
 
       - uses: actions/setup-node@v4
+        if: steps.check_tag.outputs.exists == 'false'
         with:
           node-version: '20'
 
       - name: Install dependencies
+        if: steps.check_tag.outputs.exists == 'false'
         run: npm ci
 
       - name: Build Next.js standalone
+        if: steps.check_tag.outputs.exists == 'false'
         run: npm run build
 
       - name: Build linux-x64 binary
+        if: steps.check_tag.outputs.exists == 'false'
         run: node scripts/build-binary.mjs --target=linux-x64
 
       - name: Package release
+        if: steps.check_tag.outputs.exists == 'false'
         run: |
           cd dist/linux-x64
           tar -czf ../../personal-assistant-linux-x64.tar.gz .
 
       - name: Create tag and release
+        if: steps.check_tag.outputs.exists == 'false'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ needs.check-version.outputs.version }}
+          tag_name: ${{ steps.version.outputs.version }}
           files: personal-assistant-linux-x64.tar.gz
           generate_release_notes: true
