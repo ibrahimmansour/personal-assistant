@@ -128,14 +128,14 @@ type ProcessSort = "cpu" | "mem" | "pid" | "name" | "rss";
 // ─── Helper functions ──────────────────────────────────────────────────────────
 
 function formatBytes(bytes: number): string {
-  if (bytes === 0) return "0 B";
+  if (!bytes || bytes <= 0) return "0 B";
   const units = ["B", "KB", "MB", "GB", "TB"];
   const i = Math.floor(Math.log(bytes) / Math.log(1024));
   return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${units[i]}`;
 }
 
 function formatBytesShort(bytes: number): string {
-  if (bytes === 0) return "0";
+  if (!bytes || bytes <= 0) return "0";
   const units = ["B", "K", "M", "G", "T"];
   const i = Math.floor(Math.log(bytes) / Math.log(1024));
   return `${(bytes / Math.pow(1024, i)).toFixed(i > 2 ? 1 : 0)}${units[i]}`;
@@ -634,7 +634,7 @@ export function SystemMonitorWidget() {
               <span>Disk I/O</span>
             </div>
             <div className="font-mono tabular-nums text-xs">
-              {metrics.diskIO ? `${metrics.diskIO.mbPerSec.toFixed(1)} MB/s` : "N/A"}
+              {metrics.diskIO ? `${(metrics.diskIO.mbPerSec ?? 0).toFixed(1)} MB/s` : "N/A"}
             </div>
           </div>
         </div>
@@ -906,13 +906,13 @@ export function SystemMonitorWidget() {
                     proc.cpu >= 50 && "text-destructive font-medium",
                     proc.cpu >= 20 && proc.cpu < 50 && "text-amber-500"
                   )}>
-                    {proc.cpu.toFixed(1)}
+                    {(proc.cpu ?? 0).toFixed(1)}
                   </span>
                   <span className={cn(
                     "font-mono tabular-nums",
                     proc.mem >= 10 && "text-amber-500"
                   )}>
-                    {proc.mem.toFixed(1)}
+                    {(proc.mem ?? 0).toFixed(1)}
                   </span>
                   <span className="font-mono tabular-nums text-muted-foreground text-[9px]">
                     {formatBytesShort(proc.rss)}
@@ -1189,15 +1189,15 @@ export function SystemMonitorWidget() {
               <span className="text-xs font-medium">Disk I/O</span>
               <div className="grid grid-cols-3 gap-2 text-center">
                 <div>
-                  <div className="text-sm font-bold tabular-nums">{metrics.diskIO.mbPerSec.toFixed(2)}</div>
+                  <div className="text-sm font-bold tabular-nums">{(metrics.diskIO.mbPerSec ?? 0).toFixed(2)}</div>
                   <div className="text-[9px] text-muted-foreground">MB/s</div>
                 </div>
                 <div>
-                  <div className="text-sm font-bold tabular-nums">{metrics.diskIO.transfersPerSec}</div>
+                  <div className="text-sm font-bold tabular-nums">{metrics.diskIO.transfersPerSec ?? 0}</div>
                   <div className="text-[9px] text-muted-foreground">IOPS</div>
                 </div>
                 <div>
-                  <div className="text-sm font-bold tabular-nums">{metrics.diskIO.kbPerTransfer.toFixed(1)}</div>
+                  <div className="text-sm font-bold tabular-nums">{(metrics.diskIO.kbPerTransfer ?? 0).toFixed(1)}</div>
                   <div className="text-[9px] text-muted-foreground">KB/transfer</div>
                 </div>
               </div>
