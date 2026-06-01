@@ -18,6 +18,7 @@ const workWidgets: WidgetConfig[] = [
   { id: "bookmarks", type: "bookmarks", title: "Bookmarks", visible: true },
   { id: "files", type: "files", title: "Files", visible: true },
   { id: "claude-code", type: "claude-code", title: "Claude Code", visible: true },
+  { id: "system-monitor", type: "system-monitor", title: "System Monitor", visible: true },
 ];
 
 const workLayouts: Layout = [
@@ -42,6 +43,7 @@ const workLayouts: Layout = [
   // Row 12: files full width = 12
   { i: "files",      x: 0, y: 12, w: 12, h: 4, minW: 3, minH: 3 },
   { i: "claude-code", x: 0, y: 16, w: 8, h: 5, minW: 4, minH: 4 },
+  { i: "system-monitor", x: 8, y: 16, w: 4, h: 5, minW: 3, minH: 3 },
 ];
 
 // ─── Private profile: no Jira, has GitHub.com, Gmail, Google Calendar ────────
@@ -59,6 +61,7 @@ const privateWidgets: WidgetConfig[] = [
   { id: "bookmarks", type: "bookmarks", title: "Bookmarks", visible: true },
   { id: "files", type: "files", title: "Files", visible: true },
   { id: "claude-code", type: "claude-code", title: "Claude Code", visible: true },
+  { id: "system-monitor", type: "system-monitor", title: "System Monitor", visible: true },
 ];
 
 const privateLayouts: Layout = [
@@ -79,6 +82,7 @@ const privateLayouts: Layout = [
   { i: "bookmarks",  x: 4, y: 8, w: 4, h: 4, minW: 3, minH: 3 },
   { i: "files",      x: 8, y: 8, w: 4, h: 4, minW: 3, minH: 3 },
   { i: "claude-code", x: 0, y: 12, w: 8, h: 5, minW: 4, minH: 4 },
+  { i: "system-monitor", x: 8, y: 12, w: 4, h: 5, minW: 3, minH: 3 },
 ];
 
 // ─── Profile-aware getters ───────────────────────────────────────────────────

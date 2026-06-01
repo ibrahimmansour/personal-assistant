@@ -20,6 +20,7 @@ import { TerminalWidget } from "@/components/widgets/terminal-widget";
 import { BookmarksWidget } from "@/components/widgets/bookmarks-widget";
 import { FilesWidget } from "@/components/widgets/files-widget";
 import { ClaudeCodeWidget } from "@/components/widgets/claude-code-widget";
+import { SystemMonitorWidget } from "@/components/widgets/system-monitor-widget";
 
 const widgetComponents: Record<WidgetType, React.ComponentType> = {
   clock: ClockWidget,
@@ -35,6 +36,7 @@ const widgetComponents: Record<WidgetType, React.ComponentType> = {
   bookmarks: BookmarksWidget,
   files: FilesWidget,
   "claude-code": ClaudeCodeWidget,
+  "system-monitor": SystemMonitorWidget,
 };
 
 export function FocusMode() {

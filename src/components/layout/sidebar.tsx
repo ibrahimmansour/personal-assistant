@@ -72,6 +72,7 @@ const widgetIcons: Record<WidgetType, React.ComponentType<{ className?: string }
   bookmarks: Bookmark,
   files: FolderOpen,
   "claude-code": Bot,
+  "system-monitor": Activity,
 };
 
 const workspaceIcons: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -120,6 +121,7 @@ const widgetTitles: Record<WidgetType, string> = {
   bookmarks: "Bookmarks",
   files: "Files",
   "claude-code": "Claude Code",
+  "system-monitor": "System Monitor",
 };
 
 // ─── Component ──────────────────────────────────────────────────────────────

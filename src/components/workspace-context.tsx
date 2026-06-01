@@ -42,6 +42,7 @@ export const widgetCategoryMap: Record<WidgetType, WidgetCategory> = {
   bookmarks: "tools",
   files: "tools",
   "claude-code": "development",
+  "system-monitor": "tools",
 };
 
 /** Custom view type for workspaces that render a dedicated UI instead of the widget grid */
@@ -99,7 +100,7 @@ export interface WorkspaceState {
 
 const ALL_WIDGET_IDS = [
   "clock", "weather", "reminders", "calendar", "tasks", "email",
-  "github-prs", "jira", "notes", "terminal", "bookmarks", "files", "claude-code",
+  "github-prs", "jira", "notes", "terminal", "bookmarks", "files", "claude-code", "system-monitor",
 ];
 
 const ALL_WIDGET_IDS_PRIVATE = ALL_WIDGET_IDS.filter((id) => id !== "jira");
