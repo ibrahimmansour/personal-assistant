@@ -227,9 +227,8 @@ function openSession(opts: OpenSessionOpts): SessionState {
 
   sessionStore.set(state.key, state);
 
-  if (state.sessionId) {
-    attachSse(state);
-  }
+  // SSE is attached by the widget when the session becomes active
+  // (browsers cap concurrent EventSource connections at ~6 per origin).
 
   return state;
 }
@@ -407,12 +406,20 @@ async function pollForNewSessionId(state: SessionState) {
       }
       if (found) {
         clearInterval(interval);
+        const oldKey = state.key;
         state.sessionId = found.sessionId;
-        // Re-key the store so future lookups find it.
-        sessionStore.delete(state.key);
-        state.key = found.sessionId;
-        sessionStore.set(state.key, state);
-        attachSse(state);
+        // Re-key the store under the real session ID so future lookups by id
+        // find it. Keep the original (pending-N) key as an alias so React
+        // refs that captured the old key still resolve to the same state.
+        if (oldKey !== found.sessionId) {
+          state.key = found.sessionId;
+          sessionStore.set(found.sessionId, state);
+          // Leave oldKey → state in the store too (alias).
+        }
+        // Don't attach SSE here — the React layer manages connections so
+        // browsers don't exhaust the per-origin EventSource pool. Notifying
+        // subscribers triggers the active-session useEffect, which will call
+        // attachSse if this session is currently active.
         notifySubscribers(state);
       }
     } catch {}
@@ -456,6 +463,19 @@ function attachSse(state: SessionState) {
 }
 
 /**
+ * Close the SSE EventSource for a session. Browsers cap concurrent
+ * EventSource connections at ~6 per origin (HTTP/1.1), so we keep an SSE
+ * open only for the currently-active session and detach when the user
+ * switches away. Re-attaching later will replay the JSONL from scratch
+ * via the `replace: true` initial event.
+ */
+function detachSse(state: SessionState) {
+  if (!state.sse) return;
+  try { state.sse.close(); } catch {}
+  state.sse = null;
+}
+
+/**
  * Submit a prompt to the session. If the terminal is alive, paste directly.
  * Otherwise, queue the prompt and lazily spawn the terminal — pending prompts
  * are flushed once the PTY is ready.
@@ -490,7 +510,11 @@ function destroySession(key: string) {
   try { state.ws?.close(); } catch {}
   try { state.terminal?.dispose(); } catch {}
   state.subscribers.clear();
-  sessionStore.delete(key);
+  // Remove every alias pointing to this state (a pending session may have
+  // been re-keyed once its real session ID resolved, leaving an alias entry).
+  for (const [k, v] of Array.from(sessionStore.entries())) {
+    if (v === state) sessionStore.delete(k);
+  }
 }
 
 /** Stop just the terminal/PTY for this session, keeping chat & SSE alive. */
@@ -756,6 +780,29 @@ export function ClaudeCodeWidget() {
   // Subscribe to active session
   const active = useSessionSubscription(activeKey);
 
+  // ── Manage SSE connections ─────────────────────────────────────────────
+  // Browsers cap concurrent EventSource connections at ~6 per origin (over
+  // HTTP/1.1). Without management, opening many sessions exhausts the pool
+  // and new tail streams (and other fetches like the sessions refresh) get
+  // queued indefinitely. So we keep an SSE open ONLY for the active session
+  // and detach all others. Re-activating a session re-opens its SSE; the
+  // server replays the JSONL via the initial `replace: true` event.
+  useEffect(() => {
+    const activeState = activeKey ? sessionStore.get(activeKey) : null;
+    // Use object identity (not key) to identify the active state, since a
+    // pending session may have been re-keyed once its real session ID resolved.
+    const seen = new Set<SessionState>();
+    for (const s of sessionStore.values()) {
+      if (seen.has(s)) continue;
+      seen.add(s);
+      if (s === activeState) {
+        if (s.sessionId) attachSse(s);
+      } else {
+        detachSse(s);
+      }
+    }
+  }, [activeKey, active?.sessionId]);
+
   // ── Load recent folders from localStorage ──────────────────────────────
   useEffect(() => {
     try {
@@ -894,14 +941,11 @@ export function ClaudeCodeWidget() {
 
     const label = s.summary || s.firstPrompt?.slice(0, 30) || s.sessionId.slice(0, 8);
     const state = openSession({ cwd, resumeId: s.sessionId, label });
-    // Make sure projectDirName matches the JSONL location (the API gives us
-    // the dir name explicitly; it may differ from the encoded cwd).
+    // The API gives us the canonical project dir name; openSession's default
+    // (encoded from cwd) may not match if the path or session moved. Set it
+    // before SSE attaches.
     if (s.projectDirName) {
       state.projectDirName = s.projectDirName;
-      // Restart SSE in case it was attached with a wrong projectDirName hint.
-      try { state.sse?.close(); } catch {}
-      state.sse = null;
-      attachSse(state);
     }
     setActiveKey(state.key);
     setView("chat");
