@@ -34,6 +34,7 @@ import {
   GitBranch,
   ChevronDown,
   ChevronRight,
+  Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState, useEffect, useRef, useCallback } from "react";
@@ -615,6 +616,77 @@ function ToolUsePill({ name, input }: { name: string; input?: unknown }) {
   );
 }
 
+// ─── Model picker ────────────────────────────────────────────────────────────
+
+const MODEL_OPTIONS: { value: string; label: string; description: string }[] = [
+  { value: "default", label: "Default", description: "Recommended — Opus 4.8 with 1M context" },
+  { value: "opus", label: "Opus", description: "Opus 4.8 — most capable for complex work" },
+  { value: "sonnet", label: "Sonnet", description: "Sonnet 4.6 — best for everyday tasks" },
+  { value: "sonnet[1m]", label: "Sonnet (1M)", description: "Sonnet 4.6 with 1M context — uses credits" },
+  { value: "haiku", label: "Haiku", description: "Haiku 4.5 — fastest for quick answers" },
+];
+
+function ModelPicker({
+  value,
+  onChange,
+  sessionAlive,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  sessionAlive: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const onClick = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    if (open) document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, [open]);
+
+  const current = MODEL_OPTIONS.find((m) => m.value === value) || MODEL_OPTIONS[0];
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1 px-2 h-7 text-xs rounded-md hover:bg-muted text-muted-foreground hover:text-foreground"
+        title={sessionAlive ? `Model: ${current.label}` : `Model: ${current.label} — applies on next session start`}
+      >
+        <Sparkles className="h-3 w-3" />
+        <span>{current.label}</span>
+        <ChevronDown className="h-3 w-3" />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 z-20 w-64 rounded-md border border-border bg-popover shadow-md py-1">
+          {MODEL_OPTIONS.map((m) => (
+            <button
+              key={m.value}
+              type="button"
+              onClick={() => { onChange(m.value); setOpen(false); }}
+              className={cn(
+                "w-full text-left px-2 py-1.5 hover:bg-accent flex flex-col gap-0.5",
+                m.value === value && "bg-accent",
+              )}
+            >
+              <span className="text-xs font-medium">{m.label}</span>
+              <span className="text-[10px] text-muted-foreground">{m.description}</span>
+            </button>
+          ))}
+          {!sessionAlive && (
+            <div className="px-2 pt-1 mt-1 border-t border-border text-[10px] text-muted-foreground">
+              Applies on next session start
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Markdown-lite renderer ──────────────────────────────────────────────────
 
 function renderInlineFormatting(text: string): React.ReactNode {
@@ -760,6 +832,14 @@ export function ClaudeCodeWidget() {
     return v === null ? true : v === "true";
   });
 
+  // Selected model. The CLI persists its own default via `/model <name>`,
+  // but we also remember it locally so the picker shows the user's last
+  // choice immediately on open (without waiting for the CLI to respond).
+  const [selectedModel, setSelectedModelState] = useState<string>(() => {
+    if (typeof window === "undefined") return "default";
+    return localStorage.getItem("claude-code-model") || "default";
+  });
+
   // Active folder + worktrees
   const [activeFolder, setActiveFolder] = useState<string | null>(() => {
     if (typeof window === "undefined") return null;
@@ -861,6 +941,26 @@ export function ClaudeCodeWidget() {
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
     return () => observer.disconnect();
   }, []);
+
+  // ── Set model: send `/model <name>` to the active session if it has a
+  // live terminal, and persist the choice locally. The CLI itself remembers
+  // the model as the default for new sessions, so a single `/model` call
+  // is enough to flip every future session — we just need a running CLI to
+  // deliver the command. If there's no live terminal, the local preference
+  // still applies on the next session start (the CLI loads its saved
+  // default automatically).
+  const setSelectedModel = useCallback((model: string) => {
+    setSelectedModelState(model);
+    try { localStorage.setItem("claude-code-model", model); } catch {}
+    const state = activeKey ? sessionStore.get(activeKey) : null;
+    if (state && state.alive && state.ws && state.ws.readyState === WebSocket.OPEN) {
+      try {
+        // Send directly via the PTY WebSocket so we don't trigger the
+        // "thinking" indicator (this isn't a user prompt, just a CLI command).
+        state.ws.send(JSON.stringify({ type: "input", data: `/model ${model}\r` }));
+      } catch {}
+    }
+  }, [activeKey]);
 
   // ── Start a new session in a chosen folder ─────────────────────────────
   const startNewSession = useCallback(async (cwd: string) => {
@@ -1149,6 +1249,14 @@ export function ClaudeCodeWidget() {
 
             {active && (
               <>
+                {view === "chat" && (
+                  <ModelPicker
+                    value={selectedModel}
+                    onChange={setSelectedModel}
+                    sessionAlive={!!active.alive}
+                  />
+                )}
+
                 {view === "chat" && (
                   <Button
                     size="sm"
