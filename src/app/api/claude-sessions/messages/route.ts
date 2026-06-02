@@ -14,6 +14,9 @@ export interface ChatMessage {
   role: "user" | "assistant";
   text: string;              // already-flattened text content (assistant text blocks joined; user content as-is)
   toolUses?: { name: string; input?: unknown }[]; // optional, for "tool calls happened in this turn" indicator
+  /** Assistant `stop_reason`: end_turn | tool_use | max_tokens | stop_sequence | null. Used by the
+   *  client to decide whether the session is still working ("thinking" indicator). */
+  stopReason?: string | null;
   timestamp: string;
 }
 
@@ -60,6 +63,7 @@ function parseLine(raw: string): ChatMessage | null {
       role: "assistant",
       text,
       toolUses: toolUses.length > 0 ? toolUses : undefined,
+      stopReason: typeof msg.stop_reason === "string" ? msg.stop_reason : null,
       timestamp: parsed.timestamp || "",
     };
   }

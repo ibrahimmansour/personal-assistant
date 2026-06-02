@@ -49,6 +49,8 @@ interface ChatMessage {
   role: "user" | "assistant";
   text: string;
   toolUses?: { name: string; input?: unknown }[];
+  /** end_turn | tool_use | max_tokens | stop_sequence | null */
+  stopReason?: string | null;
   timestamp: string;
 }
 
@@ -320,14 +322,21 @@ async function spawnTerminal(state: SessionState): Promise<boolean> {
       } catch {}
 
       // Flush queued prompts after the CLI has had a moment to start its TUI.
-      // The CLI needs a few hundred ms before it accepts input on the prompt line.
+      // The CLI needs ~1-2 seconds before it accepts input on the prompt line.
+      // Each prompt is sent as text-then-Enter so the bracketed-paste handler
+      // doesn't swallow the submit (see sendPromptAndEnter).
       const flushQueue = () => {
         if (!state.pendingPrompts.length) return;
-        for (const p of state.pendingPrompts) {
-          try { ws.send(JSON.stringify({ type: "input", data: p })); } catch {}
-        }
+        const queued = state.pendingPrompts;
         state.pendingPrompts = [];
         notifySubscribers(state);
+        // Stagger multiple queued prompts so each completes a submit cycle
+        // before the next paste begins.
+        let delay = 0;
+        for (const p of queued) {
+          setTimeout(() => sendPromptAndEnter(ws, p.replace(/\r+$/, "")), delay);
+          delay += 250;
+        }
       };
       setTimeout(flushQueue, 1500);
     };
@@ -456,14 +465,36 @@ function attachSse(state: SessionState) {
           if (!existing.has(m.id)) state.messages.push(m);
         }
       }
-      // Track the latest assistant message — clears the "thinking" indicator
-      // for this session as soon as a new reply lands.
-      const lastA = [...state.messages].reverse().find((m) => m.role === "assistant");
-      const lastAId = lastA?.id || null;
-      if (state.waitingForReply && lastAId && lastAId !== state.lastAssistantMessageId) {
-        state.waitingForReply = false;
+      // Derive whether Claude is still working from the JSONL itself.
+      // A multi-turn response (tool_use loops) writes several assistant
+      // entries before stop_reason becomes "end_turn"; only then is the
+      // session truly idle. tool_use → more turns coming. user as last →
+      // we're between user submit and Claude's first reply.
+      //
+      // Note: we never *clear* waitingForReply unless we see a terminal
+      // stop_reason on the latest assistant message. This prevents a stale
+      // "end_turn" message from flipping the indicator off right after the
+      // user submitted but before the JSONL has flushed the new user line.
+      const last = state.messages[state.messages.length - 1];
+      if (last) {
+        if (last.role === "user") {
+          state.waitingForReply = true;
+        } else if (last.role === "assistant") {
+          const stop = last.stopReason || "";
+          if (stop === "tool_use") {
+            state.waitingForReply = true;
+          } else if (stop && stop !== "tool_use") {
+            // end_turn / max_tokens / stop_sequence → done.
+            // Only clear if the last assistant message id has actually changed
+            // since we last saw it (otherwise we may be replaying old state
+            // before a fresh user submit has been flushed).
+            if (last.id !== state.lastAssistantMessageId) {
+              state.waitingForReply = false;
+            }
+          }
+          state.lastAssistantMessageId = last.id;
+        }
       }
-      state.lastAssistantMessageId = lastAId;
       notifySubscribers(state);
     } catch {}
   });
@@ -487,12 +518,17 @@ function detachSse(state: SessionState) {
 }
 
 /**
- * Submit a prompt to the session. If the terminal is alive, paste directly.
- * Otherwise, queue the prompt and lazily spawn the terminal — pending prompts
- * are flushed once the PTY is ready.
+ * Submit a prompt to the session. If the terminal is alive, paste the text
+ * and then send Enter as a separate keystroke (Claude's TUI uses bracketed
+ * paste mode — sending text + \r in a single write makes the \r part of the
+ * paste content, so the prompt sits in the input box without being
+ * submitted). Otherwise, queue the prompt and lazily spawn the terminal —
+ * pending prompts are flushed once the PTY is ready.
  */
 async function submitPrompt(state: SessionState, text: string): Promise<boolean> {
-  const payload = text.endsWith("\r") ? text : text + "\r";
+  // Strip any trailing \r the caller might have appended; we send Enter
+  // ourselves as a distinct keystroke after the text settles.
+  const promptText = text.replace(/\r+$/, "");
 
   // Mark this session as waiting for an assistant reply. Cleared by the
   // SSE handler when the next assistant message lands. Per-session, so
@@ -500,18 +536,38 @@ async function submitPrompt(state: SessionState, text: string): Promise<boolean>
   state.waitingForReply = true;
 
   if (state.alive && state.ws && state.ws.readyState === WebSocket.OPEN) {
-    state.ws.send(JSON.stringify({ type: "input", data: payload }));
+    sendPromptAndEnter(state.ws, promptText);
     notifySubscribers(state);
     return true;
   }
 
   // Queue the prompt and ensure a terminal is being spawned.
-  state.pendingPrompts.push(payload);
+  state.pendingPrompts.push(promptText);
   notifySubscribers(state);
   if (!state.spawningTerminal && !state.alive) {
     spawnTerminal(state);
   }
   return true;
+}
+
+/**
+ * Write a prompt to a PTY in two beats: first the text, then \r as a separate
+ * input event after a short delay. Claude's TUI runs in bracketed paste
+ * mode; if we send "text + \r" in one chunk it's treated as a paste with a
+ * trailing newline (i.e. the \r becomes a multi-line input), not as a submit.
+ * Splitting them lets the TUI flush the paste, exit bracketed-paste mode,
+ * then receive Enter as a real keypress that submits.
+ */
+function sendPromptAndEnter(ws: WebSocket, text: string) {
+  if (text) {
+    try { ws.send(JSON.stringify({ type: "input", data: text })); } catch {}
+  }
+  // 80 ms is comfortably long enough for ink/Claude's TUI to drain the
+  // paste sequence on the same event loop tick before our Enter arrives.
+  setTimeout(() => {
+    if (ws.readyState !== WebSocket.OPEN) return;
+    try { ws.send(JSON.stringify({ type: "input", data: "\r" })); } catch {}
+  }, 80);
 }
 
 function destroySession(key: string) {
@@ -964,11 +1020,10 @@ export function ClaudeCodeWidget() {
     try { localStorage.setItem("claude-code-model", model); } catch {}
     const state = activeKey ? sessionStore.get(activeKey) : null;
     if (state && state.alive && state.ws && state.ws.readyState === WebSocket.OPEN) {
-      try {
-        // Send directly via the PTY WebSocket so we don't trigger the
-        // "thinking" indicator (this isn't a user prompt, just a CLI command).
-        state.ws.send(JSON.stringify({ type: "input", data: `/model ${model}\r` }));
-      } catch {}
+      // Send directly via the PTY WebSocket so we don't trigger the
+      // "thinking" indicator (this isn't a user prompt, just a CLI command).
+      // Split text + Enter so bracketed-paste mode doesn't swallow the submit.
+      sendPromptAndEnter(state.ws, `/model ${model}`);
     }
   }, [activeKey]);
 
