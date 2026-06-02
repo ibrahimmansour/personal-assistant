@@ -1,6 +1,0 @@
-{
-  "name": "claude-code-relay",
-  "private": true,
-  "description": "WebSocket relay for Claude Code Agent SDK (deps in root package.json)",
-  "type": "module"
-}

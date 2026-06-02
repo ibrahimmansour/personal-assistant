@@ -1,2261 +1,1214 @@
 "use client";
 
+/**
+ * Claude Code Widget — Terminal-driven, JSONL-tailed chat interface.
+ *
+ * Architecture:
+ * - Each Claude session = one PTY terminal running `claude --dangerously-skip-permissions`
+ *   (or `claude --resume <id> ...` when resuming). Terminals are stored in a module-level
+ *   Map so they survive React remounts.
+ * - The chat UI is a clean view of the session JSONL file, tailed via SSE
+ *   (/api/claude-sessions/messages?sessionId=...). Tool uses are summarized as compact pills.
+ * - Submitting from chat pastes the prompt + ENTER into the live terminal.
+ * - Default view is the chat. A toggle reveals the raw terminal. Both views target the
+ *   same underlying session.
+ */
+
 import { WidgetWrapper } from "@/components/widget-wrapper";
 import {
   Bot,
   Plus,
-  Trash2,
   Send,
   Loader2,
   PanelLeftClose,
   PanelLeftOpen,
-  Pencil,
-  Check,
   X,
   Copy,
-  ChevronDown,
-  ChevronRight,
-  Wifi,
-  WifiOff,
-  Settings,
+  Wrench,
   FolderOpen,
-  FolderPlus,
-  GitBranch,
-  GitFork,
-  Terminal,
-  Square,
-  FileCode,
-  Play,
-  AlertCircle,
-  Activity,
+  Terminal as TerminalIcon,
   MessageSquare,
-  Zap,
   RefreshCw,
-  Shield,
-  Archive,
-  ArchiveRestore,
+  Trash2,
+  Search,
 } from "lucide-react";
-import { TerminalPanel } from "@/components/terminal-panel";
 import { cn } from "@/lib/utils";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-interface ToolCallBlock {
-  type: "tool_call";
-  id: string;
-  name: string;
-  input: Record<string, unknown>;
-  status?: "running" | "done" | "error";
-}
-
-interface TextBlock {
-  type: "text";
-  text: string;
-}
-
-type ContentBlock = TextBlock | ToolCallBlock;
-
-interface Message {
+interface ChatMessage {
   id: string;
   role: "user" | "assistant";
-  content: string;
-  blocks?: ContentBlock[];
+  text: string;
+  toolUses?: { name: string; input?: unknown }[];
   timestamp: string;
-  tokenCount?: number;
 }
 
-interface SessionInfo {
+interface ClaudeSessionInfo {
   sessionId: string;
   summary: string;
-  lastModified: number;
-  firstPrompt?: string;
-  cwd?: string;
-  isolated?: boolean;
-  isolatedHome?: string;
-  archived?: boolean;
-  archivePath?: string;
+  firstPrompt: string;
+  messageCount: number;
+  created: string;
+  modified: string;
+  gitBranch: string;
+  projectPath: string;
+  projectDirName: string;
 }
 
-interface RelayConfig {
-  url: string;
-  token?: string;
-  defaultCwd?: string;
-  label: string;
-}
-
-interface Worktree {
+interface ClaudeProject {
+  dirName: string;
   path: string;
-  branch?: string;
-  head?: string;
-  bare?: boolean;
-  detached?: boolean;
 }
 
-const MODELS = [
-  { id: "claude-sonnet-4-6", label: "Sonnet 4.6" },
-  { id: "claude-opus-4-7", label: "Opus 4.7" },
-  { id: "claude-haiku-4-5-20251001", label: "Haiku 4.5" },
-];
-
-const MAX_CONTEXT_TOKENS = 1000000; // Claude Sonnet 4.6 / Opus 4.7 context window
-
-// ─── Claude Icon ─────────────────────────────────────────────────────────────
-
-function ClaudeIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
-      <path d="M4.709 15.955l4.397-2.463.072-.216-.072-.12h-.217l-.737-.045-2.515-.067-2.173-.09-2.115-.112-.531-.112L.3 11.57l.048-.325.447-.302.64.056 1.412.1 2.126.146 1.534.09 2.284.235h.362l.048-.146-.12-.09-.097-.09-2.198-1.493-2.38-1.57-1.245-.907-.664-.46-.338-.425-.145-.94.604-.671.82.056.205.056.833.639 1.776 1.377 2.318 1.703.338.28.136-.092.02-.065-.157-.258-1.255-2.274-1.34-2.32-.604-.963-.157-.572.688-.94.48-.118.932.336.386.383.58 1.322.93 2.072 1.448 2.826.423.84.23.774.084.235h.145v-.134.121-.255l.12-1.591.218-1.95.257-2.513.073-.706.35-.851.7-.46.543.258.447.639-.06.415-.266 1.724-.528 2.703-.338 1.815h.193l.23-.235.919-1.21 1.535-1.927.676-.775.797-.84.507-.403.967-.045.72 1.054-.314 1.088-.999 1.254-.82 1.065-1.182 1.577-.725 1.268.065.105.176-.015 2.657-.572 1.437-.258 1.714-.291.773.358.085.37-.302.751-1.835.448-2.152.547-.578 1.483-.132.085-.597-.036-1.541-1.29-.277-3.047-.075h-.17v.1l1.015.998 1.873 1.681 2.33 2.175.12.538-.302.425-.314-.045-2.058-1.546-.796-.695-1.835-1.513h-.12v.1l.41.606 2.186 3.28.109 1.008-.157.325-.567.202-.617-.112-1.292-1.827-1.316-2.017-1.063-1.815-.128.081-.632 6.754-.29.358-.597.09-.277-.045 .12-.64.446-3.476.434-3.054z"/>
-    </svg>
-  );
+interface SessionState {
+  /** Stable client-side key. For new sessions we use `pending-<n>`; for resumes we use the sessionId. */
+  key: string;
+  /** Real Claude session ID once known (matches the JSONL filename). Same as `key` for resumes. */
+  sessionId: string | null;
+  /** xterm.Terminal instance */
+  terminal: any;
+  /** xterm FitAddon */
+  fitAddon: any;
+  /** WebSocket to the PTY server */
+  ws: WebSocket;
+  alive: boolean;
+  /** Working directory the terminal was launched in */
+  cwd: string;
+  /** Display label */
+  label: string;
+  /** Was this started via --resume? */
+  isResume: boolean;
+  /** Encoded project dir name in ~/.claude/projects/ (e.g. "-Users-foo-bar"). */
+  projectDirName: string;
+  /** Current chat messages (parsed from JSONL via SSE). */
+  messages: ChatMessage[];
+  /** SSE EventSource currently tailing the JSONL file. */
+  sse: EventSource | null;
+  /** Subscribers that re-render when this session updates. */
+  subscribers: Set<() => void>;
 }
 
-// ─── Collapsible Tool Call Block ─────────────────────────────────────────────
+// ─── Module-level session store (survives React remounts) ────────────────────
 
-function ToolCallPill({ block }: { block: ToolCallBlock }) {
-  const [expanded, setExpanded] = useState(false);
+const sessionStore = new Map<string, SessionState>();
+let pendingCounter = 1;
 
-  const getToolIcon = (name: string) => {
-    if (name.includes("file") || name.includes("write") || name.includes("read") || name.includes("edit")) return <FileCode className="h-3 w-3" />;
-    if (name.includes("bash") || name.includes("exec") || name.includes("run")) return <Terminal className="h-3 w-3" />;
-    return <Zap className="h-3 w-3" />;
-  };
+const PTY_WS_URL = typeof window !== "undefined"
+  ? `ws://${window.location.hostname}:4445`
+  : "ws://localhost:4445";
 
-  const getStatusColor = (status?: string) => {
-    if (status === "running") return "border-blue-500/50 bg-blue-500/5";
-    if (status === "error") return "border-destructive/50 bg-destructive/5";
-    return "border-border bg-muted/30";
-  };
-
-  // Extract relevant info from input
-  const getSummary = () => {
-    const input = block.input;
-    if (input.command) return String(input.command).slice(0, 80);
-    if (input.filePath || input.path) return String(input.filePath || input.path).split("/").pop();
-    if (input.pattern) return `pattern: ${input.pattern}`;
-    return block.name;
-  };
-
-  return (
-    <div className={cn("rounded-md border my-1.5 transition-colors", getStatusColor(block.status))}>
-      <div
-        className="flex items-center gap-2 px-2.5 py-1.5 cursor-pointer select-none"
-        onClick={() => setExpanded(!expanded)}
-      >
-        <ChevronRight className={cn("h-3 w-3 transition-transform shrink-0", expanded && "rotate-90")} />
-        {getToolIcon(block.name)}
-        <span className="text-xs font-medium">{block.name}</span>
-        <span className="text-[11px] text-muted-foreground truncate flex-1">{getSummary()}</span>
-        {block.status === "running" && <Loader2 className="h-3 w-3 animate-spin text-blue-500 shrink-0" />}
-        {block.status === "error" && <AlertCircle className="h-3 w-3 text-destructive shrink-0" />}
-        {block.status === "done" && <Check className="h-3 w-3 text-green-500 shrink-0" />}
-      </div>
-      {expanded && (
-        <div className="border-t border-border px-2.5 py-2">
-          <pre className="text-[11px] font-mono overflow-x-auto whitespace-pre-wrap text-muted-foreground max-h-48 overflow-y-auto">
-            {JSON.stringify(block.input, null, 2)}
-          </pre>
-        </div>
-      )}
-    </div>
-  );
+// Convert an absolute path into the encoded directory name Claude CLI uses.
+function encodeProjectDirName(absPath: string): string {
+  if (!absPath || absPath === "/") return "-";
+  return absPath.replace(/\//g, "-");
 }
 
-// ─── Inline Diff Renderer ────────────────────────────────────────────────────
-
-function DiffBlock({ content }: { content: string }) {
-  const lines = content.split("\n");
-  return (
-    <div className="rounded-md border border-border my-2 overflow-hidden text-[11px] font-mono">
-      {lines.map((line, i) => {
-        let bg = "";
-        let textColor = "";
-        if (line.startsWith("+") && !line.startsWith("+++")) {
-          bg = "bg-green-500/10";
-          textColor = "text-green-700 dark:text-green-400";
-        } else if (line.startsWith("-") && !line.startsWith("---")) {
-          bg = "bg-red-500/10";
-          textColor = "text-red-700 dark:text-red-400";
-        } else if (line.startsWith("@@")) {
-          bg = "bg-blue-500/10";
-          textColor = "text-blue-700 dark:text-blue-400";
-        }
-        return (
-          <div key={i} className={cn("px-2 py-0.5 leading-tight", bg, textColor)}>
-            {line || "\u00A0"}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-// ─── Token Usage Bar ─────────────────────────────────────────────────────────
-
-function TokenBar({ used, max }: { used: number; max: number }) {
-  const pct = Math.min((used / max) * 100, 100);
-  const color = pct > 80 ? "bg-destructive" : pct > 60 ? "bg-yellow-500" : "bg-green-500";
-  return (
-    <div className="flex items-center gap-2 px-3 py-1 border-b border-border bg-muted/20">
-      <span className="text-[10px] text-muted-foreground shrink-0">Context</span>
-      <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
-        <div className={cn("h-full rounded-full transition-all", color)} style={{ width: `${pct}%` }} />
-      </div>
-      <span className="text-[10px] text-muted-foreground shrink-0">
-        {Math.round(used / 1000)}k / {Math.round(max / 1000)}k
-      </span>
-    </div>
-  );
-}
-
-// ─── Activity Feed Item ──────────────────────────────────────────────────────
-
-function ActivityItem({ block }: { block: ToolCallBlock }) {
-  const getIcon = (name: string) => {
-    if (name.includes("file") || name.includes("write") || name.includes("edit")) return <FileCode className="h-3 w-3 text-blue-500" />;
-    if (name.includes("bash") || name.includes("exec")) return <Terminal className="h-3 w-3 text-purple-500" />;
-    if (name.includes("read") || name.includes("glob") || name.includes("grep")) return <FileCode className="h-3 w-3 text-muted-foreground" />;
-    return <Zap className="h-3 w-3 text-yellow-500" />;
-  };
-
-  const getSummary = () => {
-    const input = block.input;
-    if (input.command) return String(input.command).slice(0, 60);
-    if (input.filePath || input.path) return String(input.filePath || input.path);
-    if (input.pattern) return String(input.pattern);
-    return "";
-  };
-
-  return (
-    <div className="flex items-center gap-2 px-3 py-1.5 text-xs border-b border-border/50 last:border-0">
-      {getIcon(block.name)}
-      <span className="font-medium shrink-0">{block.name}</span>
-      <span className="text-muted-foreground truncate flex-1">{getSummary()}</span>
-      {block.status === "error" && <AlertCircle className="h-3 w-3 text-destructive shrink-0" />}
-      {block.status === "done" && <Check className="h-3 w-3 text-green-500/70 shrink-0" />}
-    </div>
-  );
-}
-
-// ─── Simple markdown renderer ────────────────────────────────────────────────
-
-function renderContent(content: string) {
-  const lines = content.split("\n");
-  const elements: React.ReactNode[] = [];
-  let inCodeBlock = false;
-  let codeBuffer: string[] = [];
-  let inDiff = false;
-  let diffBuffer: string[] = [];
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-
-    if (line.startsWith("```diff") || line.startsWith("```patch")) {
-      inDiff = true;
-      inCodeBlock = true;
-      diffBuffer = [];
-      continue;
-    }
-
-    if (line.startsWith("```")) {
-      if (inCodeBlock) {
-        if (inDiff) {
-          elements.push(<DiffBlock key={i} content={diffBuffer.join("\n")} />);
-          diffBuffer = [];
-          inDiff = false;
-        } else {
-          elements.push(
-            <pre key={i} className="bg-muted rounded-md p-3 my-2 overflow-x-auto text-xs font-mono">
-              <code>{codeBuffer.join("\n")}</code>
-            </pre>
-          );
-        }
-        codeBuffer = [];
-        inCodeBlock = false;
-      } else {
-        inCodeBlock = true;
-        codeBuffer = [];
-      }
-      continue;
-    }
-
-    if (inCodeBlock) {
-      if (inDiff) {
-        diffBuffer.push(line);
-      } else {
-        codeBuffer.push(line);
-      }
-      continue;
-    }
-
-    if (line.startsWith("### ")) {
-      elements.push(<h4 key={i} className="font-semibold text-sm mt-3 mb-1">{line.slice(4)}</h4>);
-    } else if (line.startsWith("## ")) {
-      elements.push(<h3 key={i} className="font-semibold text-sm mt-3 mb-1">{line.slice(3)}</h3>);
-    } else if (line.startsWith("# ")) {
-      elements.push(<h2 key={i} className="font-bold text-base mt-3 mb-1">{line.slice(2)}</h2>);
-    } else if (line.startsWith("- ") || line.startsWith("* ")) {
-      elements.push(
-        <div key={i} className="flex gap-1.5 ml-2">
-          <span className="text-muted-foreground">-</span>
-          <span>{renderInline(line.slice(2))}</span>
-        </div>
-      );
-    } else if (line.trim() === "") {
-      elements.push(<div key={i} className="h-2" />);
-    } else {
-      elements.push(<p key={i} className="text-sm leading-relaxed">{renderInline(line)}</p>);
-    }
+function notifySubscribers(state: SessionState) {
+  for (const fn of Array.from(state.subscribers)) {
+    try { fn(); } catch {}
   }
-
-  if (inCodeBlock && codeBuffer.length > 0) {
-    if (inDiff) {
-      elements.push(<DiffBlock key="unclosed-diff" content={diffBuffer.join("\n")} />);
-    } else {
-      elements.push(
-        <pre key="unclosed" className="bg-muted rounded-md p-3 my-2 overflow-x-auto text-xs font-mono">
-          <code>{codeBuffer.join("\n")}</code>
-        </pre>
-      );
-    }
-  }
-
-  return <>{elements}</>;
 }
 
-function renderInline(text: string): React.ReactNode {
-  const parts: React.ReactNode[] = [];
-  const regex = /(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*)/g;
-  let lastIdx = 0;
-  let match;
+// ─── Color / theme helpers (mirrors terminal-panel.tsx) ──────────────────────
 
-  while ((match = regex.exec(text)) !== null) {
-    if (match.index > lastIdx) parts.push(text.slice(lastIdx, match.index));
-    const m = match[0];
-    if (m.startsWith("`")) {
-      parts.push(<code key={match.index} className="bg-muted px-1 py-0.5 rounded text-xs font-mono">{m.slice(1, -1)}</code>);
-    } else if (m.startsWith("**")) {
-      parts.push(<strong key={match.index}>{m.slice(2, -2)}</strong>);
-    } else if (m.startsWith("*")) {
-      parts.push(<em key={match.index}>{m.slice(1, -1)}</em>);
-    }
-    lastIdx = match.index + m.length;
-  }
-  if (lastIdx < text.length) parts.push(text.slice(lastIdx));
-  return parts.length === 1 ? parts[0] : <>{parts}</>;
+function resolveColor(cssValue: string, fallback: string): string {
+  if (!cssValue) return fallback;
+  try {
+    const el = document.createElement("div");
+    el.style.color = cssValue;
+    document.body.appendChild(el);
+    const computed = getComputedStyle(el).color;
+    document.body.removeChild(el);
+    if (!computed) return fallback;
+    const m = computed.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+    if (!m) return fallback;
+    const r = parseInt(m[1]); const g = parseInt(m[2]); const b = parseInt(m[3]);
+    return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
+  } catch { return fallback; }
 }
 
-// ─── Widget Component ────────────────────────────────────────────────────────
+function getCssVarHex(varName: string, fallback: string): string {
+  const raw = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+  return raw ? resolveColor(raw, fallback) : fallback;
+}
 
-export function ClaudeCodeWidget() {
-  // Connection state
-  const [configs, setConfigs] = useState<RelayConfig[]>([]);
-  const [activeConfigIdx, setActiveConfigIdx] = useState(0);
-  const [connected, setConnected] = useState(false);
-  const wsRef = useRef<WebSocket | null>(null);
+function isDarkMode(): boolean {
+  return document.documentElement.classList.contains("dark");
+}
 
-  // Session state
-  const [sessions, setSessions] = useState<SessionInfo[]>([]);
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [tokenUsage, setTokenUsage] = useState(0);
+function getTermTheme() {
+  const dark = isDarkMode();
+  const bg = getCssVarHex("--card", dark ? "#1c1c1e" : "#ffffff");
+  const fg = getCssVarHex("--foreground", dark ? "#e4e4e7" : "#18181b");
+  const cursor = getCssVarHex("--primary", dark ? "#a78bfa" : "#6d28d9");
+  return {
+    background: bg,
+    foreground: fg,
+    cursor,
+    cursorAccent: bg,
+    selectionBackground: dark ? "rgba(167, 139, 250, 0.3)" : "rgba(109, 40, 217, 0.2)",
+    selectionInactiveBackground: dark ? "rgba(167, 139, 250, 0.15)" : "rgba(109, 40, 217, 0.1)",
+    black: dark ? "#18181b" : "#27272a",
+    red: dark ? "#f87171" : "#dc2626",
+    green: dark ? "#4ade80" : "#16a34a",
+    yellow: dark ? "#facc15" : "#ca8a04",
+    blue: dark ? "#60a5fa" : "#2563eb",
+    magenta: dark ? "#c084fc" : "#9333ea",
+    cyan: dark ? "#22d3ee" : "#0891b2",
+    white: dark ? "#e4e4e7" : "#f4f4f5",
+    brightBlack: dark ? "#52525b" : "#a1a1aa",
+    brightRed: dark ? "#fca5a5" : "#ef4444",
+    brightGreen: dark ? "#86efac" : "#22c55e",
+    brightYellow: dark ? "#fde68a" : "#eab308",
+    brightBlue: dark ? "#93c5fd" : "#3b82f6",
+    brightMagenta: dark ? "#d8b4fe" : "#a855f7",
+    brightCyan: dark ? "#67e8f9" : "#06b6d4",
+    brightWhite: dark ? "#fafafa" : "#ffffff",
+  };
+}
 
-  // UI state
-  const [input, setInput] = useState("");
-  const [streaming, setStreaming] = useState(false);
-  const [streamingText, setStreamingText] = useState("");
-  const [streamingToolCalls, setStreamingToolCalls] = useState<ToolCallBlock[]>([]);
-  const [streamingBlocks, setStreamingBlocks] = useState<ContentBlock[]>([]);
-  // Per-session streaming state (for parallel sessions)
-  // Key: sessionId (or pending requestId before sessionId is known)
-  const sessionStreamsRef = useRef<Map<string, {
-    blocks: ContentBlock[];
-    requestId: string;
-    streaming: boolean;
-    appendedMessages: Message[]; // messages appended to this session while it was streaming in background
-  }>>(new Map());
-  // Map requestId -> sessionKey (sessionId once known, otherwise pending requestId)
-  const requestIdToSessionRef = useRef<Map<string, string>>(new Map());
-  // Active backgrounded session keys (visual indicator in sidebar)
-  const [backgroundSessions, setBackgroundSessions] = useState<Set<string>>(new Set());
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [selectedModel, setSelectedModel] = useState(MODELS[0].id);
-  const [isolatedMode, setIsolatedMode] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [showConfig, setShowConfig] = useState(false);
-  const [mode, setMode] = useState<"chat" | "terminal">("chat");
-  const [viewMode, setViewMode] = useState<"chat" | "activity">("chat");
-  const terminalPasteRef = useRef<((text: string) => void) | null>(null);
-  const [terminalSessionId, setTerminalSessionId] = useState<string | null>(null);
-  const [configUrl, setConfigUrl] = useState("");
-  const [configToken, setConfigToken] = useState("");
-  const [configLabel, setConfigLabel] = useState("");
-  const [configCwd, setConfigCwd] = useState("");
+// ─── Session creation / lifecycle ────────────────────────────────────────────
 
-  // Folder state
-  const [folders, setFolders] = useState<string[]>([]);
-  const [activeFolder, setActiveFolder] = useState<string>("");
-  const [showFolderInput, setShowFolderInput] = useState(false);
-  const [newFolderPath, setNewFolderPath] = useState("");
-  const [browsingPath, setBrowsingPath] = useState<string>("");
-  const [browseDirs, setBrowseDirs] = useState<{ name: string; path: string }[]>([]);
-  const [browseLoading, setBrowseLoading] = useState(false);
-  
-  // Worktree state
-  const [worktrees, setWorktrees] = useState<Worktree[]>([]);
-  const [showWorktreePanel, setShowWorktreePanel] = useState(false);
-  const [newWorktreeBranch, setNewWorktreeBranch] = useState("");
-  const [newWorktreePath, setNewWorktreePath] = useState("");
-  const [newWorktreeLabel, setNewWorktreeLabel] = useState("");
-  const [branches, setBranches] = useState<string[]>([]);
-  
-  // Slash command state
-  const [showSlashMenu, setShowSlashMenu] = useState(false);
-  const [slashFilter, setSlashFilter] = useState("");
-  const [slashSelectedIdx, setSlashSelectedIdx] = useState(0);
+interface CreateSessionOpts {
+  cwd: string;
+  /** When set, run `claude --resume <id>` instead of a fresh session. */
+  resumeId?: string;
+  label?: string;
+}
 
-  // Bulk delete state
-  const [selectMode, setSelectMode] = useState(false);
-  const [selectedSessions, setSelectedSessions] = useState<Set<string>>(new Set());
-  // Archived sessions
-  const [archivedSessions, setArchivedSessions] = useState<SessionInfo[]>([]);
-  const [showArchived, setShowArchived] = useState(false);
+async function createSession(opts: CreateSessionOpts): Promise<SessionState | null> {
+  try {
+    const { Terminal } = await import("@xterm/xterm");
+    const { FitAddon } = await import("@xterm/addon-fit");
+    const { WebLinksAddon } = await import("@xterm/addon-web-links");
+    await import("@xterm/xterm/css/xterm.css");
 
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const chatScrollRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
-  const streamingTextRef = useRef("");
-  const streamingBlocksRef = useRef<ContentBlock[]>([]);
-  const streamingToolCallsRef = useRef<ToolCallBlock[]>([]);
-  const activeFolderRef = useRef(activeFolder);
-  const configsRef = useRef(configs);
-  const activeConfigIdxRef = useRef(activeConfigIdx);
-  const activeSessionIdRef = useRef(activeSessionId);
-  // The requestId of the query that the current view is waiting for a sessionId on.
-  // Used to disambiguate "view this pending session" from "view a different pending session"
-  // when multiple new sessions are running concurrently.
-  const currentPendingRequestIdRef = useRef<string | null>(null);
+    const cmd = opts.resumeId
+      ? `claude --dangerously-skip-permissions --resume ${opts.resumeId}`
+      : "claude --dangerously-skip-permissions";
 
-  // Keep refs in sync
-  activeFolderRef.current = activeFolder;
-  configsRef.current = configs;
-  activeConfigIdxRef.current = activeConfigIdx;
-  activeSessionIdRef.current = activeSessionId;
+    const theme = getTermTheme();
+    const terminal = new Terminal({
+      cursorBlink: true,
+      cursorStyle: "block",
+      fontSize: 13,
+      fontFamily: "Menlo, Monaco, 'Courier New', monospace",
+      lineHeight: 1.2,
+      theme,
+      allowProposedApi: true,
+      scrollback: 5000,
+      convertEol: true,
+    });
 
-  // Load relay configs — default to local relay server
-  useEffect(() => {
-    // Load saved folders from localStorage
-    try {
-      const saved = localStorage.getItem("claude-code-folders");
-      if (saved) {
-        const parsed = JSON.parse(saved) as string[];
-        setFolders(parsed);
-        if (parsed.length > 0) setActiveFolder(parsed[0]);
-      }
-      // Load isolated mode preference
-      const isoMode = localStorage.getItem("claude-code-isolated-mode");
-      if (isoMode === "true") setIsolatedMode(true);
-    } catch {}
+    const fitAddon = new FitAddon();
+    terminal.loadAddon(fitAddon);
+    terminal.loadAddon(new WebLinksAddon());
 
-    fetch("/api/claude-code")
-      .then((r) => r.json())
-      .then((d) => {
-        const cfgs = d.configs || [];
-        setConfigs(cfgs);
-        if (cfgs.length > 0) {
-          connectToRelay(cfgs[0]);
-          // If folders empty, initialize with defaultCwd from config
-          if (!folders.length && cfgs[0].defaultCwd) {
-            const initialFolder = cfgs[0].defaultCwd;
-            setFolders([initialFolder]);
-            setActiveFolder(initialFolder);
-            localStorage.setItem("claude-code-folders", JSON.stringify([initialFolder]));
-          }
-        } else {
-          // Auto-connect to local relay server (started alongside dev server)
-          const localConfig: RelayConfig = { url: `ws://${window.location.hostname}:4446`, label: "Local" };
-          connectToRelay(localConfig);
-        }
-      })
-      .catch(() => {
-        // Fallback: try local relay
-        const localConfig: RelayConfig = { url: `ws://${window.location.hostname}:4446`, label: "Local" };
-        connectToRelay(localConfig);
-      });
-  }, []);
+    // Open into a temporary off-screen div so xterm builds its DOM eagerly.
+    const tmpDiv = document.createElement("div");
+    tmpDiv.style.cssText = "position:absolute;left:-9999px;width:600px;height:300px";
+    document.body.appendChild(tmpDiv);
+    terminal.open(tmpDiv);
+    document.body.removeChild(tmpDiv);
 
-  // Refresh sessions and worktrees when active folder changes
-  useEffect(() => {
-    if (!connected || !activeFolder) return;
-    const ws = wsRef.current;
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
-    ws.send(JSON.stringify({ type: "list-sessions", dir: activeFolder }));
-    ws.send(JSON.stringify({ type: "list-worktrees", dir: activeFolder }));
-    ws.send(JSON.stringify({ type: "list-branches", dir: activeFolder }));
-    setActiveSessionId(null);
-    setMessages([]);
-  }, [activeFolder, connected]);
+    const wsUrl = new URL(PTY_WS_URL);
+    wsUrl.searchParams.set("cwd", opts.cwd);
+    wsUrl.searchParams.set("cmd", cmd);
 
-  // Smart auto-scroll: only scroll if user is at (or near) the bottom
-  useEffect(() => {
-    const container = chatScrollRef.current;
-    if (!container) return;
-    // Threshold: within 100px of bottom counts as "at the bottom"
-    const isAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
-    if (isAtBottom) {
-      container.scrollTop = container.scrollHeight;
-    }
-  }, [messages, streamingBlocks, streamingText, streamingToolCalls]);
+    const ws = new WebSocket(wsUrl.toString());
 
-  // ─── WebSocket connection ──────────────────────────────────────────────────
+    const key = opts.resumeId || `pending-${pendingCounter++}`;
 
-  const connectToRelay = useCallback((config: RelayConfig) => {
-    if (wsRef.current) {
-      wsRef.current.close();
-    }
-
-    const url = config.token
-      ? `${config.url}?token=${encodeURIComponent(config.token)}`
-      : config.url;
-
-    const ws = new WebSocket(url);
-    wsRef.current = ws;
+    const state: SessionState = {
+      key,
+      sessionId: opts.resumeId || null,
+      terminal,
+      fitAddon,
+      ws,
+      alive: true,
+      cwd: opts.cwd,
+      label: opts.label || (opts.resumeId ? `Resumed ${opts.resumeId.slice(0, 8)}` : "New session"),
+      isResume: !!opts.resumeId,
+      projectDirName: encodeProjectDirName(opts.cwd),
+      messages: [],
+      sse: null,
+      subscribers: new Set(),
+    };
 
     ws.onopen = () => {
-      setConnected(true);
-      setError(null);
-      // Request sessions list using active folder or config default
-      const dir = activeFolder || config.defaultCwd;
-      if (dir) ws.send(JSON.stringify({ type: "list-sessions", dir }));
+      try {
+        fitAddon.fit();
+        const dims = fitAddon.proposeDimensions();
+        if (dims) ws.send(JSON.stringify({ type: "resize", cols: dims.cols, rows: dims.rows }));
+      } catch {}
     };
 
     ws.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data);
-        handleRelayMessage(msg);
-      } catch {}
+        if (msg.type === "output") {
+          terminal.write(msg.data);
+        } else if (msg.type === "exit") {
+          terminal.writeln("\r\n\x1b[90m[Process exited]\x1b[0m");
+          state.alive = false;
+          notifySubscribers(state);
+        }
+      } catch {
+        terminal.write(event.data);
+      }
     };
 
     ws.onclose = () => {
-      setConnected(false);
-      wsRef.current = null;
+      state.alive = false;
+      notifySubscribers(state);
     };
 
     ws.onerror = () => {
-      setConnected(false);
-      setError("WebSocket connection failed");
+      state.alive = false;
+      notifySubscribers(state);
     };
+
+    terminal.onData((data: string) => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "input", data }));
+      }
+    });
+
+    sessionStore.set(state.key, state);
+
+    // For resume sessions we know the sessionId immediately — start tailing now.
+    if (state.sessionId) {
+      attachSse(state);
+    } else {
+      // For new sessions we need to wait until the JSONL appears. Poll the project dir.
+      pollForNewSessionId(state);
+    }
+
+    return state;
+  } catch (err) {
+    console.error("[claude-code-widget] createSession failed:", err);
+    return null;
+  }
+}
+
+// For NEW sessions: poll ~/.claude/projects/<encoded>/ for the newest *.jsonl
+// that wasn't there before, then start the SSE tail.
+async function pollForNewSessionId(state: SessionState) {
+  const before = new Set<string>();
+  // Snapshot existing sessions in the same project dir
+  try {
+    const res = await fetch(`/api/claude-sessions?project=${encodeURIComponent(state.projectDirName)}`);
+    if (res.ok) {
+      const data = await res.json();
+      for (const s of (data.sessions || []) as ClaudeSessionInfo[]) before.add(s.sessionId);
+    }
+  } catch {}
+
+  let attempts = 0;
+  const interval = setInterval(async () => {
+    attempts++;
+    if (!state.alive || state.sessionId || attempts > 120) {
+      clearInterval(interval);
+      return;
+    }
+    try {
+      const res = await fetch(`/api/claude-sessions?project=${encodeURIComponent(state.projectDirName)}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      const sessions = (data.sessions || []) as ClaudeSessionInfo[];
+      // Find newest sessionId not in `before`
+      let found: ClaudeSessionInfo | null = null;
+      for (const s of sessions) {
+        if (!before.has(s.sessionId)) {
+          if (!found || (s.modified || "").localeCompare(found.modified || "") > 0) {
+            found = s;
+          }
+        }
+      }
+      if (found) {
+        clearInterval(interval);
+        state.sessionId = found.sessionId;
+        // Re-key the store so future lookups find it.
+        sessionStore.delete(state.key);
+        state.key = found.sessionId;
+        sessionStore.set(state.key, state);
+        attachSse(state);
+        notifySubscribers(state);
+      }
+    } catch {}
+  }, 1000);
+}
+
+function attachSse(state: SessionState) {
+  if (state.sse) return;
+  if (!state.sessionId) return;
+  const url = `/api/claude-sessions/messages?sessionId=${encodeURIComponent(state.sessionId)}&projectDir=${encodeURIComponent(state.projectDirName)}`;
+  const es = new EventSource(url);
+  state.sse = es;
+
+  es.addEventListener("messages", (ev: MessageEvent) => {
+    try {
+      const data = JSON.parse(ev.data) as { messages: ChatMessage[]; replace?: boolean };
+      if (data.replace) {
+        state.messages = data.messages;
+      } else if (data.messages?.length) {
+        // Dedupe by id
+        const existing = new Set(state.messages.map((m) => m.id));
+        for (const m of data.messages) {
+          if (!existing.has(m.id)) state.messages.push(m);
+        }
+      }
+      notifySubscribers(state);
+    } catch {}
+  });
+
+  es.onerror = () => {
+    // Browser auto-reconnects; nothing to do here unless we want explicit handling.
+  };
+}
+
+function pasteIntoTerminal(state: SessionState, text: string) {
+  if (!state.alive || state.ws.readyState !== WebSocket.OPEN) return false;
+  state.ws.send(JSON.stringify({ type: "input", data: text }));
+  return true;
+}
+
+function destroySession(key: string) {
+  const state = sessionStore.get(key);
+  if (!state) return;
+  try { state.sse?.close(); } catch {}
+  try { state.ws.close(); } catch {}
+  try { state.terminal.dispose(); } catch {}
+  state.subscribers.clear();
+  sessionStore.delete(key);
+}
+
+// ─── Subscribe-hook for a single session ─────────────────────────────────────
+
+function useSessionSubscription(key: string | null): SessionState | null {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!key) return;
+    const state = sessionStore.get(key);
+    if (!state) return;
+    const onChange = () => setTick((t) => t + 1);
+    state.subscribers.add(onChange);
+    return () => { state.subscribers.delete(onChange); };
+  }, [key]);
+  return key ? sessionStore.get(key) || null : null;
+}
+
+// ─── Tool-use pill ───────────────────────────────────────────────────────────
+
+function ToolUsePill({ name }: { name: string }) {
+  return (
+    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded bg-muted/60 text-muted-foreground border border-border/60 mr-1 mt-1">
+      <Wrench className="h-2.5 w-2.5" />
+      {name}
+    </span>
+  );
+}
+
+// ─── Markdown-lite renderer ──────────────────────────────────────────────────
+
+function renderInlineFormatting(text: string): React.ReactNode {
+  const parts: React.ReactNode[] = [];
+  const pattern = /(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*|\[[^\]]+\]\([^)]+\))/g;
+  let lastIndex = 0;
+  let match;
+  let i = 0;
+  while ((match = pattern.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(text.slice(lastIndex, match.index));
+    }
+    const m = match[0];
+    if (m.startsWith("`")) {
+      parts.push(<code key={i++} className="px-1 py-0.5 rounded bg-muted/70 text-[0.85em] font-mono">{m.slice(1, -1)}</code>);
+    } else if (m.startsWith("**")) {
+      parts.push(<strong key={i++}>{m.slice(2, -2)}</strong>);
+    } else if (m.startsWith("*")) {
+      parts.push(<em key={i++}>{m.slice(1, -1)}</em>);
+    } else if (m.startsWith("[")) {
+      const linkMatch = m.match(/\[([^\]]+)\]\(([^)]+)\)/);
+      if (linkMatch) parts.push(<a key={i++} href={linkMatch[2]} className="underline text-primary" target="_blank" rel="noreferrer">{linkMatch[1]}</a>);
+    }
+    lastIndex = match.index + m.length;
+  }
+  if (lastIndex < text.length) parts.push(text.slice(lastIndex));
+  return <>{parts}</>;
+}
+
+function renderText(text: string): React.ReactNode {
+  const lines = text.split("\n");
+  const blocks: React.ReactNode[] = [];
+  let i = 0;
+  let key = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    // Fenced code
+    if (line.startsWith("```")) {
+      const lang = line.slice(3).trim();
+      const code: string[] = [];
+      i++;
+      while (i < lines.length && !lines[i].startsWith("```")) { code.push(lines[i]); i++; }
+      if (i < lines.length) i++;
+      blocks.push(
+        <pre key={key++} className="my-2 p-2 rounded bg-muted/50 text-xs font-mono overflow-x-auto">
+          {lang && <div className="text-[10px] text-muted-foreground mb-1">{lang}</div>}
+          <code>{code.join("\n")}</code>
+        </pre>
+      );
+      continue;
+    }
+
+    // Heading
+    const headingMatch = line.match(/^(#{1,6})\s+(.+)/);
+    if (headingMatch) {
+      const level = headingMatch[1].length;
+      const cls = level <= 2 ? "text-base font-semibold mt-2 mb-1" : "text-sm font-semibold mt-1 mb-1";
+      blocks.push(<div key={key++} className={cls}>{renderInlineFormatting(headingMatch[2])}</div>);
+      i++;
+      continue;
+    }
+
+    // Bullet list
+    if (/^[-*]\s+/.test(line)) {
+      const items: string[] = [];
+      while (i < lines.length && /^[-*]\s+/.test(lines[i])) {
+        items.push(lines[i].replace(/^[-*]\s+/, ""));
+        i++;
+      }
+      blocks.push(
+        <ul key={key++} className="list-disc pl-5 my-1 space-y-0.5">
+          {items.map((it, idx) => <li key={idx}>{renderInlineFormatting(it)}</li>)}
+        </ul>
+      );
+      continue;
+    }
+
+    // Numbered list
+    if (/^\d+\.\s+/.test(line)) {
+      const items: string[] = [];
+      while (i < lines.length && /^\d+\.\s+/.test(lines[i])) {
+        items.push(lines[i].replace(/^\d+\.\s+/, ""));
+        i++;
+      }
+      blocks.push(
+        <ol key={key++} className="list-decimal pl-5 my-1 space-y-0.5">
+          {items.map((it, idx) => <li key={idx}>{renderInlineFormatting(it)}</li>)}
+        </ol>
+      );
+      continue;
+    }
+
+    // Blank line
+    if (line.trim() === "") {
+      blocks.push(<div key={key++} className="h-2" />);
+      i++;
+      continue;
+    }
+
+    // Plain paragraph (collect contiguous non-blank, non-special lines)
+    const paraLines: string[] = [line];
+    i++;
+    while (
+      i < lines.length &&
+      lines[i].trim() !== "" &&
+      !lines[i].startsWith("```") &&
+      !lines[i].match(/^(#{1,6})\s+/) &&
+      !/^[-*]\s+/.test(lines[i]) &&
+      !/^\d+\.\s+/.test(lines[i])
+    ) {
+      paraLines.push(lines[i]);
+      i++;
+    }
+    blocks.push(
+      <p key={key++} className="leading-relaxed whitespace-pre-wrap break-words">
+        {renderInlineFormatting(paraLines.join("\n"))}
+      </p>
+    );
+  }
+
+  return <>{blocks}</>;
+}
+
+// ─── Claude logo ─────────────────────────────────────────────────────────────
+
+function ClaudeIcon({ className }: { className?: string }) {
+  return <Bot className={className} />;
+}
+
+// ─── Main widget ─────────────────────────────────────────────────────────────
+
+export function ClaudeCodeWidget() {
+  const [activeKey, setActiveKey] = useState<string | null>(null);
+  const [view, setView] = useState<"chat" | "terminal">("chat");
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [showFolderPicker, setShowFolderPicker] = useState(false);
+  const [creating, setCreating] = useState(false);
+
+  // Sessions list (from disk)
+  const [sessions, setSessions] = useState<ClaudeSessionInfo[]>([]);
+  const [projects, setProjects] = useState<ClaudeProject[]>([]);
+  const [projectFilter, setProjectFilter] = useState<string | null>(null);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+
+  // Folder picker state
+  const [folderInput, setFolderInput] = useState("");
+  const [recentFolders, setRecentFolders] = useState<string[]>([]);
+
+  // Subscribe to active session
+  const active = useSessionSubscription(activeKey);
+
+  // ── Load recent folders from localStorage ──────────────────────────────
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("claude-code-folders");
+      if (raw) {
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr)) setRecentFolders(arr);
+      }
+    } catch {}
   }, []);
 
-  const handleRelayMessage = useCallback((msg: Record<string, unknown>) => {
-    switch (msg.type) {
-      case "sessions":
-        setSessions((msg.sessions as SessionInfo[]) || []);
-        break;
+  const persistRecentFolder = useCallback((folder: string) => {
+    setRecentFolders((prev) => {
+      const next = [folder, ...prev.filter((f) => f !== folder)].slice(0, 10);
+      try { localStorage.setItem("claude-code-folders", JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }, []);
 
-      case "query-started": {
-        // Relay tells us a query is starting with a specific requestId
-        const reqId = msg.requestId as string;
-        const sessId = (msg.sessionId as string) || `pending:${reqId}`;
-        requestIdToSessionRef.current.set(reqId, sessId);
-        sessionStreamsRef.current.set(sessId, {
-          blocks: [],
-          requestId: reqId,
-          streaming: true,
-          appendedMessages: [],
-        });
-        setBackgroundSessions(new Set(sessionStreamsRef.current.keys()));
-        break;
-      }
-
-      case "session-resolved": {
-        // The relay learned the real sessionId for a previously-pending query
-        const reqId = msg.requestId as string;
-        const realSessId = msg.sessionId as string;
-        const oldKey = requestIdToSessionRef.current.get(reqId);
-        if (oldKey && oldKey !== realSessId) {
-          const stream = sessionStreamsRef.current.get(oldKey);
-          if (stream) {
-            sessionStreamsRef.current.set(realSessId, stream);
-            sessionStreamsRef.current.delete(oldKey);
-          }
-          requestIdToSessionRef.current.set(reqId, realSessId);
-          // Only auto-switch the view if this requestId is the one the current
-          // view is waiting for (i.e. the user clicked "new session" and sent
-          // a prompt — they expect to see this session, not some other parallel one)
-          if (currentPendingRequestIdRef.current === reqId && activeSessionIdRef.current === null) {
-            setActiveSessionId(realSessId);
-            currentPendingRequestIdRef.current = null;
-          }
-        }
-        setBackgroundSessions(new Set(sessionStreamsRef.current.keys()));
-        break;
-      }
-
-      case "messages": {
-        const sessionMessages = (msg.messages as Array<Record<string, unknown>>)|| [];
-        // Convert SDK messages to our format with tool call blocks
-        const converted: Message[] = [];
-        for (const m of sessionMessages) {
-          const mType = m.type as string;
-          if (mType !== "user" && mType !== "assistant") continue;
-          
-          let textContent = "";
-          let hasToolResult = false;
-          let hasUserText = false;
-          const blocks: ContentBlock[] = [];
-            
-            // Try message.content[] blocks (standard format)
-            const rawMsg = m.message as { content?: unknown; role?: string } | undefined;
-            if (rawMsg?.content && Array.isArray(rawMsg.content)) {
-              for (const block of rawMsg.content) {
-                const b = block as Record<string, unknown>;
-                if (b.type === "text" && b.text) {
-                  textContent += b.text;
-                  blocks.push({ type: "text", text: b.text as string });
-                  if (mType === "user") hasUserText = true;
-                } else if (b.type === "tool_use") {
-                  blocks.push({
-                    type: "tool_call",
-                    id: (b.id as string) || Math.random().toString(36).slice(2),
-                    name: b.name as string,
-                    input: (b.input as Record<string, unknown>) || {},
-                    status: "done",
-                  });
-                } else if (b.type === "tool_result") {
-                  hasToolResult = true;
-                }
-              }
-            } else if (rawMsg?.content && typeof rawMsg.content === "string") {
-              textContent = rawMsg.content;
-              blocks.push({ type: "text", text: rawMsg.content });
-              if (mType === "user") hasUserText = true;
-            }
-            // Try message as array of content blocks directly (CLI user messages)
-            if (!textContent && Array.isArray(m.message)) {
-              for (const block of m.message as Array<Record<string, unknown>>) {
-                if (block.type === "text" && block.text) {
-                  textContent += block.text;
-                  blocks.push({ type: "text", text: block.text as string });
-                  if (mType === "user") hasUserText = true;
-                } else if (block.type === "tool_result") {
-                  hasToolResult = true;
-                }
-              }
-            }
-            
-            // For user messages that only contain tool_result blocks, skip them
-            if (mType === "user" && hasToolResult && !hasUserText) {
-              continue;
-            }
-            
-            // Try direct prompt field (user messages from CLI)
-            if (!textContent && m.prompt) {
-              textContent = m.prompt as string;
-              blocks.push({ type: "text", text: textContent });
-            }
-            
-            // Try message as string directly
-            if (!textContent && typeof m.message === "string") {
-              textContent = m.message;
-              blocks.push({ type: "text", text: textContent });
-            }
-
-            if (textContent || blocks.some(b => b.type === "tool_call")) {
-              converted.push({
-                id: (m.uuid as string) || Math.random().toString(36).slice(2) + Date.now().toString(36),
-                role: mType as "user" | "assistant",
-                content: textContent,
-                blocks,
-                timestamp: (m.timestamp as string) || new Date().toISOString(),
-              });
-            }
-        }
-        // Append any backgrounded messages from a still-streaming session
-        const sessId = activeSessionIdRef.current;
-        const stream = sessId ? sessionStreamsRef.current.get(sessId) : null;
-        const final = stream?.appendedMessages.length
-          ? [...converted, ...stream.appendedMessages]
-          : converted;
-        if (stream) stream.appendedMessages = [];
-        setMessages(final);
-        // Estimate token usage from message count (rough heuristic)
-        const totalChars = final.reduce((sum, m) => sum + m.content.length, 0);
-        setTokenUsage(Math.round(totalChars / 4)); // ~4 chars per token
-        break;
-      }
-
-      case "message": {
-        // Streaming message from the SDK - routed by requestId/sessionId
-        const data = msg.data as Record<string, unknown>;
-        const reqId = msg.requestId as string | undefined;
-        const sessKey = (msg.sessionId as string) || (reqId ? requestIdToSessionRef.current.get(reqId) : null);
-        // A message is "viewable" only if:
-        //   - the session matches the active sessionId, OR
-        //   - we're on a fresh new-session view AND this requestId is the one we're awaiting
-        const isViewingThisSession = sessKey && (
-          sessKey === activeSessionIdRef.current ||
-          (activeSessionIdRef.current === null && reqId === currentPendingRequestIdRef.current)
-        );
-
-        // Get or create per-session stream
-        let stream = sessKey ? sessionStreamsRef.current.get(sessKey) : null;
-        if (!stream && sessKey) {
-          stream = { blocks: [], requestId: reqId || "", streaming: true, appendedMessages: [] };
-          sessionStreamsRef.current.set(sessKey, stream);
-        }
-        // Fallback: use main streaming refs if no session key (legacy path)
-        const blocksRef = stream ? stream.blocks : streamingBlocksRef.current;
-
-        // Helper to update blocks both in stream and (if viewing) in main state
-        const updateBlocks = (newBlocks: ContentBlock[]) => {
-          if (stream) stream.blocks = newBlocks;
-          if (!sessKey) streamingBlocksRef.current = newBlocks;
-          if (isViewingThisSession || !sessKey) {
-            streamingBlocksRef.current = newBlocks;
-            setStreamingBlocks(newBlocks);
-            const text = newBlocks.filter((b): b is TextBlock => b.type === "text").map(b => b.text).join("\n");
-            streamingTextRef.current = text;
-            setStreamingText(text);
-          }
-        };
-
-        // Handle partial/streaming events (SDKPartialAssistantMessage)
-        if (data?.type === "stream_event") {
-          const event = data.event as Record<string, unknown>;
-          const idx = typeof event?.index === "number" ? event.index : blocksRef.length;
-
-          if (event?.type === "content_block_start") {
-            const contentBlock = event.content_block as Record<string, unknown>;
-            const blocks = [...blocksRef];
-            while (blocks.length <= idx) {
-              blocks.push({ type: "text", text: "" });
-            }
-            if (contentBlock?.type === "tool_use") {
-              blocks[idx] = {
-                type: "tool_call",
-                id: (contentBlock.id as string) || Math.random().toString(36).slice(2),
-                name: contentBlock.name as string,
-                input: {},
-                status: "running",
-              };
-            } else if (contentBlock?.type === "text") {
-              blocks[idx] = { type: "text", text: (contentBlock.text as string) || "" };
-            }
-            updateBlocks(blocks);
-          } else if (event?.type === "content_block_delta") {
-            const delta = event.delta as Record<string, unknown>;
-            const blocks = [...blocksRef];
-            while (blocks.length <= idx) {
-              blocks.push({ type: "text", text: "" });
-            }
-            if (delta?.type === "text_delta" && delta.text) {
-              const current = blocks[idx];
-              if (current.type === "text") {
-                blocks[idx] = { type: "text", text: current.text + (delta.text as string) };
-              } else {
-                blocks[idx] = { type: "text", text: delta.text as string };
-              }
-              updateBlocks(blocks);
-            }
-          } else if (event?.type === "content_block_stop") {
-            const blocks = [...blocksRef];
-            if (blocks[idx]?.type === "tool_call") {
-              (blocks[idx] as ToolCallBlock).status = "done";
-              updateBlocks(blocks);
-            }
-          }
-          // Only let the currently pending new-session request claim the view.
-          if (
-            data.session_id &&
-            !activeSessionIdRef.current &&
-            reqId &&
-            reqId === currentPendingRequestIdRef.current
-          ) {
-            setActiveSessionId(data.session_id as string);
-            currentPendingRequestIdRef.current = null;
-          }
-          // Update token usage from usage data if present (only if viewing)
-          if (isViewingThisSession && data.usage) {
-            const usage = data.usage as { input_tokens?: number; output_tokens?: number };
-            if (usage.input_tokens) setTokenUsage(usage.input_tokens + (usage.output_tokens || 0));
-          }
-          break;
-        }
-
-        if (data?.type === "assistant") {
-          const assistantMsg = data.message as { content?: Array<{ type: string; text?: string; name?: string; input?: unknown; id?: string }> } | undefined;
-          // Only use this as a fallback if we have NO streaming blocks yet
-          if (assistantMsg?.content && blocksRef.length === 0) {
-            const blocks: ContentBlock[] = [];
-            for (const block of assistantMsg.content) {
-              if (block.type === "text" && block.text) {
-                blocks.push({ type: "text", text: block.text });
-              } else if (block.type === "tool_use") {
-                blocks.push({
-                  type: "tool_call",
-                  id: block.id || Math.random().toString(36).slice(2),
-                  name: block.name || "tool",
-                  input: (block.input as Record<string, unknown>) || {},
-                  status: "done",
-                });
-              }
-            }
-            updateBlocks(blocks);
-          } else if (assistantMsg?.content && blocksRef.length > 0) {
-            // Update tool_use inputs (which arrive complete in assistant msg)
-            const blocks = [...blocksRef];
-            for (const block of assistantMsg.content) {
-              if (block.type === "tool_use" && block.id) {
-                const idx = blocks.findIndex(b => b.type === "tool_call" && b.id === block.id);
-                if (idx >= 0) {
-                  blocks[idx] = {
-                    type: "tool_call",
-                    id: block.id,
-                    name: block.name || "tool",
-                    input: (block.input as Record<string, unknown>) || {},
-                    status: "done",
-                  };
-                }
-              }
-            }
-            updateBlocks(blocks);
-          }
-          if (
-            (data as { session_id?: string }).session_id &&
-            !activeSessionIdRef.current &&
-            reqId &&
-            reqId === currentPendingRequestIdRef.current
-          ) {
-            setActiveSessionId((data as { session_id: string }).session_id);
-            currentPendingRequestIdRef.current = null;
-          }
-          if (isViewingThisSession && (data as { usage?: { input_tokens?: number; output_tokens?: number } }).usage) {
-            const usage = (data as { usage: { input_tokens?: number; output_tokens?: number } }).usage;
-            if (usage.input_tokens) setTokenUsage(usage.input_tokens + (usage.output_tokens || 0));
-          }
-        }
-        break;
-      }
-
-      case "done": {
-        const reqId = msg.requestId as string | undefined;
-        const sessKey = (msg.sessionId as string) || (reqId ? requestIdToSessionRef.current.get(reqId) : null);
-        const stream = sessKey ? sessionStreamsRef.current.get(sessKey) : null;
-        const isViewingThisSession = sessKey && (
-          sessKey === activeSessionIdRef.current ||
-          (activeSessionIdRef.current === null && reqId === currentPendingRequestIdRef.current)
-        );
-
-        // Use blocks from per-session stream if available
-        const finalBlocks = stream?.blocks.length
-          ? stream.blocks
-          : streamingBlocksRef.current.length > 0
-            ? streamingBlocksRef.current
-            : (() => {
-                const fb: ContentBlock[] = [];
-                if (streamingTextRef.current) fb.push({ type: "text", text: streamingTextRef.current });
-                fb.push(...streamingToolCallsRef.current);
-                return fb;
-              })();
-
-        const finalText = finalBlocks
-          .filter((b): b is TextBlock => b.type === "text")
-          .map(b => b.text)
-          .join("\n");
-
-        const newMessage: Message = {
-          id: Math.random().toString(36).slice(2) + Date.now().toString(36),
-          role: "assistant",
-          content: finalText,
-          blocks: finalBlocks,
-          timestamp: new Date().toISOString(),
-        };
-
-        if (finalBlocks.length > 0) {
-          if (isViewingThisSession) {
-            // Append directly to visible messages
-            setMessages((prev) => [...prev, newMessage]);
-          } else if (stream) {
-            // Stash for later when user views this session
-            stream.appendedMessages.push(newMessage);
-          } else {
-            // No session key — fallback (legacy)
-            setMessages((prev) => [...prev, newMessage]);
-          }
-        }
-
-        // Clean up the per-session stream
-        if (sessKey) {
-          sessionStreamsRef.current.delete(sessKey);
-          if (reqId) requestIdToSessionRef.current.delete(reqId);
-          setBackgroundSessions(new Set(sessionStreamsRef.current.keys()));
-        }
-
-        // Only clear main streaming state if we were viewing this session
-        if (isViewingThisSession || !sessKey) {
-          setStreamingText("");
-          setStreamingToolCalls([]);
-          setStreamingBlocks([]);
-          streamingTextRef.current = "";
-          streamingToolCallsRef.current = [];
-          streamingBlocksRef.current = [];
-          setStreaming(false);
-        }
-
-        if (
-          msg.sessionId &&
-          !activeSessionIdRef.current &&
-          reqId &&
-          reqId === currentPendingRequestIdRef.current
-        ) {
-          setActiveSessionId(msg.sessionId as string);
-          currentPendingRequestIdRef.current = null;
-        }
-        // Refresh session list
-        if (wsRef.current?.readyState === WebSocket.OPEN) {
-          wsRef.current.send(JSON.stringify({ type: "list-sessions", dir: activeFolderRef.current || configsRef.current[activeConfigIdxRef.current]?.defaultCwd }));
-        }
-        break;
-      }
-
-      case "error": {
-        const reqId = msg.requestId as string | undefined;
-        const sessKey = reqId ? requestIdToSessionRef.current.get(reqId) : null;
-        const isViewingThisSession = sessKey && sessKey === activeSessionIdRef.current;
-        // Clean up the per-session stream
-        if (sessKey) {
-          sessionStreamsRef.current.delete(sessKey);
-          if (reqId) requestIdToSessionRef.current.delete(reqId);
-          setBackgroundSessions(new Set(sessionStreamsRef.current.keys()));
-        }
-        // Only show error if user is viewing this session OR it's a generic error
-        if (isViewingThisSession || !sessKey) {
-          setError(msg.error as string);
-          setStreaming(false);
-        } else {
-          // Background session errored — show a less intrusive notification
-          console.warn(`[claude-code] Background session ${sessKey} errored:`, msg.error);
-        }
-        break;
-      }
-
-      case "aborted": {
-        const reqId = msg.requestId as string | undefined;
-        const sessKey = (msg.sessionId as string) || (reqId ? requestIdToSessionRef.current.get(reqId) : null);
-        const isViewingThisSession = sessKey && sessKey === activeSessionIdRef.current;
-        // Clean up the per-session stream
-        if (sessKey) {
-          sessionStreamsRef.current.delete(sessKey);
-          if (reqId) requestIdToSessionRef.current.delete(reqId);
-          setBackgroundSessions(new Set(sessionStreamsRef.current.keys()));
-        }
-        // Only clear UI state if viewing the aborted session
-        if (isViewingThisSession || !sessKey) {
-          setStreaming(false);
-          setStreamingText("");
-          setStreamingToolCalls([]);
-          setStreamingBlocks([]);
-          streamingTextRef.current = "";
-          streamingToolCallsRef.current = [];
-          streamingBlocksRef.current = [];
-        }
-        break;
-      }
-
-      case "renamed":
-        setSessions((prev) =>
-          prev.map((s) =>
-            s.sessionId === msg.sessionId ? { ...s, summary: msg.title as string } : s
-          )
-        );
-        break;
-
-      case "worktrees":
-        setWorktrees((msg.worktrees as Worktree[]) || []);
-        break;
-
-      case "worktree-added":
-        setWorktrees((msg.worktrees as Worktree[]) || []);
-        if (msg.path) {
-          const wtPath = msg.path as string;
-          setActiveFolder(wtPath);
-          setFolders((prev) => {
-            const updated = prev.includes(wtPath) ? prev : [...prev, wtPath];
-            localStorage.setItem("claude-code-folders", JSON.stringify(updated));
-            return updated;
-          });
-        }
-        setShowWorktreePanel(false);
-        break;
-
-      case "worktree-removed":
-        setWorktrees((msg.worktrees as Worktree[]) || []);
-        break;
-
-      case "branches":
-        setBranches((msg.branches as string[]) || []);
-        break;
-
-      case "sessions-archived":
-      case "sessions-deleted":
-        setSessions((msg.sessions as SessionInfo[]) || []);
-        setSelectedSessions(new Set());
-        setSelectMode(false);
-        // If active session was archived, clear it
-        if (activeSessionId && (msg.sessionIds as string[] || []).includes(activeSessionId)) {
-          setActiveSessionId(null);
-          setMessages([]);
-        }
-        break;
-
-      case "archived-sessions":
-        setArchivedSessions((msg.sessions as SessionInfo[]) || []);
-        break;
-
-      case "sessions-unarchived":
-        // Refresh both lists
-        if (wsRef.current?.readyState === WebSocket.OPEN) {
-          const dir = activeFolderRef.current || configsRef.current[activeConfigIdxRef.current]?.defaultCwd;
-          wsRef.current.send(JSON.stringify({ type: "list-sessions", dir }));
-          wsRef.current.send(JSON.stringify({ type: "list-archived-sessions", dir }));
-        }
-        setSelectedSessions(new Set());
-        setSelectMode(false);
-        break;
-    }
-  }, [configs, activeConfigIdx, activeSessionId]);
-
-  // ─── Actions ───────────────────────────────────────────────────────────────
-
-  const sendMessage = () => {
-    if (!input.trim() || !connected || streaming) return;
-    const ws = wsRef.current;
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
-
-    const content = input.trim();
-    const targetCwd = activeFolder || configs[activeConfigIdx]?.defaultCwd;
-
-    // Warn if there's already a session running in this cwd (Claude CLI doesn't
-    // handle two parallel sessions in the same working directory well — they
-    // can abort each other or corrupt session state). Skip warning if isolated
-    // mode is on (each session gets its own HOME = its own session storage).
-    let hasConflict = false;
-    if (!isolatedMode) {
-      for (const [sid, stream] of sessionStreamsRef.current.entries()) {
-        if (stream.streaming && sid !== activeSessionId) {
-          const s = sessions.find(x => x.sessionId === sid);
-          if (s?.cwd === targetCwd || (!s?.cwd && targetCwd === activeFolder)) {
-            hasConflict = true;
-            break;
-          }
-        }
-      }
-    }
-    if (hasConflict) {
-      const ok = window.confirm(
-        "Another session is already running in this folder. Running parallel sessions in the same folder can cause them to abort each other or corrupt session state.\n\nEnable Isolated Mode (in the toolbar) for safe parallel sessions in the same folder.\n\nContinue anyway?"
-      );
-      if (!ok) return;
-    }
-
-    setInput("");
-    setError(null);
-
-    // Add user message locally
-    setMessages((prev) => [
-      ...prev,
-      { id: Math.random().toString(36).slice(2) + Date.now().toString(36), role: "user", content, blocks: [{ type: "text", text: content }], timestamp: new Date().toISOString() },
-    ]);
-
-    setStreaming(true);
-    setStreamingText("");
-    setStreamingToolCalls([]);
-    setStreamingBlocks([]);
-    streamingTextRef.current = "";
-    streamingToolCallsRef.current = [];
-    streamingBlocksRef.current = [];
-
-    const requestId = `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    // If resuming an isolated session, force isolated=true so the relay finds the right HOME
-    const activeSessInfo = activeSessionId ? sessions.find(s => s.sessionId === activeSessionId) : null;
-    const useIsolated = isolatedMode || activeSessInfo?.isolated === true;
-    // Track this requestId as the current pending one (so we know which "new session"
-    // stream belongs to the current view when multiple new sessions are streaming).
-    if (!activeSessionId) {
-      currentPendingRequestIdRef.current = requestId;
-    }
-    ws.send(JSON.stringify({
-      type: "query",
-      requestId,
-      prompt: content,
-      sessionId: activeSessionId || undefined,
-      cwd: targetCwd,
-      model: selectedModel,
-      isolated: useIsolated,
-    }));
-  };
-
-  const abortQuery = () => {
-    // Abort only the current session, not all of them
-    const sid = activeSessionIdRef.current;
-    wsRef.current?.send(JSON.stringify({ type: "abort", sessionId: sid || undefined }));
-  };
-
-  const browseFolders = async (dir: string) => {
-    setBrowseLoading(true);
+  // ── Fetch session list ─────────────────────────────────────────────────
+  const fetchSessions = useCallback(async () => {
+    setSessionsLoading(true);
     try {
-      const res = await fetch(`/api/files?path=${encodeURIComponent(dir)}`);
+      const url = projectFilter
+        ? `/api/claude-sessions?project=${encodeURIComponent(projectFilter)}`
+        : "/api/claude-sessions";
+      const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
-        const entries = data.entries || [];
-        const dirs = entries
-          .filter((f: { isDirectory: boolean }) => f.isDirectory)
-          .map((f: { name: string; path: string }) => ({ name: f.name, path: f.path }))
-          .sort((a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name));
-        setBrowseDirs(dirs);
-        setBrowsingPath(data.path || dir);
+        setSessions(data.sessions || []);
+        setProjects(data.projects || []);
       }
-    } catch { /* ignore */ }
-    setBrowseLoading(false);
-  };
-
-  const fetchWorktrees = () => {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
-    wsRef.current.send(JSON.stringify({ type: "list-worktrees", dir: activeFolder || configs[activeConfigIdx]?.defaultCwd }));
-    wsRef.current.send(JSON.stringify({ type: "list-branches", dir: activeFolder || configs[activeConfigIdx]?.defaultCwd }));
-  };
-
-  const addWorktree = () => {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
-    if (!newWorktreePath) return;
-    wsRef.current.send(JSON.stringify({
-      type: "add-worktree",
-      dir: activeFolder || configs[activeConfigIdx]?.defaultCwd,
-      path: newWorktreePath,
-      newBranch: newWorktreeBranch || undefined,
-    }));
-    if (newWorktreeLabel.trim()) {
-      const labels = JSON.parse(localStorage.getItem("claude-code-worktree-labels") || "{}");
-      labels[newWorktreePath] = newWorktreeLabel.trim();
-      localStorage.setItem("claude-code-worktree-labels", JSON.stringify(labels));
-    }
-    setNewWorktreePath("");
-    setNewWorktreeBranch("");
-    setNewWorktreeLabel("");
-  };
-
-  const removeWorktree = (path: string) => {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
-    wsRef.current.send(JSON.stringify({
-      type: "remove-worktree",
-      dir: activeFolder || configs[activeConfigIdx]?.defaultCwd,
-      path,
-      force: true,
-    }));
-  };
-
-  const switchToWorktree = (wt: Worktree) => {
-    setActiveFolder(wt.path);
-    setShowWorktreePanel(false);
-    // In terminal mode, navigate to the new worktree path
-    if (mode === "terminal" && terminalPasteRef.current) {
-      terminalPasteRef.current("\x03\x03"); // Kill current claude session
-      setTimeout(() => { terminalPasteRef.current?.("\x03\n"); }, 300); // Extra Ctrl+C + newline to ensure prompt
-      setTimeout(() => { terminalPasteRef.current?.(`cd ${wt.path}\n`); }, 1200);
-      setTimeout(() => { terminalPasteRef.current?.("clear\n"); }, 1600);
-    }
-  };
-
-  const loadSession = (sessionId: string) => {
-    // DON'T abort - let other sessions continue streaming in background
-    setActiveSessionId(sessionId);
-    currentPendingRequestIdRef.current = null;
-
-    // Restore the streaming state for this session if it has one running
-    const stream = sessionStreamsRef.current.get(sessionId);
-    if (stream && stream.streaming) {
-      setStreamingBlocks(stream.blocks);
-      streamingBlocksRef.current = stream.blocks;
-      const text = stream.blocks.filter((b): b is TextBlock => b.type === "text").map(b => b.text).join("\n");
-      streamingTextRef.current = text;
-      setStreamingText(text);
-      setStreaming(true);
-    } else {
-      setStreamingText("");
-      setStreamingToolCalls([]);
-      setStreamingBlocks([]);
-      streamingTextRef.current = "";
-      streamingToolCallsRef.current = [];
-      streamingBlocksRef.current = [];
-      setStreaming(false);
-    }
-
-    if (mode === "terminal") {
-      if (terminalPasteRef.current) {
-        const dir = activeFolder || configs[activeConfigIdx]?.defaultCwd || "";
-        terminalPasteRef.current("\x03\x03\x03");
-        setTimeout(() => { terminalPasteRef.current?.("\n"); }, 600);
-        setTimeout(() => { terminalPasteRef.current?.(`cd ${dir}\n`); }, 1200);
-        setTimeout(() => { terminalPasteRef.current?.("clear\n"); }, 1800);
-        setTimeout(() => { terminalPasteRef.current?.(`claude --resume ${sessionId}\n`); }, 2200);
-      }
-      setTerminalSessionId(sessionId);
-      return;
-    }
-    setMessages([]);
-    // Look up isolated home if this session was created in isolated mode
-    const sessInfo = sessions.find(s => s.sessionId === sessionId);
-    wsRef.current?.send(JSON.stringify({
-      type: "get-messages",
-      sessionId,
-      dir: activeFolder || configs[activeConfigIdx]?.defaultCwd,
-      isolatedHome: sessInfo?.isolatedHome,
-    }));
-  };
-
-  const newSession = () => {
-    // Don't abort - let other sessions continue streaming in background
-    setActiveSessionId(null);
-    setMessages([]);
-    setStreamingText("");
-    setStreamingToolCalls([]);
-    setStreamingBlocks([]);
-    streamingTextRef.current = "";
-    streamingToolCallsRef.current = [];
-    streamingBlocksRef.current = [];
-    currentPendingRequestIdRef.current = null;
-    setStreaming(false);
-    setTokenUsage(0);
-    inputRef.current?.focus();
-  };
-
-  const renameSession = (sessionId: string, title: string) => {
-    wsRef.current?.send(JSON.stringify({
-      type: "rename-session",
-      sessionId,
-      title,
-      dir: activeFolder || configs[activeConfigIdx]?.defaultCwd,
-    }));
-  };
-
-  const addConfig = async () => {
-    if (!configUrl) return;
-    await fetch("/api/claude-code", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action: "add",
-        url: configUrl,
-        token: configToken || undefined,
-        label: configLabel || "VPS",
-        defaultCwd: configCwd || undefined,
-      }),
-    });
-    const res = await fetch("/api/claude-code");
-    const data = await res.json();
-    setConfigs(data.configs || []);
-    setConfigUrl("");
-    setConfigToken("");
-    setConfigLabel("");
-    setConfigCwd("");
-    setShowConfig(false);
-    if (data.configs?.length > 0) connectToRelay(data.configs[0]);
-  };
-
-  const copyMessage = (content: string) => {
-    navigator.clipboard.writeText(content);
-  };
-
-  // ─── Cross-widget integration ─────────────────────────────────────────────
-  // Dispatch custom events that other widgets can listen for
-  const openFileInWidget = (filePath: string) => {
-    window.dispatchEvent(new CustomEvent("widget:open-file", { detail: { path: filePath } }));
-  };
-
-  const runInTerminalWidget = (command: string) => {
-    window.dispatchEvent(new CustomEvent("widget:run-command", { detail: { command } }));
-  };
-
-  // Slash commands
-  const SLASH_COMMANDS = [
-    { cmd: "/clear", desc: "Clear current conversation", local: true },
-    { cmd: "/new", desc: "Start a new session", local: true },
-    { cmd: "/model", desc: "Switch model (sonnet, opus, haiku)", local: true },
-    { cmd: "/help", desc: "Show available commands", local: true },
-    { cmd: "/compact", desc: "Compact conversation context", local: false },
-    { cmd: "/cost", desc: "Show token usage and cost", local: false },
-    { cmd: "/doctor", desc: "Check Claude Code setup", local: false },
-    { cmd: "/init", desc: "Initialize project with CLAUDE.md", local: false },
-    { cmd: "/login", desc: "Switch account or re-authenticate", local: false },
-    { cmd: "/logout", desc: "Sign out of current account", local: false },
-    { cmd: "/memory", desc: "Edit CLAUDE.md memory files", local: false },
-    { cmd: "/permissions", desc: "View or update permissions", local: false },
-    { cmd: "/review", desc: "Review a PR or diff", local: false },
-    { cmd: "/status", desc: "Show session and project status", local: false },
-    { cmd: "/terminal-setup", desc: "Install shell integration", local: false },
-    { cmd: "/vim", desc: "Toggle vim mode", local: false },
-  ];
-
-  const filteredSlashCommands = SLASH_COMMANDS.filter((c) => c.cmd.includes("/" + slashFilter));
-
-  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const val = e.target.value;
-    setInput(val);
-    if (val.startsWith("/") && !val.includes(" ")) {
-      setShowSlashMenu(true);
-      setSlashFilter(val.slice(1));
-      setSlashSelectedIdx(0);
-    } else {
-      setShowSlashMenu(false);
-    }
-  };
-
-  const executeSlashCommand = (cmd: string) => {
-    setShowSlashMenu(false);
-    setInput("");
-    
-    const command = SLASH_COMMANDS.find((c) => c.cmd === cmd);
-    
-    // Non-local commands: send to relay as a prompt (CLI handles them)
-    if (command && !command.local) {
-      if (wsRef.current?.readyState === WebSocket.OPEN) {
-        setMessages((prev) => [...prev, {
-          id: Math.random().toString(36).slice(2) + Date.now().toString(36),
-          role: "user",
-          content: cmd,
-          blocks: [{ type: "text", text: cmd }],
-          timestamp: new Date().toISOString(),
-        }]);
-        setStreaming(true);
-        setStreamingText("");
-        setStreamingToolCalls([]);
-        setStreamingBlocks([]);
-        streamingTextRef.current = "";
-        streamingToolCallsRef.current = [];
-        streamingBlocksRef.current = [];
-        const requestId = `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-        if (!activeSessionId) {
-          currentPendingRequestIdRef.current = requestId;
-        }
-        wsRef.current.send(JSON.stringify({
-          type: "query",
-          requestId,
-          prompt: cmd,
-          sessionId: activeSessionId || undefined,
-          cwd: activeFolder || configs[activeConfigIdx]?.defaultCwd,
-          model: selectedModel,
-          isolated: isolatedMode || sessions.find(s => s.sessionId === activeSessionId)?.isolated === true,
-        }));
-      }
-      return;
-    }
-
-    // Local commands
-    switch (cmd) {
-      case "/clear":
-        setMessages([]);
-        setStreamingText("");
-        setStreamingToolCalls([]);
-        setStreamingBlocks([]);
-        streamingBlocksRef.current = [];
-        setTokenUsage(0);
-        break;
-      case "/new":
-        newSession();
-        break;
-      case "/model": {
-        const idx = MODELS.findIndex((m) => m.id === selectedModel);
-        const next = MODELS[(idx + 1) % MODELS.length];
-        setSelectedModel(next.id);
-        setMessages((prev) => [...prev, {
-          id: Math.random().toString(36).slice(2) + Date.now().toString(36),
-          role: "assistant",
-          content: `Switched to ${next.label}`,
-          blocks: [{ type: "text", text: `Switched to ${next.label}` }],
-          timestamp: new Date().toISOString(),
-        }]);
-        break;
-      }
-      case "/help":
-        setMessages((prev) => [...prev, {
-          id: Math.random().toString(36).slice(2) + Date.now().toString(36),
-          role: "assistant",
-          content: SLASH_COMMANDS.map((c) => `\`${c.cmd}\` — ${c.desc}`).join("\n"),
-          blocks: [{ type: "text", text: SLASH_COMMANDS.map((c) => `\`${c.cmd}\` — ${c.desc}`).join("\n") }],
-          timestamp: new Date().toISOString(),
-        }]);
-        break;
-    }
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (showSlashMenu) {
-      if (e.key === "ArrowDown") {
-        e.preventDefault();
-        setSlashSelectedIdx((prev) => Math.min(prev + 1, filteredSlashCommands.length - 1));
-        return;
-      }
-      if (e.key === "ArrowUp") {
-        e.preventDefault();
-        setSlashSelectedIdx((prev) => Math.max(prev - 1, 0));
-        return;
-      }
-      if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) {
-        e.preventDefault();
-        if (filteredSlashCommands.length > 0) {
-          executeSlashCommand(filteredSlashCommands[slashSelectedIdx]?.cmd || filteredSlashCommands[0].cmd);
-        }
-        return;
-      }
-      if (e.key === "Escape") {
-        e.preventDefault();
-        setShowSlashMenu(false);
-        return;
-      }
-    }
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
-    }
-  };
-
-  const formatTime = (ts: number | string) => {
-    const d = typeof ts === "number" ? new Date(ts) : new Date(ts);
-    const now = new Date();
-    const diff = now.getTime() - d.getTime();
-    if (diff < 60000) return "now";
-    if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
-    if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
-    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-  };
-
-  // Get display name for a folder path - prefers worktree label if available
-  const getFolderDisplayName = (path: string) => {
-    if (typeof window === "undefined") return path.split("/").pop() || path;
-    try {
-      const labels = JSON.parse(localStorage.getItem("claude-code-worktree-labels") || "{}");
-      if (labels[path]) return labels[path];
     } catch {}
-    // Check if it's a known worktree branch
-    const wt = worktrees.find(w => w.path === path);
-    if (wt?.branch) return wt.branch;
-    return path.split("/").pop() || path;
-  };
+    setSessionsLoading(false);
+  }, [projectFilter]);
 
-  // Collect all tool calls for activity feed
-  const allToolCalls: ToolCallBlock[] = [
-    ...messages.flatMap(m => (m.blocks || []).filter((b): b is ToolCallBlock => b.type === "tool_call")),
-    ...streamingToolCalls,
-  ];
+  useEffect(() => {
+    fetchSessions();
+  }, [fetchSessions]);
 
-  // ─── Render ────────────────────────────────────────────────────────────────
+  // ── Periodic refresh of session list (when sidebar visible) ────────────
+  useEffect(() => {
+    if (!sidebarOpen) return;
+    const id = setInterval(fetchSessions, 8000);
+    return () => clearInterval(id);
+  }, [sidebarOpen, fetchSessions]);
+
+  // ── Theme sync for all open terminals ──────────────────────────────────
+  useEffect(() => {
+    const observer = new MutationObserver(() => {
+      const theme = getTermTheme();
+      for (const s of sessionStore.values()) {
+        try { s.terminal.options.theme = theme; } catch {}
+      }
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    return () => observer.disconnect();
+  }, []);
+
+  // ── Start a new session in a chosen folder ─────────────────────────────
+  const startNewSession = useCallback(async (cwd: string) => {
+    setCreating(true);
+    try {
+      persistRecentFolder(cwd);
+      const state = await createSession({ cwd, label: "New session" });
+      if (state) {
+        setActiveKey(state.key);
+        setView("chat");
+        setShowFolderPicker(false);
+      }
+    } finally {
+      setCreating(false);
+    }
+  }, [persistRecentFolder]);
+
+  // ── Resume an existing session in its original cwd ────────────────────
+  const resumeSession = useCallback(async (s: ClaudeSessionInfo) => {
+    // If a session with this id is already running in our store, just switch to it.
+    const existing = sessionStore.get(s.sessionId);
+    if (existing) {
+      setActiveKey(existing.key);
+      setView("chat");
+      return;
+    }
+
+    setCreating(true);
+    try {
+      const cwd = s.projectPath || "~";
+      const label = s.summary || s.firstPrompt?.slice(0, 30) || s.sessionId.slice(0, 8);
+      const state = await createSession({ cwd, resumeId: s.sessionId, label });
+      if (state) {
+        setActiveKey(state.key);
+        setView("chat");
+      }
+    } finally {
+      setCreating(false);
+    }
+  }, []);
+
+  const closeActiveSession = useCallback(() => {
+    if (!activeKey) return;
+    destroySession(activeKey);
+    setActiveKey(null);
+  }, [activeKey]);
+
+  const deleteSessionFromDisk = useCallback(async (sess: ClaudeSessionInfo) => {
+    if (!confirm(`Delete session "${sess.summary || sess.firstPrompt?.slice(0, 40) || sess.sessionId}"?`)) return;
+    try {
+      await fetch("/api/claude-sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "delete-session", sessionId: sess.sessionId, projectDir: sess.projectDirName }),
+      });
+      // If currently open, close it
+      if (sessionStore.has(sess.sessionId)) destroySession(sess.sessionId);
+      if (activeKey === sess.sessionId) setActiveKey(null);
+      fetchSessions();
+    } catch {}
+  }, [activeKey, fetchSessions]);
+
+  // ── Filtered sessions ──────────────────────────────────────────────────
+  const filteredSessions = sessions.filter((s) => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase();
+    return (
+      s.summary?.toLowerCase().includes(q) ||
+      s.firstPrompt?.toLowerCase().includes(q) ||
+      s.projectPath?.toLowerCase().includes(q) ||
+      s.sessionId.toLowerCase().includes(q)
+    );
+  });
 
   return (
-    <WidgetWrapper
-      title="Claude Code"
-      icon={<ClaudeIcon className="h-4 w-4" />}
-      widgetType="claude-code"
-    >
-      <div className="flex h-full min-h-[400px] overflow-hidden">
-        {/* ─── Session Sidebar ─────────────────────────────────── */}
+    <WidgetWrapper title="Claude Code" icon={<ClaudeIcon className="h-4 w-4" />} widgetType="claude-code">
+      <div className="flex h-full">
+        {/* Sidebar */}
         {sidebarOpen && (
-          <div className="w-56 border-r border-border flex flex-col shrink-0 min-h-0 overflow-hidden">
-            {/* Folder switcher */}
-            <div className="p-2 border-b border-border">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Folder</span>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-5 w-5"
-                  onClick={() => setShowFolderInput(!showFolderInput)}
-                  title="Add folder"
-                >
-                  <FolderPlus className="h-3 w-3" />
-                </Button>
+          <aside className="w-60 shrink-0 border-r border-border flex flex-col bg-muted/20">
+            <div className="p-2 space-y-2 shrink-0">
+              <Button
+                size="sm"
+                variant="default"
+                className="w-full"
+                onClick={() => setShowFolderPicker(true)}
+                disabled={creating}
+              >
+                {creating ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> : <Plus className="h-3.5 w-3.5 mr-1.5" />}
+                New Session
+              </Button>
+
+              <div className="relative">
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+                <Input
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search sessions"
+                  className="pl-7 h-7 text-xs"
+                />
               </div>
-              {folders.length > 0 && (
-                <DropdownMenu>
-                  <DropdownMenuTrigger className="w-full flex items-center gap-1.5 rounded-md border border-input bg-background px-2 h-7 text-xs hover:bg-accent hover:text-accent-foreground">
-                    <FolderOpen className="h-3 w-3 shrink-0 text-muted-foreground" />
-                    <span className="flex-1 truncate text-left">{getFolderDisplayName(activeFolder)}</span>
-                    <ChevronDown className="h-3 w-3 shrink-0" />
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" className="w-52">
-                    {folders.map((f) => (
-                      <DropdownMenuItem
-                        key={f}
-                        onClick={() => setActiveFolder(f)}
-                        className={cn(activeFolder === f && "bg-accent")}
-                      >
-                        <FolderOpen className="h-3 w-3 mr-1.5" />
-                        <span className="truncate">{getFolderDisplayName(f)}</span>
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
+
+              {projects.length > 0 && (
+                <select
+                  value={projectFilter || ""}
+                  onChange={(e) => setProjectFilter(e.target.value || null)}
+                  className="w-full text-xs px-2 py-1 rounded border border-border bg-background"
+                >
+                  <option value="">All projects</option>
+                  {projects.map((p) => (
+                    <option key={p.dirName} value={p.dirName}>{p.path || p.dirName}</option>
+                  ))}
+                </select>
               )}
-              {showFolderInput && (
-                <div className="mt-1.5 space-y-1">
-                  <div className="flex gap-1">
-                    <Input
-                      className="h-6 text-xs flex-1"
-                      placeholder="/path/to/project"
-                      value={newFolderPath}
-                      onChange={(e) => setNewFolderPath(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && newFolderPath.trim()) {
-                          const path = newFolderPath.trim();
-                          const updated = [...folders.filter((f) => f !== path), path];
-                          setFolders(updated);
-                          setActiveFolder(path);
-                          localStorage.setItem("claude-code-folders", JSON.stringify(updated));
-                          setNewFolderPath("");
-                          setShowFolderInput(false);
-                          setBrowseDirs([]);
-                        }
-                      }}
-                    />
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-6 w-6 shrink-0"
-                      onClick={() => {
-                        if (newFolderPath.trim()) {
-                          const path = newFolderPath.trim();
-                          const updated = [...folders.filter((f) => f !== path), path];
-                          setFolders(updated);
-                          setActiveFolder(path);
-                          localStorage.setItem("claude-code-folders", JSON.stringify(updated));
-                          setNewFolderPath("");
-                          setShowFolderInput(false);
-                          setBrowseDirs([]);
-                        }
-                      }}
-                    >
-                      <Check className="h-3 w-3" />
-                    </Button>
+            </div>
+
+            <ScrollArea className="flex-1 min-h-0">
+              <div className="px-2 pb-2 space-y-1">
+                {sessionsLoading && sessions.length === 0 && (
+                  <div className="text-xs text-muted-foreground py-4 text-center">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin inline mr-1.5" />
+                    Loading…
                   </div>
-                  {/* Browse button */}
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-6 text-[10px] w-full"
-                    onClick={() => browseFolders(newFolderPath || "/home")}
-                  >
-                    <FolderOpen className="h-3 w-3 mr-1" />
-                    Browse
-                  </Button>
-                  {/* Directory browser */}
-                  {browseDirs.length > 0 && (
-                    <div className="border border-border rounded max-h-40 overflow-y-auto">
-                      {browsingPath !== "/" && (
-                        <div
-                          className="flex items-center gap-1 text-[11px] px-1.5 py-1 hover:bg-muted cursor-pointer border-b border-border"
-                          onClick={() => browseFolders(browsingPath.split("/").slice(0, -1).join("/") || "/")}
-                        >
-                          <span className="text-muted-foreground">..</span>
-                          <span className="text-[10px] text-muted-foreground ml-auto truncate">{browsingPath}</span>
-                        </div>
-                      )}
-                      {browseDirs.map((d) => (
-                        <div
-                          key={d.path}
-                          className="flex items-center gap-1 text-[11px] px-1.5 py-1 hover:bg-muted cursor-pointer"
-                          onClick={() => { setNewFolderPath(d.path); browseFolders(d.path); }}
-                        >
-                          <FolderOpen className="h-3 w-3 shrink-0 text-muted-foreground" />
-                          <span className="truncate">{d.name}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {browseLoading && <p className="text-[10px] text-muted-foreground">Loading...</p>}
-                </div>
-              )}
-            </div>
-            {/* Worktree section */}
-            <div className="p-2 border-b border-border">
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Worktrees</span>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-5 w-5"
-                  onClick={() => {
-                    fetchWorktrees();
-                    setShowWorktreePanel(!showWorktreePanel);
-                  }}
-                  title="Add new worktree"
-                >
-                  <Plus className="h-3 w-3" />
-                </Button>
-              </div>
-              {/* Always-visible worktree list */}
-              {worktrees.length > 0 && (
-                <div className="space-y-0.5 max-h-32 overflow-y-auto">
-                  {worktrees.map((wt) => {
-                    const labels = JSON.parse(localStorage.getItem("claude-code-worktree-labels") || "{}");
-                    const label = labels[wt.path];
-                    return (
-                    <div
-                      key={wt.path}
-                      className={cn(
-                        "flex items-center gap-1.5 text-[11px] px-1.5 py-1 rounded cursor-pointer group",
-                        activeFolder === wt.path ? "bg-accent text-accent-foreground" : "hover:bg-muted"
-                      )}
-                      onClick={() => switchToWorktree(wt)}
-                    >
-                      <GitBranch className="h-3 w-3 shrink-0 text-muted-foreground" />
-                      <span className="flex-1 truncate">{label || wt.branch || wt.path.split("/").pop()}</span>
-                      {!wt.bare && worktrees.length > 1 && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-4 w-4 opacity-0 group-hover:opacity-100 shrink-0"
-                          onClick={(e) => { e.stopPropagation(); removeWorktree(wt.path); }}
-                        >
-                          <Trash2 className="h-2.5 w-2.5 text-destructive" />
-                        </Button>
-                      )}
-                    </div>
-                    );
-                  })}
-                </div>
-              )}
-              {/* Toggleable add form */}
-              {showWorktreePanel && (
-                <div className="space-y-1 pt-1.5 mt-1.5 border-t border-border">
-                  {/* Branch picker with create-new option */}
-                  <DropdownMenu>
-                    <DropdownMenuTrigger className="w-full flex items-center gap-1.5 rounded-md border border-input bg-background px-2 h-6 text-xs hover:bg-accent hover:text-accent-foreground">
-                      <GitBranch className="h-3 w-3 shrink-0 text-muted-foreground" />
-                      <span className="flex-1 truncate text-left">{newWorktreeBranch || "Select or create branch..."}</span>
-                      <ChevronDown className="h-3 w-3 shrink-0" />
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start" className="w-48 max-h-40 overflow-y-auto">
-                      {branches.map((b) => (
-                        <DropdownMenuItem
-                          key={b}
-                          onClick={() => {
-                            setNewWorktreeBranch(b);
-                            if (activeFolder) {
-                              const parent = activeFolder.split("/").slice(0, -1).join("/");
-                              setNewWorktreePath(`${parent}/${b.replace(/\//g, "-")}`);
-                            }
-                          }}
-                        >
-                          <GitBranch className="h-3 w-3 mr-1.5" />
-                          <span className="truncate">{b}</span>
-                        </DropdownMenuItem>
-                      ))}
-                      {branches.length > 0 && <div className="border-t border-border my-1" />}
-                      <DropdownMenuItem onClick={() => inputRef.current?.focus()} className="text-muted-foreground">
-                        <Plus className="h-3 w-3 mr-1.5" />
-                        Create new branch...
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                  <Input
-                    className="h-6 text-xs"
-                      placeholder="New branch name (or picked above)"
-                      value={newWorktreeBranch}
-                      onChange={(e) => {
-                        setNewWorktreeBranch(e.target.value);
-                        if (e.target.value && activeFolder) {
-                          const parent = activeFolder.split("/").slice(0, -1).join("/");
-                          setNewWorktreePath(`${parent}/${e.target.value.replace(/\//g, "-")}`);
-                        }
-                      }}
-                    />
-                    <Input
-                      className="h-6 text-xs"
-                      placeholder="Path (auto-filled from branch)"
-                      value={newWorktreePath}
-                      onChange={(e) => setNewWorktreePath(e.target.value)}
-                    />
-                    <Input
-                      className="h-6 text-xs"
-                      placeholder="Label (optional)"
-                      value={newWorktreeLabel}
-                      onChange={(e) => setNewWorktreeLabel(e.target.value)}
-                    />
-                    <Button
-                      size="sm"
-                      className="h-6 text-[10px] w-full"
-                      onClick={addWorktree}
-                      disabled={!newWorktreePath}
-                    >
-                      <Plus className="h-3 w-3 mr-1" />
-                      Add Worktree
-                    </Button>
-                </div>
-              )}
-            </div>
-            {/* Sessions header */}
-            <div className="p-2 border-b border-border flex items-center justify-between">
-              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                {showArchived ? "Archived" : "Sessions"}
-              </span>
-              <div className="flex gap-1">
-                {selectMode ? (
-                  <>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-6 w-6"
-                      onClick={() => {
-                        if (selectedSessions.size > 0 && wsRef.current?.readyState === WebSocket.OPEN) {
-                          wsRef.current.send(JSON.stringify({
-                            type: showArchived ? "unarchive-sessions" : "archive-sessions",
-                            sessionIds: Array.from(selectedSessions),
-                            dir: activeFolder || configs[activeConfigIdx]?.defaultCwd,
-                          }));
-                        }
-                      }}
-                      disabled={selectedSessions.size === 0}
-                      title={showArchived ? `Unarchive ${selectedSessions.size} session(s)` : `Archive ${selectedSessions.size} session(s)`}
-                    >
-                      {showArchived ? <ArchiveRestore className="h-3.5 w-3.5" /> : <Archive className="h-3.5 w-3.5" />}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-6 w-6"
-                      onClick={() => {
-                        const list = showArchived ? archivedSessions : sessions;
-                        if (selectedSessions.size === list.length) {
-                          setSelectedSessions(new Set());
-                        } else {
-                          setSelectedSessions(new Set(list.map(s => s.sessionId)));
-                        }
-                      }}
-                      title="Select all"
-                    >
-                      <Check className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => { setSelectMode(false); setSelectedSessions(new Set()); }} title="Cancel">
-                      <X className="h-3.5 w-3.5" />
-                    </Button>
-                  </>
-                ) : (
-                  <>
-                    {!showArchived && (
-                      <Button variant="ghost" size="icon" className="h-6 w-6" onClick={newSession} title="New session">
-                        <Plus className="h-3.5 w-3.5" />
-                      </Button>
-                    )}
-                    {(showArchived ? archivedSessions : sessions).length > 0 && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6"
-                        onClick={() => setSelectMode(true)}
-                        title={showArchived ? "Select sessions to unarchive" : "Select sessions to archive"}
-                      >
-                        {showArchived ? <ArchiveRestore className="h-3.5 w-3.5" /> : <Archive className="h-3.5 w-3.5" />}
-                      </Button>
-                    )}
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className={cn("h-6 w-6", showArchived && "bg-accent")}
-                      onClick={() => {
-                        const next = !showArchived;
-                        setShowArchived(next);
-                        setSelectedSessions(new Set());
-                        setSelectMode(false);
-                        if (next && wsRef.current?.readyState === WebSocket.OPEN) {
-                          wsRef.current.send(JSON.stringify({
-                            type: "list-archived-sessions",
-                            dir: activeFolder || configs[activeConfigIdx]?.defaultCwd,
-                          }));
-                        }
-                      }}
-                      title={showArchived ? "Show active sessions" : "Show archived sessions"}
-                    >
-                      <Archive className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setSidebarOpen(false)}>
-                      <PanelLeftClose className="h-3.5 w-3.5" />
-                    </Button>
-                  </>
                 )}
-              </div>
-            </div>
-            <div className="flex-1 min-h-0 overflow-y-auto">
-              <div className="p-1.5 space-y-0.5">
-                {(showArchived ? archivedSessions : sessions).map((s) => (
-                  <div
-                    key={s.sessionId}
-                    className={cn(
-                      "group relative rounded-md px-2.5 py-2 cursor-pointer text-xs transition-colors",
-                      selectMode && selectedSessions.has(s.sessionId)
-                        ? "bg-accent/30 border border-accent"
-                        : activeSessionId === s.sessionId
-                          ? "bg-accent text-accent-foreground"
-                          : "hover:bg-muted"
-                    )}
-                    onClick={() => {
-                      if (selectMode) {
-                        setSelectedSessions(prev => {
-                          const next = new Set(prev);
-                          if (next.has(s.sessionId)) next.delete(s.sessionId);
-                          else next.add(s.sessionId);
-                          return next;
-                        });
-                      } else {
-                        loadSession(s.sessionId);
-                      }
-                    }}
-                  >
-                    <div className="flex items-center gap-2">
-                      {selectMode && (
-                        <div className={cn(
-                          "w-3.5 h-3.5 rounded border shrink-0 flex items-center justify-center",
-                          selectedSessions.has(s.sessionId) ? "bg-primary border-primary" : "border-muted-foreground/40"
-                        )}>
-                          {selectedSessions.has(s.sessionId) && <Check className="h-2.5 w-2.5 text-primary-foreground" />}
-                        </div>
+                {!sessionsLoading && filteredSessions.length === 0 && (
+                  <div className="text-xs text-muted-foreground py-4 text-center">
+                    No sessions
+                  </div>
+                )}
+                {filteredSessions.map((s) => {
+                  const isActive = activeKey === s.sessionId;
+                  const isRunning = sessionStore.has(s.sessionId);
+                  const title = s.summary || s.firstPrompt || s.sessionId.slice(0, 8);
+                  return (
+                    <div
+                      key={s.sessionId}
+                      className={cn(
+                        "group rounded-md px-2 py-1.5 cursor-pointer text-xs transition-colors flex items-start gap-1.5",
+                        isActive ? "bg-primary/15 text-foreground" : "hover:bg-muted",
                       )}
+                      onClick={() => resumeSession(s)}
+                      title={title}
+                    >
                       <div className="flex-1 min-w-0">
-                        <div className="font-medium truncate flex items-center gap-1">
-                          {s.isolated && <Shield className="h-3 w-3 shrink-0 text-blue-500" />}
-                          <span className="truncate">{s.summary || s.firstPrompt?.slice(0, 40) || "Untitled"}</span>
-                          {backgroundSessions.has(s.sessionId) && (
-                            <Loader2 className="h-3 w-3 animate-spin text-blue-500 shrink-0" />
+                        <div className="flex items-center gap-1">
+                          {isRunning && (
+                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" title="Running" />
                           )}
+                          <span className="truncate font-medium">{title.slice(0, 60)}</span>
                         </div>
-                        <div className="text-muted-foreground mt-0.5">
-                          {formatTime(s.lastModified)}
+                        <div className="text-[10px] text-muted-foreground truncate mt-0.5">
+                          {s.projectPath || s.projectDirName}
                         </div>
                       </div>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); deleteSessionFromDisk(s); }}
+                        className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity"
+                        title="Delete session"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </button>
                     </div>
-                  </div>
-                ))}
-                {(showArchived ? archivedSessions : sessions).length === 0 && connected && (
-                  <p className="text-xs text-muted-foreground text-center py-4">
-                    {showArchived ? "No archived sessions" : "No sessions yet"}
-                  </p>
-                )}
+                  );
+                })}
               </div>
+            </ScrollArea>
+
+            <div className="p-2 border-t border-border shrink-0">
+              <Button size="sm" variant="ghost" className="w-full text-xs" onClick={fetchSessions}>
+                <RefreshCw className={cn("h-3 w-3 mr-1.5", sessionsLoading && "animate-spin")} />
+                Refresh
+              </Button>
+            </div>
+          </aside>
+        )}
+
+        {/* Main pane */}
+        <div className="flex-1 min-w-0 flex flex-col">
+          {/* Header */}
+          <div className="flex items-center gap-1.5 px-2 py-1.5 border-b border-border shrink-0">
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 w-7 p-0"
+              onClick={() => setSidebarOpen((v) => !v)}
+              title={sidebarOpen ? "Hide sessions" : "Show sessions"}
+            >
+              {sidebarOpen ? <PanelLeftClose className="h-3.5 w-3.5" /> : <PanelLeftOpen className="h-3.5 w-3.5" />}
+            </Button>
+
+            <div className="flex-1 min-w-0">
+              <div className="text-xs font-medium truncate">
+                {active ? active.label : "No session"}
+              </div>
+              {active && (
+                <div className="text-[10px] text-muted-foreground truncate">
+                  {active.cwd} {active.sessionId && `• ${active.sessionId.slice(0, 8)}`}
+                </div>
+              )}
+            </div>
+
+            {active && (
+              <>
+                <div className="flex items-center bg-muted rounded-md p-0.5">
+                  <button
+                    onClick={() => setView("chat")}
+                    className={cn(
+                      "px-2 py-0.5 text-xs rounded transition-colors flex items-center gap-1",
+                      view === "chat" ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    <MessageSquare className="h-3 w-3" />
+                    Chat
+                  </button>
+                  <button
+                    onClick={() => setView("terminal")}
+                    className={cn(
+                      "px-2 py-0.5 text-xs rounded transition-colors flex items-center gap-1",
+                      view === "terminal" ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    <TerminalIcon className="h-3 w-3" />
+                    Terminal
+                  </button>
+                </div>
+
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 w-7 p-0"
+                  onClick={closeActiveSession}
+                  title="Close session"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              </>
+            )}
+          </div>
+
+          {/* Body */}
+          <div className="flex-1 min-h-0 relative">
+            {showFolderPicker ? (
+              <FolderPickerPanel
+                value={folderInput}
+                onChange={setFolderInput}
+                recent={recentFolders}
+                onPick={(p) => startNewSession(p)}
+                onClose={() => setShowFolderPicker(false)}
+              />
+            ) : !active ? (
+              <EmptyState onNew={() => setShowFolderPicker(true)} />
+            ) : view === "chat" ? (
+              <ChatView state={active} />
+            ) : (
+              <TerminalView state={active} />
+            )}
+          </div>
+        </div>
+      </div>
+    </WidgetWrapper>
+  );
+}
+
+// ─── Empty state ─────────────────────────────────────────────────────────────
+
+function EmptyState({ onNew }: { onNew: () => void }) {
+  return (
+    <div className="h-full flex flex-col items-center justify-center text-center px-6 gap-3">
+      <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center">
+        <Bot className="h-6 w-6 text-primary" />
+      </div>
+      <div>
+        <div className="text-sm font-medium">No active session</div>
+        <div className="text-xs text-muted-foreground mt-1">
+          Start a new session or pick one from the sidebar.
+        </div>
+      </div>
+      <Button size="sm" onClick={onNew}>
+        <Plus className="h-3.5 w-3.5 mr-1.5" />
+        New Session
+      </Button>
+    </div>
+  );
+}
+
+// ─── Folder picker ───────────────────────────────────────────────────────────
+
+interface FolderPickerProps {
+  value: string;
+  onChange: (v: string) => void;
+  recent: string[];
+  onPick: (p: string) => void;
+  onClose: () => void;
+}
+
+function FolderPickerPanel({ value, onChange, recent, onPick, onClose }: FolderPickerProps) {
+  const [browsing, setBrowsing] = useState(false);
+  const [browsePath, setBrowsePath] = useState<string>("");
+  const [entries, setEntries] = useState<{ name: string; isDir: boolean }[]>([]);
+  const initialLoadRef = useRef(false);
+
+  const loadDir = useCallback(async (path: string) => {
+    setBrowsing(true);
+    try {
+      const res = await fetch(`/api/files?path=${encodeURIComponent(path)}`);
+      if (res.ok) {
+        const data = await res.json();
+        setBrowsePath(data.path || path);
+        const items = (data.entries || data.items || []) as { name: string; type?: string; isDirectory?: boolean }[];
+        setEntries(
+          items
+            .filter((e) => e.isDirectory || e.type === "directory" || e.type === "dir")
+            .map((e) => ({ name: e.name, isDir: true }))
+        );
+      }
+    } catch {}
+    setBrowsing(false);
+  }, []);
+
+  useEffect(() => {
+    if (initialLoadRef.current) return;
+    initialLoadRef.current = true;
+    // Defer to next tick so we don't trigger setState within the effect body synchronously.
+    const t = setTimeout(() => loadDir("~"), 0);
+    return () => clearTimeout(t);
+  }, [loadDir]);
+
+  const goUp = () => {
+    if (!browsePath || browsePath === "/") return;
+    const parts = browsePath.split("/");
+    parts.pop();
+    loadDir(parts.join("/") || "/");
+  };
+
+  return (
+    <div className="absolute inset-0 bg-background flex flex-col">
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-border">
+        <FolderOpen className="h-4 w-4 text-muted-foreground" />
+        <div className="text-sm font-medium">Choose project folder</div>
+        <div className="flex-1" />
+        <Button size="sm" variant="ghost" onClick={onClose}>
+          <X className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+
+      <div className="p-3 space-y-3 flex-1 min-h-0 flex flex-col">
+        <div className="flex gap-2">
+          <Input
+            placeholder="/path/to/project"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && value.trim()) onPick(value.trim());
+            }}
+            className="flex-1"
+          />
+          <Button size="sm" disabled={!value.trim()} onClick={() => onPick(value.trim())}>
+            Start
+          </Button>
+        </div>
+
+        {recent.length > 0 && (
+          <div>
+            <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Recent</div>
+            <div className="space-y-0.5">
+              {recent.map((p) => (
+                <button
+                  key={p}
+                  className="w-full text-left text-xs px-2 py-1 rounded hover:bg-muted truncate"
+                  onClick={() => onPick(p)}
+                >
+                  {p}
+                </button>
+              ))}
             </div>
           </div>
         )}
 
-        {/* ─── Main Chat Area ──────────────────────────────────── */}
-        <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
-          {/* Header */}
-          <div className="flex items-center gap-2 p-2 border-b border-border shrink-0">
-            {!sidebarOpen && (
-              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setSidebarOpen(true)}>
-                <PanelLeftOpen className="h-4 w-4" />
-              </Button>
-            )}
-            <div className="flex items-center gap-1.5 flex-1 min-w-0">
-              {connected ? (
-                <Wifi className="h-3.5 w-3.5 text-green-500 shrink-0" />
-              ) : (
-                <WifiOff className="h-3.5 w-3.5 text-destructive shrink-0" />
-              )}
-              <span className="text-xs text-muted-foreground truncate">
-                {connected
-                  ? configs[activeConfigIdx]?.label || "Connected"
-                  : "Disconnected"}
-              </span>
-            </div>
-            {/* Refresh session button */}
-            {activeSessionId && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7"
-                onClick={() => {
-                  wsRef.current?.send(JSON.stringify({
-                    type: "get-messages",
-                    sessionId: activeSessionId,
-                    dir: activeFolder || configs[activeConfigIdx]?.defaultCwd,
-                  }));
-                }}
-                title="Refresh session messages"
-              >
-                <RefreshCw className="h-3.5 w-3.5" />
-              </Button>
-            )}
-            {/* Isolated mode toggle */}
-            <Button
-              variant="ghost"
-              size="icon"
-              className={cn("h-7 w-7", isolatedMode && "bg-accent text-accent-foreground")}
-              onClick={() => {
-                const next = !isolatedMode;
-                setIsolatedMode(next);
-                localStorage.setItem("claude-code-isolated-mode", String(next));
-              }}
-              title={isolatedMode ? "Isolated mode ON: parallel sessions safe in same folder" : "Isolated mode OFF: only one session per folder"}
-            >
-              <Shield className="h-3.5 w-3.5" />
+        <div className="flex-1 min-h-0 flex flex-col border border-border rounded-md">
+          <div className="flex items-center gap-2 px-2 py-1.5 border-b border-border bg-muted/30">
+            <Button size="sm" variant="ghost" className="h-6 px-1.5 text-xs" onClick={goUp}>
+              ..
             </Button>
-            {/* View mode toggle (Chat vs Activity Feed) */}
-            <div className="flex items-center rounded-md border border-input bg-background overflow-hidden">
-              <button
-                className={cn("px-2 h-7 text-xs flex items-center gap-1 transition-colors", viewMode === "chat" ? "bg-accent text-accent-foreground" : "hover:bg-muted")}
-                onClick={() => setViewMode("chat")}
-                title="Chat view"
-              >
-                <MessageSquare className="h-3 w-3" />
-              </button>
-              <button
-                className={cn("px-2 h-7 text-xs flex items-center gap-1 transition-colors border-l border-input", viewMode === "activity" ? "bg-accent text-accent-foreground" : "hover:bg-muted")}
-                onClick={() => setViewMode("activity")}
-                title="Activity feed"
-              >
-                <Activity className="h-3 w-3" />
-              </button>
-            </div>
-            {/* Model selector */}
-            <DropdownMenu>
-              <DropdownMenuTrigger className="inline-flex shrink-0 items-center justify-center rounded-md border border-input bg-background px-2 h-7 text-xs gap-1 hover:bg-accent hover:text-accent-foreground">
-                  {MODELS.find((m) => m.id === selectedModel)?.label || "Model"}
-                  <ChevronDown className="h-3 w-3" />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                {MODELS.map((m) => (
-                  <DropdownMenuItem key={m.id} onClick={() => setSelectedModel(m.id)}>
-                    {m.label}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <Button variant="ghost" size="icon" className={cn("h-7 w-7", mode === "terminal" && "bg-accent")} onClick={() => {
-              if (mode === "chat") {
-                setMode("terminal");
-                setTerminalSessionId(activeSessionId);
-              } else {
-                setMode("chat");
-              }
-            }} title={mode === "chat" ? "Switch to CLI mode" : "Switch to Chat mode"}>
-              <Terminal className="h-3.5 w-3.5" />
-            </Button>
-            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setShowConfig(!showConfig)}>
-              <Settings className="h-3.5 w-3.5" />
+            <div className="flex-1 text-xs font-mono truncate text-muted-foreground">{browsePath || "~"}</div>
+            <Button size="sm" disabled={!browsePath} onClick={() => onPick(browsePath)}>
+              Use this folder
             </Button>
           </div>
-
-          {/* Token usage bar */}
-          {tokenUsage > 0 && <TokenBar used={tokenUsage} max={MAX_CONTEXT_TOKENS} />}
-
-          {/* Config panel */}
-          {showConfig && (
-            <div className="p-3 border-b border-border bg-muted/30 space-y-2">
-              <p className="text-xs font-medium">Relay Server Connection</p>
-              {configs.map((c, i) => (
-                <div key={i} className="flex items-center gap-2 text-xs">
-                  <span className={cn("w-2 h-2 rounded-full", connected && i === activeConfigIdx ? "bg-green-500" : "bg-muted-foreground/30")} />
-                  <span className="flex-1 truncate">{c.label} ({c.url})</span>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-5 w-5"
-                    onClick={() => {
-                      setActiveConfigIdx(i);
-                      connectToRelay(c);
-                    }}
-                  >
-                    <Wifi className="h-3 w-3" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-5 w-5 text-destructive"
-                    onClick={async () => {
-                      await fetch("/api/claude-code", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ action: "delete", index: i }),
-                      });
-                      const res = await fetch("/api/claude-code");
-                      setConfigs((await res.json()).configs || []);
-                    }}
-                  >
-                    <Trash2 className="h-3 w-3" />
-                  </Button>
-                </div>
-              ))}
-              <div className="space-y-1.5 pt-2 border-t border-border">
-                <Input className="h-7 text-xs" placeholder="ws://your-vps:4446" value={configUrl} onChange={(e) => setConfigUrl(e.target.value)} />
-                <div className="flex gap-1.5">
-                  <Input className="h-7 text-xs flex-1" placeholder="Label" value={configLabel} onChange={(e) => setConfigLabel(e.target.value)} />
-                  <Input className="h-7 text-xs flex-1" placeholder="Auth token (optional)" value={configToken} onChange={(e) => setConfigToken(e.target.value)} />
-                </div>
-                <Input className="h-7 text-xs" placeholder="Default CWD (optional)" value={configCwd} onChange={(e) => setConfigCwd(e.target.value)} />
-                <Button size="sm" className="h-7 text-xs w-full" onClick={addConfig} disabled={!configUrl}>
-                  Add Connection
-                </Button>
-              </div>
-            </div>
-          )}
-
-          {/* Terminal mode */}
-          {mode === "terminal" ? (
-            <div className="flex-1 min-h-0">
-              <TerminalPanel
-                cwd={activeFolder}
-                command={terminalSessionId ? `claude --resume ${terminalSessionId}` : "claude"}
-                label="Claude CLI"
-                onClose={() => setMode("chat")}
-                className="h-full"
-                pasteRef={terminalPasteRef}
-              />
-            </div>
-          ) : (
-          <>
-          {/* Activity Feed View */}
-          {viewMode === "activity" ? (
-            <ScrollArea className="flex-1">
-              {allToolCalls.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full py-12">
-                  <Activity className="h-8 w-8 text-muted-foreground/50 mb-3" />
-                  <p className="text-xs text-muted-foreground">No activity yet</p>
-                </div>
+          <ScrollArea className="flex-1 min-h-0">
+            <div className="p-1">
+              {browsing && entries.length === 0 ? (
+                <div className="text-xs text-muted-foreground p-2">Loading…</div>
               ) : (
-                <div>
-                  {allToolCalls.map((tc, i) => (
-                    <ActivityItem key={tc.id + i} block={tc} />
-                  ))}
-                </div>
+                entries.map((e) => (
+                  <button
+                    key={e.name}
+                    className="w-full text-left text-xs px-2 py-1 rounded hover:bg-muted flex items-center gap-1.5"
+                    onClick={() => loadDir(`${browsePath}/${e.name}`.replace(/\/+/g, "/"))}
+                  >
+                    <FolderOpen className="h-3 w-3 text-muted-foreground" />
+                    {e.name}
+                  </button>
+                ))
               )}
-            </ScrollArea>
-          ) : (
-          <>
-          {/* Messages (Chat View) */}
-          <div ref={chatScrollRef} className="flex-1 px-4 py-3 overflow-y-auto">
-            {!connected ? (
-              <div className="flex flex-col items-center justify-center h-full text-center py-12">
-                <WifiOff className="h-10 w-10 text-muted-foreground/50 mb-4" />
-                <h3 className="text-sm font-medium mb-1">Not Connected</h3>
-                <p className="text-xs text-muted-foreground mb-4">
-                  Configure a relay server connection to start using Claude Code.
-                </p>
-                <div className="flex gap-2">
-                  <Button size="sm" onClick={async () => {
-                    await fetch("/api/claude-code", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "start-relay" }) });
-                    setTimeout(() => {
-                      const cfgs = configsRef.current;
-                      if (cfgs.length > 0) connectToRelay(cfgs[0]);
-                    }, 1500);
-                  }} className="gap-1.5" variant="default">
-                    <Wifi className="h-3.5 w-3.5" />
-                    Start Relay
-                  </Button>
-                  <Button size="sm" onClick={() => setShowConfig(true)} className="gap-1.5" variant="outline">
-                    <Settings className="h-3.5 w-3.5" />
-                    Configure
-                  </Button>
-                </div>
-              </div>
-            ) : messages.length === 0 && !streaming ? (
-              <div className="flex flex-col items-center justify-center h-full text-center py-12">
-                <ClaudeIcon className="h-8 w-8 text-muted-foreground/50 mb-3" />
-                <p className="text-xs text-muted-foreground">
-                  {activeSessionId ? "Session loaded. Continue the conversation..." : "Start a new conversation..."}
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {messages.map((msg) => (
-                  <div key={msg.id} className={cn("group flex gap-3", msg.role === "user" && "flex-row-reverse")}>
-                    <div
-                      className={cn(
-                        "shrink-0 h-7 w-7 rounded-full flex items-center justify-center text-xs",
-                        msg.role === "user"
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-muted"
-                      )}
-                    >
-                      {msg.role === "user" ? "U" : <ClaudeIcon className="h-4 w-4" />}
-                    </div>
-                    <div
-                      className={cn(
-                        "max-w-[85%] rounded-lg px-3 py-2 text-sm",
-                        msg.role === "user"
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-muted"
-                      )}
-                    >
-                      {msg.role === "assistant" ? (
-                        <>
-                          {msg.blocks?.map((block, bi) => {
-                            if (block.type === "text") {
-                              return <div key={bi}>{renderContent(block.text)}</div>;
-                            }
-                            if (block.type === "tool_call") {
-                              return (
-                                <ToolCallPill key={block.id + bi} block={block} />
-                              );
-                            }
-                            return null;
-                          }) || renderContent(msg.content)}
-                        </>
-                      ) : (
-                        <p className="whitespace-pre-wrap">{msg.content}</p>
-                      )}
-                      <div className="flex items-center gap-1 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => copyMessage(msg.content)}>
-                          <Copy className="h-3 w-3" />
-                        </Button>
-                        {/* Cross-widget: open file paths in files widget */}
-                        {msg.blocks?.some(b => b.type === "tool_call" && (b.input.filePath || b.input.path)) && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-5 w-5"
-                            onClick={() => {
-                              const toolBlock = msg.blocks?.find(b => b.type === "tool_call" && (b.input.filePath || b.input.path)) as ToolCallBlock | undefined;
-                              if (toolBlock) openFileInWidget(String(toolBlock.input.filePath || toolBlock.input.path));
-                            }}
-                            title="Open in Files widget"
-                          >
-                            <FileCode className="h-3 w-3" />
-                          </Button>
-                        )}
-                        {/* Cross-widget: run command in terminal */}
-                        {msg.blocks?.some(b => b.type === "tool_call" && b.input.command) && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-5 w-5"
-                            onClick={() => {
-                              const toolBlock = msg.blocks?.find(b => b.type === "tool_call" && b.input.command) as ToolCallBlock | undefined;
-                              if (toolBlock) runInTerminalWidget(String(toolBlock.input.command));
-                            }}
-                            title="Run in Terminal widget"
-                          >
-                            <Play className="h-3 w-3" />
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-                {/* Streaming */}
-                {streaming && streamingBlocks.length > 0 && (
-                  <div className="flex gap-3">
-                    <div className="shrink-0 h-7 w-7 rounded-full flex items-center justify-center bg-muted">
-                      <ClaudeIcon className="h-4 w-4" />
-                    </div>
-                    <div className="max-w-[85%] rounded-lg px-3 py-2 text-sm bg-muted">
-                      {streamingBlocks.map((block, bi) => {
-                        if (block.type === "text") {
-                          const isLast = bi === streamingBlocks.length - 1;
-                          return (
-                            <div key={bi}>
-                              {renderContent(block.text)}
-                              {isLast && <span className="inline-block w-1.5 h-4 bg-foreground/70 animate-pulse ml-0.5" />}
-                            </div>
-                          );
-                        }
-                        if (block.type === "tool_call") {
-                          return <ToolCallPill key={block.id + bi} block={block} />;
-                        }
-                        return null;
-                      })}
-                    </div>
-                  </div>
-                )}
-                {streaming && streamingBlocks.length === 0 && (
-                  <div className="flex gap-3">
-                    <div className="shrink-0 h-7 w-7 rounded-full flex items-center justify-center bg-muted">
-                      <ClaudeIcon className="h-4 w-4" />
-                    </div>
-                    <div className="rounded-lg px-3 py-2 bg-muted">
-                      <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                    </div>
-                  </div>
-                )}
-                <div ref={messagesEndRef} />
-              </div>
-            )}
-          </div>
-          </>
-          )}
-
-          {/* Error */}
-          {error && (
-            <div className="px-4 py-2 text-xs text-destructive bg-destructive/10 border-t border-destructive/20 flex items-center justify-between">
-              <span>{error}</span>
-              <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => setError(null)}>
-                <X className="h-3 w-3" />
-              </Button>
             </div>
-          )}
-
-          {/* Input */}
-          {connected && (
-            <div className="p-3 border-t border-border shrink-0 relative">
-              {/* Slash command autocomplete menu */}
-              {showSlashMenu && filteredSlashCommands.length > 0 && (
-                <div className="absolute bottom-full left-3 right-3 mb-1 rounded-md border border-border bg-popover shadow-lg z-10 max-h-52 overflow-y-auto">
-                  {filteredSlashCommands.map((c, i) => (
-                    <div
-                      key={c.cmd}
-                      className={cn(
-                        "px-3 py-2 text-xs cursor-pointer flex justify-between items-center gap-3",
-                        i === slashSelectedIdx ? "bg-accent text-accent-foreground" : "hover:bg-muted"
-                      )}
-                      onClick={() => executeSlashCommand(c.cmd)}
-                      onMouseEnter={() => setSlashSelectedIdx(i)}
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono font-semibold text-foreground">{c.cmd}</span>
-                        {c.local && <span className="text-[9px] bg-muted px-1 rounded text-muted-foreground">local</span>}
-                      </div>
-                      <span className="text-muted-foreground text-[11px]">{c.desc}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-              <div className="flex gap-2 items-end">
-                <textarea
-                  ref={inputRef}
-                  className="flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring min-h-[38px] max-h-[120px]"
-                  placeholder={activeFolder ? "Ask Claude... (/ for commands, Shift+Enter for newline)" : "Select a folder first..."}
-                  value={input}
-                  onChange={(e) => {
-                    handleInputChange(e);
-                    e.target.style.height = "auto";
-                    e.target.style.height = Math.min(e.target.scrollHeight, 120) + "px";
-                  }}
-                  onKeyDown={handleKeyDown}
-                  rows={1}
-                  disabled={streaming}
-                />
-                {streaming ? (
-                  <Button size="icon" variant="destructive" className="h-9 w-9 shrink-0" onClick={abortQuery} title="Stop generation (Esc)">
-                    <Square className="h-4 w-4" />
-                  </Button>
-                ) : (
-                  <Button size="icon" className="h-9 w-9 shrink-0" onClick={sendMessage} disabled={!input.trim()}>
-                    <Send className="h-4 w-4" />
-                  </Button>
-                )}
-              </div>
-            </div>
-          )}
-          </>
-          )}
+          </ScrollArea>
         </div>
       </div>
-    </WidgetWrapper>
+    </div>
+  );
+}
+
+// ─── Chat view ───────────────────────────────────────────────────────────────
+
+function ChatView({ state }: { state: SessionState }) {
+  const [input, setInput] = useState("");
+  const [sending, setSending] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll on new messages
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [state.messages.length]);
+
+  const send = useCallback(() => {
+    const text = input.trim();
+    if (!text || !state.alive) return;
+    setSending(true);
+    // Paste prompt + ENTER. Claude CLI's TUI will receive each char and submit on \r.
+    const ok = pasteIntoTerminal(state, text + "\r");
+    if (ok) setInput("");
+    setSending(false);
+  }, [input, state]);
+
+  return (
+    <div className="h-full flex flex-col">
+      <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto px-3 py-2">
+        {state.messages.length === 0 ? (
+          <div className="h-full flex items-center justify-center text-xs text-muted-foreground">
+            {state.sessionId
+              ? "Waiting for first message…"
+              : "Starting Claude — first message will appear here once Claude responds…"}
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {state.messages.map((m) => (
+              <ChatBubble key={m.id} message={m} />
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="shrink-0 border-t border-border p-2">
+        <div className="flex gap-1.5">
+          <textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                send();
+              }
+            }}
+            placeholder={state.alive ? "Send a message to Claude…" : "Session ended"}
+            disabled={!state.alive || sending}
+            rows={1}
+            className="flex-1 resize-none px-2 py-1.5 text-sm rounded-md border border-border bg-background min-h-[36px] max-h-[120px] focus:outline-none focus:ring-1 focus:ring-primary/40"
+          />
+          <Button size="sm" onClick={send} disabled={!input.trim() || !state.alive}>
+            <Send className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+        {!state.alive && (
+          <div className="text-[10px] text-muted-foreground mt-1">
+            The Claude process exited. Close and start a new session.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ChatBubble({ message }: { message: ChatMessage }) {
+  const [copied, setCopied] = useState(false);
+  const isUser = message.role === "user";
+  return (
+    <div className={cn("flex gap-2", isUser && "flex-row-reverse")}>
+      <div className={cn("h-6 w-6 shrink-0 rounded-full flex items-center justify-center text-[10px] font-semibold",
+        isUser ? "bg-primary text-primary-foreground" : "bg-muted")}>
+        {isUser ? "U" : <Bot className="h-3.5 w-3.5" />}
+      </div>
+      <div className={cn("group max-w-[85%] rounded-lg px-3 py-2 text-sm relative",
+        isUser ? "bg-primary text-primary-foreground" : "bg-muted")}>
+        {isUser ? (
+          <div className="whitespace-pre-wrap break-words">{message.text}</div>
+        ) : (
+          <div className="space-y-1">
+            {message.text && <div>{renderText(message.text)}</div>}
+            {message.toolUses && message.toolUses.length > 0 && (
+              <div className="flex flex-wrap items-center gap-0">
+                {message.toolUses.map((t, i) => <ToolUsePill key={i} name={t.name} />)}
+              </div>
+            )}
+          </div>
+        )}
+        <button
+          onClick={() => {
+            try {
+              navigator.clipboard.writeText(message.text);
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1500);
+            } catch {}
+          }}
+          className={cn(
+            "absolute -top-1.5 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded bg-background border border-border shadow-sm",
+            isUser ? "-left-1.5" : "-right-1.5"
+          )}
+          title="Copy"
+        >
+          <Copy className="h-2.5 w-2.5" />
+          {copied && <span className="absolute -top-5 right-0 text-[9px] bg-foreground text-background px-1 rounded">Copied</span>}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Terminal view ───────────────────────────────────────────────────────────
+
+function TerminalView({ state }: { state: SessionState }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const roRef = useRef<ResizeObserver | null>(null);
+
+  // Mount/unmount: move xterm element in/out of the visible container
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const xtermEl = state.terminal.element as HTMLElement | undefined;
+    if (xtermEl) {
+      container.appendChild(xtermEl);
+    }
+
+    requestAnimationFrame(() => {
+      try {
+        state.fitAddon.fit();
+        const dims = state.fitAddon.proposeDimensions();
+        if (dims && state.ws.readyState === WebSocket.OPEN) {
+          state.ws.send(JSON.stringify({ type: "resize", cols: dims.cols, rows: dims.rows }));
+        }
+      } catch {}
+      try { state.terminal.focus(); } catch {}
+    });
+
+    const ro = new ResizeObserver(() => {
+      requestAnimationFrame(() => {
+        try {
+          state.fitAddon.fit();
+          const dims = state.fitAddon.proposeDimensions();
+          if (dims && state.ws.readyState === WebSocket.OPEN) {
+            state.ws.send(JSON.stringify({ type: "resize", cols: dims.cols, rows: dims.rows }));
+          }
+        } catch {}
+      });
+    });
+    ro.observe(container);
+    roRef.current = ro;
+
+    return () => {
+      ro.disconnect();
+      // Detach but don't dispose — the terminal lives on in the module store.
+      if (xtermEl && xtermEl.parentNode === container) {
+        container.removeChild(xtermEl);
+      }
+    };
+  }, [state]);
+
+  return (
+    <div
+      ref={containerRef}
+      className="h-full w-full px-1 py-1"
+      onMouseDown={(e) => e.stopPropagation()}
+    />
   );
 }

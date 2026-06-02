@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { readdir, readFile, stat } from "fs/promises";
+import { readdir, readFile, stat, unlink, mkdir, rename } from "fs/promises";
 import { join } from "path";
 import { homedir } from "os";
 import { execFile } from "child_process";
@@ -258,6 +258,52 @@ export async function POST(request: NextRequest) {
       return Response.json({ sessions: tmuxSessions });
     } catch {
       return Response.json({ sessions: [] });
+    }
+  }
+
+  if (action === "delete-session") {
+    // Delete a local Claude session JSONL file
+    const { sessionId, projectDir } = body as { sessionId?: string; projectDir?: string };
+    if (!sessionId) return Response.json({ error: "sessionId required" }, { status: 400 });
+
+    try {
+      // Search across all project dirs (or just the hinted one)
+      const dirs = projectDir ? [projectDir] : await readdir(CLAUDE_PROJECTS_DIR);
+      let deleted = false;
+      for (const dir of dirs) {
+        const jsonl = join(CLAUDE_PROJECTS_DIR, dir, `${sessionId}.jsonl`);
+        try {
+          await unlink(jsonl);
+          deleted = true;
+        } catch {}
+      }
+      return Response.json({ success: deleted });
+    } catch (err) {
+      return Response.json({ error: String(err) }, { status: 500 });
+    }
+  }
+
+  if (action === "archive-session") {
+    // Move session JSONL into a sibling .archive/ folder
+    const { sessionId, projectDir } = body as { sessionId?: string; projectDir?: string };
+    if (!sessionId) return Response.json({ error: "sessionId required" }, { status: 400 });
+
+    try {
+      const dirs = projectDir ? [projectDir] : await readdir(CLAUDE_PROJECTS_DIR);
+      let archived = false;
+      for (const dir of dirs) {
+        const src = join(CLAUDE_PROJECTS_DIR, dir, `${sessionId}.jsonl`);
+        try {
+          await stat(src);
+          const archiveDir = join(CLAUDE_PROJECTS_DIR, dir, ".archive");
+          await mkdir(archiveDir, { recursive: true });
+          await rename(src, join(archiveDir, `${sessionId}.jsonl`));
+          archived = true;
+        } catch {}
+      }
+      return Response.json({ success: archived });
+    } catch (err) {
+      return Response.json({ error: String(err) }, { status: 500 });
     }
   }
 

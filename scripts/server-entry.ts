@@ -64,35 +64,6 @@ function startPtyServer() {
   });
 }
 
-// Start Claude Code relay server
-function startClaudeRelay() {
-  const relayScript = join(BINARY_DIR, "server/claude-relay/relay.mjs");
-  if (!existsSync(relayScript)) {
-    console.warn("Claude relay server not found at", relayScript);
-    return;
-  }
-
-  const RELAY_PORT = parseInt(process.env.CLAUDE_RELAY_PORT || "4446", 10);
-  const child = spawn("node", [relayScript], {
-    env: {
-      ...process.env,
-      PORT: String(RELAY_PORT),
-    },
-    stdio: "inherit",
-  });
-
-  child.on("error", (err) => {
-    console.warn(`Claude relay failed to start: ${err.message}`);
-  });
-
-  child.on("exit", (code) => {
-    if (code !== 0) {
-      console.warn(`Claude relay exited with code ${code}`);
-    }
-  });
-}
-
 console.log(`Starting Personal Assistant on port ${PORT}...`);
-startClaudeRelay();
 startPtyServer();
 startNext();
