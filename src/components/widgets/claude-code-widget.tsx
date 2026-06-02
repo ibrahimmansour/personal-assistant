@@ -92,6 +92,10 @@ interface SessionState {
   pendingPrompts: string[];
   /** True while a terminal is being created (avoid double-spawn). */
   spawningTerminal: boolean;
+  /** True while we're waiting for an assistant response after the user submitted. */
+  waitingForReply: boolean;
+  /** ID of the most recent assistant message we've seen — used to detect "new reply arrived". */
+  lastAssistantMessageId: string | null;
   /** Subscribers that re-render when this session updates. */
   subscribers: Set<() => void>;
 }
@@ -111,12 +115,6 @@ const PTY_WS_URL = typeof window !== "undefined"
 function encodeProjectDirName(absPath: string): string {
   if (!absPath || absPath === "/") return "-";
   return absPath.replace(/\//g, "-");
-}
-
-// Decode "-Users-d067576-projects-personal-assistant" → "/Users/d067576/projects/personal-assistant"
-function decodeProjectDirName(dirName: string): string {
-  if (!dirName || dirName === "-") return "/";
-  return dirName.replace(/^-/, "/").replace(/-/g, "/");
 }
 
 // Quote a string for safe inclusion in a POSIX shell command.
@@ -222,6 +220,8 @@ function openSession(opts: OpenSessionOpts): SessionState {
     sse: null,
     pendingPrompts: [],
     spawningTerminal: false,
+    waitingForReply: false,
+    lastAssistantMessageId: null,
     subscribers: new Set(),
   };
 
@@ -438,6 +438,14 @@ function attachSse(state: SessionState) {
           if (!existing.has(m.id)) state.messages.push(m);
         }
       }
+      // Track the latest assistant message — clears the "thinking" indicator
+      // for this session as soon as a new reply lands.
+      const lastA = [...state.messages].reverse().find((m) => m.role === "assistant");
+      const lastAId = lastA?.id || null;
+      if (state.waitingForReply && lastAId && lastAId !== state.lastAssistantMessageId) {
+        state.waitingForReply = false;
+      }
+      state.lastAssistantMessageId = lastAId;
       notifySubscribers(state);
     } catch {}
   });
@@ -455,8 +463,14 @@ function attachSse(state: SessionState) {
 async function submitPrompt(state: SessionState, text: string): Promise<boolean> {
   const payload = text.endsWith("\r") ? text : text + "\r";
 
+  // Mark this session as waiting for an assistant reply. Cleared by the
+  // SSE handler when the next assistant message lands. Per-session, so
+  // other sessions' chat views don't show the indicator.
+  state.waitingForReply = true;
+
   if (state.alive && state.ws && state.ws.readyState === WebSocket.OPEN) {
     state.ws.send(JSON.stringify({ type: "input", data: payload }));
+    notifySubscribers(state);
     return true;
   }
 
@@ -873,14 +887,10 @@ export function ClaudeCodeWidget() {
       return;
     }
 
-    // Resolve a usable cwd. Prefer the explicit projectPath; fall back to
-    // decoding the project directory name. Default to home only if both fail.
-    let cwd = (s.projectPath && s.projectPath.trim()) || "";
-    if (!cwd && s.projectDirName) {
-      const decoded = decodeProjectDirName(s.projectDirName);
-      if (decoded && decoded !== "/") cwd = decoded;
-    }
-    if (!cwd) cwd = "~";
+    // Use the explicit projectPath the API resolves. It's guaranteed to be
+    // accurate (read either from sessions-index.json's originalPath or from
+    // the JSONL file's `cwd` field). Fall back to home only if it's missing.
+    const cwd = (s.projectPath && s.projectPath.trim()) || "~";
 
     const label = s.summary || s.firstPrompt?.slice(0, 30) || s.sessionId.slice(0, 8);
     const state = openSession({ cwd, resumeId: s.sessionId, label });
@@ -1571,25 +1581,10 @@ function ChatView({ state, showToolCalls }: { state: SessionState; showToolCalls
   const [sending, setSending] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Track local "waiting for assistant" state. We set it when the user submits,
-  // and clear it as soon as a NEW assistant message appears in state.messages.
-  const [waiting, setWaiting] = useState(false);
-  const lastAssistantIdRef = useRef<string | null>(null);
-
-  // Initialize the lastAssistantId from current messages on mount / session switch
-  useEffect(() => {
-    const lastA = [...state.messages].reverse().find((m) => m.role === "assistant");
-    lastAssistantIdRef.current = lastA?.id || null;
-  }, [state.key]);
-
-  // When messages update, see if a new assistant message arrived
-  useEffect(() => {
-    const lastA = [...state.messages].reverse().find((m) => m.role === "assistant");
-    if (lastA && lastA.id !== lastAssistantIdRef.current) {
-      lastAssistantIdRef.current = lastA.id;
-      setWaiting(false);
-    }
-  }, [state.messages.length]);
+  // Read waiting state directly from the session — it's per-session, so
+  // switching to another session shows that session's own waiting state
+  // (clean here, busy elsewhere, etc.).
+  const waiting = state.waitingForReply;
 
   // Auto-scroll on new messages and when waiting flag toggles
   useEffect(() => {
@@ -1603,9 +1598,9 @@ function ChatView({ state, showToolCalls }: { state: SessionState; showToolCalls
     if (!text) return;
     setSending(true);
     // Submit prompt: pastes into a live terminal, or queues + lazily spawns one.
+    // submitPrompt also sets state.waitingForReply on the session.
     submitPrompt(state, text + "\r");
     setInput("");
-    setWaiting(true);
     setSending(false);
   }, [input, state]);
 

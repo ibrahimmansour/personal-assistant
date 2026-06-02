@@ -76,12 +76,19 @@ export async function GET(request: NextRequest) {
           const lines = content.split("\n").filter(Boolean);
           let firstPrompt = "";
           let messageCount = 0;
+          let realCwd = "";
 
           for (const line of lines) {
             try {
               const parsed = JSON.parse(line);
               if (parsed.type === "user" && parsed.message?.content && !firstPrompt) {
                 firstPrompt = extractUserText(parsed.message.content).slice(0, 200);
+              }
+              // The JSONL records `cwd` on each user/assistant entry. Use the
+              // first one we see — it's the canonical original path and avoids
+              // the lossy "-" → "/" decoding of the project dir name.
+              if (!realCwd && typeof parsed.cwd === "string" && parsed.cwd) {
+                realCwd = parsed.cwd;
               }
               if (parsed.type === "user" || parsed.type === "assistant") {
                 messageCount++;
@@ -97,7 +104,10 @@ export async function GET(request: NextRequest) {
             created: fileStat.birthtime.toISOString(),
             modified: fileStat.mtime.toISOString(),
             gitBranch: "",
-            projectPath: decodeProjectDirName(projectDir),
+            // Prefer the cwd recorded inside the JSONL itself (canonical and
+            // exact). Fall back to the lossy decode of the project dir name
+            // only when the JSONL has no usable cwd.
+            projectPath: realCwd || decodeProjectDirName(projectDir),
             projectDirName: projectDir,
           });
         } catch {}
