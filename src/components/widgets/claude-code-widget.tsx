@@ -31,6 +31,7 @@ import {
   RefreshCw,
   Trash2,
   Search,
+  GitBranch,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState, useEffect, useRef, useCallback } from "react";
@@ -405,11 +406,46 @@ function useSessionSubscription(key: string | null): SessionState | null {
 
 // ─── Tool-use pill ───────────────────────────────────────────────────────────
 
-function ToolUsePill({ name }: { name: string }) {
+/** Build a one-line summary of a tool_use input for the chat view. */
+function summarizeToolInput(name: string, input: unknown): string {
+  if (!input || typeof input !== "object") return "";
+  const i = input as Record<string, unknown>;
+  const lower = name.toLowerCase();
+  if (lower === "bash" && typeof i.command === "string") return i.command;
+  if ((lower === "read" || lower === "edit" || lower === "write") && typeof i.file_path === "string") return i.file_path;
+  if (lower === "glob" && typeof i.pattern === "string") return i.pattern;
+  if (lower === "grep" && typeof i.pattern === "string") {
+    const path = typeof i.path === "string" ? ` in ${i.path}` : "";
+    return `${i.pattern}${path}`;
+  }
+  if (lower === "webfetch" && typeof i.url === "string") return i.url;
+  if ((lower === "task" || lower === "agent") && typeof i.description === "string") return i.description;
+  if (lower === "todowrite") {
+    const todos = Array.isArray(i.todos) ? i.todos.length : 0;
+    return `${todos} item${todos === 1 ? "" : "s"}`;
+  }
+  // Fallback: first string value of any field
+  for (const key of ["query", "description", "path", "url", "filename", "name"]) {
+    if (typeof i[key] === "string") return i[key] as string;
+  }
+  return "";
+}
+
+function ToolUsePill({ name, input, expanded }: { name: string; input?: unknown; expanded: boolean }) {
+  const summary = summarizeToolInput(name, input);
   return (
-    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded bg-muted/60 text-muted-foreground border border-border/60 mr-1 mt-1">
-      <Wrench className="h-2.5 w-2.5" />
-      {name}
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded bg-muted/60 text-muted-foreground border border-border/60 mr-1 mt-1",
+        expanded ? "max-w-full" : "max-w-[280px]"
+      )}
+      title={summary || name}
+    >
+      <Wrench className="h-2.5 w-2.5 shrink-0" />
+      <span className="font-medium">{name}</span>
+      {summary && (
+        <span className="font-mono text-[10px] truncate opacity-80">{summary}</span>
+      )}
     </span>
   );
 }
@@ -553,6 +589,19 @@ export function ClaudeCodeWidget() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [showFolderPicker, setShowFolderPicker] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [showToolCalls, setShowToolCalls] = useState<boolean>(() => {
+    if (typeof window === "undefined") return true;
+    const v = localStorage.getItem("claude-code-show-tool-calls");
+    return v === null ? true : v === "true";
+  });
+
+  // Active folder + worktrees
+  const [activeFolder, setActiveFolder] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    return localStorage.getItem("claude-code-active-folder");
+  });
+  const [worktrees, setWorktrees] = useState<{ path: string; branch?: string; head?: string; bare?: boolean; detached?: boolean }[]>([]);
+  const [branches, setBranches] = useState<string[]>([]);
 
   // Sessions list (from disk)
   const [sessions, setSessions] = useState<ClaudeSessionInfo[]>([]);
@@ -632,6 +681,9 @@ export function ClaudeCodeWidget() {
     setCreating(true);
     try {
       persistRecentFolder(cwd);
+      // Make this the active folder for the worktrees panel
+      setActiveFolder(cwd);
+      try { localStorage.setItem("claude-code-active-folder", cwd); } catch {}
       const state = await createSession({ cwd, label: "New session" });
       if (state) {
         setActiveKey(state.key);
@@ -642,6 +694,46 @@ export function ClaudeCodeWidget() {
       setCreating(false);
     }
   }, [persistRecentFolder]);
+
+  // ── Set active folder (persist to localStorage) ────────────────────────
+  const selectActiveFolder = useCallback((folder: string | null) => {
+    setActiveFolder(folder);
+    try {
+      if (folder) localStorage.setItem("claude-code-active-folder", folder);
+      else localStorage.removeItem("claude-code-active-folder");
+    } catch {}
+  }, []);
+
+  // ── Fetch worktrees for the active folder ──────────────────────────────
+  const fetchWorktrees = useCallback(async (folder: string) => {
+    try {
+      const res = await fetch("/api/claude-sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "list-worktrees", dir: folder }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setWorktrees(data.worktrees || []);
+        setBranches(data.branches || []);
+      } else {
+        setWorktrees([]);
+        setBranches([]);
+      }
+    } catch {
+      setWorktrees([]);
+      setBranches([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeFolder) {
+      fetchWorktrees(activeFolder);
+    } else {
+      setWorktrees([]);
+      setBranches([]);
+    }
+  }, [activeFolder, fetchWorktrees]);
 
   // ── Resume an existing session in its original cwd ────────────────────
   const resumeSession = useCallback(async (s: ClaudeSessionInfo) => {
@@ -717,6 +809,25 @@ export function ClaudeCodeWidget() {
                 {creating ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> : <Plus className="h-3.5 w-3.5 mr-1.5" />}
                 New Session
               </Button>
+
+              {/* Active folder picker */}
+              <FolderSection
+                activeFolder={activeFolder}
+                recentFolders={recentFolders}
+                onSelect={selectActiveFolder}
+                onBrowse={() => setShowFolderPicker(true)}
+              />
+
+              {/* Worktrees for active folder */}
+              {activeFolder && worktrees.length > 0 && (
+                <WorktreesSection
+                  folder={activeFolder}
+                  worktrees={worktrees}
+                  branches={branches}
+                  onPick={(path) => startNewSession(path)}
+                  onRefresh={() => fetchWorktrees(activeFolder)}
+                />
+              )}
 
               <div className="relative">
                 <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
@@ -829,6 +940,24 @@ export function ClaudeCodeWidget() {
 
             {active && (
               <>
+                {view === "chat" && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 w-7 p-0"
+                    onClick={() => {
+                      setShowToolCalls((v) => {
+                        const next = !v;
+                        try { localStorage.setItem("claude-code-show-tool-calls", String(next)); } catch {}
+                        return next;
+                      });
+                    }}
+                    title={showToolCalls ? "Hide tool calls" : "Show tool calls"}
+                  >
+                    <Wrench className={cn("h-3.5 w-3.5", showToolCalls ? "text-foreground" : "text-muted-foreground/50")} />
+                  </Button>
+                )}
+
                 <div className="flex items-center bg-muted rounded-md p-0.5">
                   <button
                     onClick={() => setView("chat")}
@@ -878,7 +1007,7 @@ export function ClaudeCodeWidget() {
             ) : !active ? (
               <EmptyState onNew={() => setShowFolderPicker(true)} />
             ) : view === "chat" ? (
-              <ChatView state={active} />
+              <ChatView state={active} showToolCalls={showToolCalls} />
             ) : (
               <TerminalView state={active} />
             )}
@@ -886,6 +1015,249 @@ export function ClaudeCodeWidget() {
         </div>
       </div>
     </WidgetWrapper>
+  );
+}
+
+// ─── Folder section (sidebar) ────────────────────────────────────────────────
+
+function FolderSection({
+  activeFolder,
+  recentFolders,
+  onSelect,
+  onBrowse,
+}: {
+  activeFolder: string | null;
+  recentFolders: string[];
+  onSelect: (folder: string | null) => void;
+  onBrowse: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const onClick = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    if (open) document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, [open]);
+
+  const display = activeFolder ? shortenFolder(activeFolder) : "Pick a folder";
+
+  return (
+    <div className="space-y-1" ref={ref}>
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Folder</span>
+        <button
+          className="text-[10px] text-muted-foreground hover:text-foreground"
+          onClick={onBrowse}
+          title="Browse for folder"
+        >
+          Browse…
+        </button>
+      </div>
+      <div className="relative">
+        <button
+          className="w-full flex items-center gap-1.5 rounded-md border border-input bg-background px-2 h-7 text-xs hover:bg-accent"
+          onClick={() => setOpen((v) => !v)}
+        >
+          <FolderOpen className="h-3 w-3 shrink-0 text-muted-foreground" />
+          <span className="flex-1 truncate text-left">{display}</span>
+        </button>
+        {open && recentFolders.length > 0 && (
+          <div className="absolute z-10 left-0 right-0 mt-1 max-h-48 overflow-y-auto rounded-md border border-border bg-popover shadow-md">
+            {recentFolders.map((f) => (
+              <button
+                key={f}
+                className={cn(
+                  "w-full text-left text-xs px-2 py-1.5 hover:bg-accent flex items-center gap-1.5",
+                  activeFolder === f && "bg-accent"
+                )}
+                onClick={() => { onSelect(f); setOpen(false); }}
+              >
+                <FolderOpen className="h-3 w-3 text-muted-foreground shrink-0" />
+                <span className="truncate">{shortenFolder(f)}</span>
+              </button>
+            ))}
+            {activeFolder && (
+              <>
+                <div className="border-t border-border my-0.5" />
+                <button
+                  className="w-full text-left text-xs px-2 py-1.5 hover:bg-accent text-muted-foreground"
+                  onClick={() => { onSelect(null); setOpen(false); }}
+                >
+                  Clear
+                </button>
+              </>
+            )}
+          </div>
+        )}
+        {open && recentFolders.length === 0 && (
+          <div className="absolute z-10 left-0 right-0 mt-1 rounded-md border border-border bg-popover p-2 text-xs text-muted-foreground shadow-md">
+            No recent folders. Click <span className="font-medium">Browse…</span> to add one.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function shortenFolder(p: string): string {
+  if (typeof window === "undefined") return p;
+  // Replace home dir with ~
+  const home = (window as unknown as { __home?: string }).__home;
+  if (home && p.startsWith(home)) return "~" + p.slice(home.length);
+  // Show last two segments if path is long
+  const parts = p.split("/").filter(Boolean);
+  if (parts.length >= 2 && p.length > 28) return ".../" + parts.slice(-2).join("/");
+  return p;
+}
+
+// ─── Worktrees section (sidebar) ─────────────────────────────────────────────
+
+function WorktreesSection({
+  folder,
+  worktrees,
+  branches,
+  onPick,
+  onRefresh,
+}: {
+  folder: string;
+  worktrees: { path: string; branch?: string; head?: string; bare?: boolean; detached?: boolean }[];
+  branches: string[];
+  onPick: (path: string) => void;
+  onRefresh: () => void;
+}) {
+  const [showAdd, setShowAdd] = useState(false);
+  const [newBranch, setNewBranch] = useState("");
+  const [newPath, setNewPath] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const addWorktree = async () => {
+    if (!newPath.trim()) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const isExisting = branches.includes(newBranch);
+      const res = await fetch("/api/claude-sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "add-worktree",
+          dir: folder,
+          path: newPath.trim(),
+          ...(newBranch.trim()
+            ? (isExisting ? { branch: newBranch.trim() } : { newBranch: newBranch.trim() })
+            : {}),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error || "Failed to add worktree");
+      setShowAdd(false);
+      setNewBranch("");
+      setNewPath("");
+      onRefresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const removeWorktree = async (path: string) => {
+    if (!confirm(`Remove worktree at ${path}?`)) return;
+    setBusy(true);
+    try {
+      const res = await fetch("/api/claude-sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "remove-worktree", dir: folder, path }),
+      });
+      if (!res.ok) {
+        // Retry with --force on failure
+        await fetch("/api/claude-sessions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "remove-worktree", dir: folder, path, force: true }),
+        });
+      }
+      onRefresh();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
+          Worktrees
+        </span>
+        <button
+          className="text-[10px] text-muted-foreground hover:text-foreground inline-flex items-center gap-0.5"
+          onClick={() => setShowAdd((v) => !v)}
+          title="Add worktree"
+        >
+          <Plus className="h-2.5 w-2.5" />
+          Add
+        </button>
+      </div>
+      <div className="space-y-0.5 max-h-32 overflow-y-auto">
+        {worktrees.map((wt) => (
+          <div
+            key={wt.path}
+            className="group flex items-center gap-1.5 text-[11px] px-1.5 py-1 rounded hover:bg-muted cursor-pointer"
+            onClick={() => onPick(wt.path)}
+            title={wt.path}
+          >
+            <GitBranch className="h-3 w-3 shrink-0 text-muted-foreground" />
+            <span className="flex-1 truncate">{wt.branch || (wt.path.split("/").pop() || wt.path)}</span>
+            {!wt.bare && worktrees.length > 1 && (
+              <button
+                onClick={(e) => { e.stopPropagation(); removeWorktree(wt.path); }}
+                className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity"
+                title="Remove worktree"
+              >
+                <Trash2 className="h-2.5 w-2.5" />
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {showAdd && (
+        <div className="space-y-1 pt-1.5 mt-1.5 border-t border-border">
+          <Input
+            value={newBranch}
+            onChange={(e) => {
+              setNewBranch(e.target.value);
+              if (e.target.value && !newPath.trim()) {
+                const parent = folder.split("/").slice(0, -1).join("/");
+                setNewPath(`${parent}/${e.target.value.replace(/\//g, "-")}`);
+              }
+            }}
+            placeholder="Branch (existing or new)"
+            className="h-6 text-xs"
+            list="claude-code-branches"
+          />
+          <datalist id="claude-code-branches">
+            {branches.map((b) => <option key={b} value={b} />)}
+          </datalist>
+          <Input
+            value={newPath}
+            onChange={(e) => setNewPath(e.target.value)}
+            placeholder="Worktree path"
+            className="h-6 text-xs"
+          />
+          {error && <div className="text-[10px] text-destructive">{error}</div>}
+          <Button size="sm" className="h-6 text-[10px] w-full" onClick={addWorktree} disabled={busy || !newPath.trim()}>
+            {busy ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Plus className="h-3 w-3 mr-1" />}
+            Add Worktree
+          </Button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1040,17 +1412,37 @@ function FolderPickerPanel({ value, onChange, recent, onPick, onClose }: FolderP
 
 // ─── Chat view ───────────────────────────────────────────────────────────────
 
-function ChatView({ state }: { state: SessionState }) {
+function ChatView({ state, showToolCalls }: { state: SessionState; showToolCalls: boolean }) {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll on new messages
+  // Track local "waiting for assistant" state. We set it when the user submits,
+  // and clear it as soon as a NEW assistant message appears in state.messages.
+  const [waiting, setWaiting] = useState(false);
+  const lastAssistantIdRef = useRef<string | null>(null);
+
+  // Initialize the lastAssistantId from current messages on mount / session switch
+  useEffect(() => {
+    const lastA = [...state.messages].reverse().find((m) => m.role === "assistant");
+    lastAssistantIdRef.current = lastA?.id || null;
+  }, [state.key]);
+
+  // When messages update, see if a new assistant message arrived
+  useEffect(() => {
+    const lastA = [...state.messages].reverse().find((m) => m.role === "assistant");
+    if (lastA && lastA.id !== lastAssistantIdRef.current) {
+      lastAssistantIdRef.current = lastA.id;
+      setWaiting(false);
+    }
+  }, [state.messages.length]);
+
+  // Auto-scroll on new messages and when waiting flag toggles
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
     el.scrollTop = el.scrollHeight;
-  }, [state.messages.length]);
+  }, [state.messages.length, waiting]);
 
   const send = useCallback(() => {
     const text = input.trim();
@@ -1058,7 +1450,10 @@ function ChatView({ state }: { state: SessionState }) {
     setSending(true);
     // Paste prompt + ENTER. Claude CLI's TUI will receive each char and submit on \r.
     const ok = pasteIntoTerminal(state, text + "\r");
-    if (ok) setInput("");
+    if (ok) {
+      setInput("");
+      setWaiting(true);
+    }
     setSending(false);
   }, [input, state]);
 
@@ -1074,8 +1469,9 @@ function ChatView({ state }: { state: SessionState }) {
         ) : (
           <div className="space-y-3">
             {state.messages.map((m) => (
-              <ChatBubble key={m.id} message={m} />
+              <ChatBubble key={m.id} message={m} showToolCalls={showToolCalls} />
             ))}
+            {waiting && <ThinkingIndicator />}
           </div>
         )}
       </div>
@@ -1110,9 +1506,25 @@ function ChatView({ state }: { state: SessionState }) {
   );
 }
 
-function ChatBubble({ message }: { message: ChatMessage }) {
+function ThinkingIndicator() {
+  return (
+    <div className="flex gap-2">
+      <div className="h-6 w-6 shrink-0 rounded-full flex items-center justify-center bg-muted">
+        <Bot className="h-3.5 w-3.5" />
+      </div>
+      <div className="rounded-lg px-3 py-2 bg-muted text-sm text-muted-foreground inline-flex items-center gap-1.5">
+        <Loader2 className="h-3 w-3 animate-spin" />
+        <span className="text-xs">Claude is thinking…</span>
+      </div>
+    </div>
+  );
+}
+
+function ChatBubble({ message, showToolCalls }: { message: ChatMessage; showToolCalls: boolean }) {
   const [copied, setCopied] = useState(false);
   const isUser = message.role === "user";
+  const hasContent = (message.text && message.text.trim().length > 0) || (showToolCalls && message.toolUses && message.toolUses.length > 0);
+  if (!hasContent) return null;
   return (
     <div className={cn("flex gap-2", isUser && "flex-row-reverse")}>
       <div className={cn("h-6 w-6 shrink-0 rounded-full flex items-center justify-center text-[10px] font-semibold",
@@ -1126,9 +1538,9 @@ function ChatBubble({ message }: { message: ChatMessage }) {
         ) : (
           <div className="space-y-1">
             {message.text && <div>{renderText(message.text)}</div>}
-            {message.toolUses && message.toolUses.length > 0 && (
+            {showToolCalls && message.toolUses && message.toolUses.length > 0 && (
               <div className="flex flex-wrap items-center gap-0">
-                {message.toolUses.map((t, i) => <ToolUsePill key={i} name={t.name} />)}
+                {message.toolUses.map((t, i) => <ToolUsePill key={i} name={t.name} input={t.input} expanded />)}
               </div>
             )}
           </div>

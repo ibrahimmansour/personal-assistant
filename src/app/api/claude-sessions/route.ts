@@ -81,9 +81,7 @@ export async function GET(request: NextRequest) {
             try {
               const parsed = JSON.parse(line);
               if (parsed.type === "user" && parsed.message?.content && !firstPrompt) {
-                firstPrompt = typeof parsed.message.content === "string"
-                  ? parsed.message.content.slice(0, 200)
-                  : JSON.stringify(parsed.message.content).slice(0, 200);
+                firstPrompt = extractUserText(parsed.message.content).slice(0, 200);
               }
               if (parsed.type === "user" || parsed.type === "assistant") {
                 messageCount++;
@@ -125,6 +123,27 @@ function decodeProjectDirName(dirName: string): string {
   // Convert "-Users-d067576-projects-personal-assistant" → "/Users/d067576/projects/personal-assistant"
   if (dirName === "-") return "/";
   return dirName.replace(/^-/, "/").replace(/-/g, "/");
+}
+
+// Extract user-facing text from a message.content field that may be a string,
+// an array of typed blocks, or some other shape. Skips tool_result blocks and
+// CLI meta-strings.
+function extractUserText(content: unknown): string {
+  if (typeof content === "string") {
+    if (content.startsWith("<command-name>") || content.startsWith("<local-command-stdout>")) return "";
+    return content;
+  }
+  if (Array.isArray(content)) {
+    const parts: string[] = [];
+    for (const block of content) {
+      if (block && typeof block === "object" && "type" in block) {
+        const b = block as { type: string; text?: string };
+        if (b.type === "text" && typeof b.text === "string") parts.push(b.text);
+      }
+    }
+    return parts.join("\n");
+  }
+  return "";
 }
 
 // ─── POST: Fetch remote VPS sessions or tmux sessions ────────────────────────
@@ -304,6 +323,81 @@ export async function POST(request: NextRequest) {
       return Response.json({ success: archived });
     } catch (err) {
       return Response.json({ error: String(err) }, { status: 500 });
+    }
+  }
+
+  if (action === "list-worktrees") {
+    const { dir } = body as { dir?: string };
+    if (!dir) return Response.json({ worktrees: [], branches: [] });
+    const cwd = dir.startsWith("~") ? join(homedir(), dir.slice(1)) : dir;
+    try {
+      const { stdout } = await execFileAsync("git", ["-C", cwd, "worktree", "list", "--porcelain"], { timeout: 5000 });
+      const worktrees: { path: string; branch?: string; head?: string; bare?: boolean; detached?: boolean }[] = [];
+      let current: { path: string; branch?: string; head?: string; bare?: boolean; detached?: boolean } | null = null;
+      for (const line of stdout.split("\n")) {
+        if (line.startsWith("worktree ")) {
+          if (current) worktrees.push(current);
+          current = { path: line.slice("worktree ".length).trim() };
+        } else if (line.startsWith("HEAD ")) {
+          if (current) current.head = line.slice("HEAD ".length).trim();
+        } else if (line.startsWith("branch ")) {
+          if (current) current.branch = line.slice("branch ".length).trim().replace(/^refs\/heads\//, "");
+        } else if (line === "bare") {
+          if (current) current.bare = true;
+        } else if (line === "detached") {
+          if (current) current.detached = true;
+        }
+      }
+      if (current) worktrees.push(current);
+
+      // Also fetch branches (local + remote)
+      let branches: string[] = [];
+      try {
+        const { stdout: bOut } = await execFileAsync("git", ["-C", cwd, "branch", "-a", "--format=%(refname:short)"], { timeout: 5000 });
+        branches = bOut.split("\n").map((s) => s.trim()).filter(Boolean);
+      } catch {}
+
+      return Response.json({ worktrees, branches });
+    } catch (err) {
+      return Response.json({ worktrees: [], branches: [], error: String(err) });
+    }
+  }
+
+  if (action === "add-worktree") {
+    const { dir, path: wtPath, branch, newBranch } = body as { dir?: string; path?: string; branch?: string; newBranch?: string };
+    if (!dir || !wtPath) return Response.json({ error: "dir and path required" }, { status: 400 });
+    const cwd = dir.startsWith("~") ? join(homedir(), dir.slice(1)) : dir;
+    const wt = wtPath.startsWith("~") ? join(homedir(), wtPath.slice(1)) : wtPath;
+    try {
+      const args = ["-C", cwd, "worktree", "add"];
+      if (newBranch) {
+        args.push("-b", newBranch, wt);
+      } else if (branch) {
+        args.push(wt, branch);
+      } else {
+        args.push(wt);
+      }
+      await execFileAsync("git", args, { timeout: 15000 });
+      return Response.json({ success: true });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return Response.json({ error: msg }, { status: 500 });
+    }
+  }
+
+  if (action === "remove-worktree") {
+    const { dir, path: wtPath, force } = body as { dir?: string; path?: string; force?: boolean };
+    if (!dir || !wtPath) return Response.json({ error: "dir and path required" }, { status: 400 });
+    const cwd = dir.startsWith("~") ? join(homedir(), dir.slice(1)) : dir;
+    try {
+      const args = ["-C", cwd, "worktree", "remove"];
+      if (force) args.push("--force");
+      args.push(wtPath);
+      await execFileAsync("git", args, { timeout: 10000 });
+      return Response.json({ success: true });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return Response.json({ error: msg }, { status: 500 });
     }
   }
 
