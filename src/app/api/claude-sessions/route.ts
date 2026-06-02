@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
-import { readdir, readFile, stat, unlink, mkdir, rename } from "fs/promises";
+import { readdir, readFile, stat, unlink, mkdir, rename, access } from "fs/promises";
+import { constants as fsConstants } from "fs";
 import { join } from "path";
 import { homedir } from "os";
 import { execFile } from "child_process";
@@ -45,7 +46,18 @@ export async function GET(request: NextRequest) {
       try {
         const indexData = JSON.parse(await readFile(indexPath, "utf-8"));
         if (indexData.entries) {
+          // The index can list sessions whose .jsonl was deleted by the CLI.
+          // Surface only entries whose file actually exists on disk —
+          // otherwise the user clicks a phantom session and the chat sits on
+          // "Waiting for first message…" forever because there's nothing to tail.
           for (const entry of indexData.entries) {
+            const claimedPath: string | undefined = entry.fullPath;
+            const candidatePath = claimedPath || join(projectPath, `${entry.sessionId}.jsonl`);
+            try {
+              await access(candidatePath, fsConstants.F_OK);
+            } catch {
+              continue; // file no longer exists — skip the phantom entry
+            }
             allSessions.push({
               sessionId: entry.sessionId,
               summary: entry.summary || "",

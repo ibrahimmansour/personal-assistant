@@ -17,7 +17,13 @@ export interface ChatMessage {
   timestamp: string;
 }
 
-// Parse one JSONL line into a ChatMessage (or null to skip)
+// Parse one JSONL line into a ChatMessage (or null to skip).
+//
+// The CLI logs many entry types (permission-mode, file-history-snapshot,
+// system, last-prompt, attachment, summary, etc). We only surface user and
+// assistant turns that have human-visible text, and we accept several shapes
+// for `message.content` (string, array of typed blocks, or even a stringified
+// JSON array — older versions of the CLI emitted that).
 function parseLine(raw: string): ChatMessage | null {
   let parsed: any;
   try {
@@ -29,20 +35,11 @@ function parseLine(raw: string): ChatMessage | null {
   if (parsed?.type === "user") {
     const msg = parsed.message;
     if (!msg) return null;
-    let text = "";
-    if (typeof msg.content === "string") {
-      text = msg.content;
-    } else if (Array.isArray(msg.content)) {
-      // Filter out tool_result blocks - they are not user-facing
-      const textBlocks = msg.content.filter((b: any) => b?.type === "text");
-      if (textBlocks.length === 0) return null; // pure tool_result turn → skip in chat view
-      text = textBlocks.map((b: any) => b.text || "").join("\n");
-    }
-    if (!text.trim()) return null;
-    // Skip slash-command meta strings like "<command-name>..." that the CLI emits
+    const text = extractTextFromContent(msg.content, /*forUser*/ true);
+    if (!text) return null;
     if (text.startsWith("<command-name>") || text.startsWith("<local-command-stdout>")) return null;
     return {
-      id: parsed.uuid || `u-${parsed.timestamp || Date.now()}`,
+      id: parsed.uuid || `u-${parsed.timestamp || ""}-${Math.random().toString(36).slice(2, 8)}`,
       role: "user",
       text,
       timestamp: parsed.timestamp || "",
@@ -51,20 +48,12 @@ function parseLine(raw: string): ChatMessage | null {
 
   if (parsed?.type === "assistant") {
     const msg = parsed.message;
-    if (!msg || !Array.isArray(msg.content)) return null;
-    const textParts: string[] = [];
-    const toolUses: { name: string; input?: unknown }[] = [];
-    for (const block of msg.content) {
-      if (block?.type === "text" && typeof block.text === "string") {
-        textParts.push(block.text);
-      } else if (block?.type === "tool_use") {
-        toolUses.push({ name: block.name || "tool", input: block.input });
-      }
-    }
-    const text = textParts.join("\n").trim();
+    if (!msg) return null;
+    const text = extractTextFromContent(msg.content, /*forUser*/ false);
+    const toolUses = extractToolUses(msg.content);
     if (!text && toolUses.length === 0) return null;
     return {
-      id: parsed.uuid || msg.id || `a-${parsed.timestamp || Date.now()}`,
+      id: parsed.uuid || msg.id || `a-${parsed.timestamp || ""}-${Math.random().toString(36).slice(2, 8)}`,
       role: "assistant",
       text,
       toolUses: toolUses.length > 0 ? toolUses : undefined,
@@ -73,6 +62,52 @@ function parseLine(raw: string): ChatMessage | null {
   }
 
   return null;
+}
+
+// Pull human-visible text out of a `message.content` field with various shapes.
+function extractTextFromContent(content: unknown, forUser: boolean): string {
+  if (typeof content === "string") {
+    // Some older CLI versions wrap content in a JSON-stringified array.
+    if (content.startsWith("[") && content.includes('"type"')) {
+      try {
+        const arr = JSON.parse(content);
+        if (Array.isArray(arr)) return extractTextFromContent(arr, forUser);
+      } catch {}
+    }
+    return content.trim();
+  }
+  if (Array.isArray(content)) {
+    const parts: string[] = [];
+    for (const block of content) {
+      if (block && typeof block === "object" && "type" in block) {
+        const b = block as { type: string; text?: string };
+        if (b.type === "text" && typeof b.text === "string") parts.push(b.text);
+      }
+    }
+    // For user turns, a turn made entirely of tool_results contributes no
+    // user-visible text and should be skipped (parseLine returns null when
+    // text is empty AND there are no tool_uses for assistants; user turns
+    // with only tool_results return "" here, which parseLine treats as skip).
+    return parts.join("\n").trim();
+  }
+  // Defensive: object with `.text` field
+  if (content && typeof content === "object" && "text" in content) {
+    const t = (content as { text?: unknown }).text;
+    if (typeof t === "string") return t.trim();
+  }
+  return "";
+}
+
+function extractToolUses(content: unknown): { name: string; input?: unknown }[] {
+  const result: { name: string; input?: unknown }[] = [];
+  if (!Array.isArray(content)) return result;
+  for (const block of content) {
+    if (block && typeof block === "object" && (block as { type?: string }).type === "tool_use") {
+      const b = block as { name?: string; input?: unknown };
+      result.push({ name: b.name || "tool", input: b.input });
+    }
+  }
+  return result;
 }
 
 // Find the JSONL path for a sessionId. The sessionId may live in any project dir
@@ -172,7 +207,15 @@ export async function GET(request: NextRequest) {
               buffer = "";
               accumulated.length = 0;
             }
-            if (st.size === offset) return;
+            if (st.size === offset) {
+              // No new bytes since last read. On the *initial* call we still
+              // need to send an empty replace so the client knows we connected
+              // (otherwise the chat sits on "Waiting for first message…").
+              if (initial) {
+                send("messages", { messages: accumulated, replace: true });
+              }
+              return;
+            }
 
             const fd = await fsp.open(path, "r");
             try {
