@@ -119,6 +119,12 @@ function decodeProjectDirName(dirName: string): string {
   return dirName.replace(/^-/, "/").replace(/-/g, "/");
 }
 
+// Quote a string for safe inclusion in a POSIX shell command.
+// Wraps in single quotes and escapes any embedded single quotes.
+function shellQuote(s: string): string {
+  return `'${s.replace(/'/g, `'\\''`)}'`;
+}
+
 function notifySubscribers(state: SessionState) {
   for (const fn of Array.from(state.subscribers)) {
     try { fn(); } catch {}
@@ -246,12 +252,20 @@ async function spawnTerminal(state: SessionState): Promise<boolean> {
     const { WebLinksAddon } = await import("@xterm/addon-web-links");
     await import("@xterm/xterm/css/xterm.css");
 
-    const cmd = state.sessionId
+    // Resolve cwd. Prefer keeping it as-is. The PTY server's cwd handling
+    // requires the path to literally exist via existsSync, so we also build
+    // a `cd <path> && <cmd>` chain as a defensive measure (works even when
+    // pty-server falls back to $HOME because the path can't be statted, e.g.
+    // if it has a tilde or escaped characters).
+    const cwd = state.cwd && state.cwd.trim() ? state.cwd.trim() : "";
+
+    const claudeCmd = state.sessionId
       ? `claude --dangerously-skip-permissions --resume ${state.sessionId}`
       : "claude --dangerously-skip-permissions";
-
-    // Resolve cwd: keep "~" or absolute paths, otherwise no cwd → server uses $HOME.
-    const cwd = state.cwd && state.cwd.trim() ? state.cwd.trim() : "";
+    // Build: cd "<path>" && <claudeCmd>. Skip the cd if cwd is empty.
+    const cmd = cwd
+      ? `cd ${shellQuote(cwd)} && ${claudeCmd}`
+      : claudeCmd;
 
     const theme = getTermTheme();
     const terminal = new Terminal({
@@ -905,25 +919,18 @@ export function ClaudeCodeWidget() {
   }, [activeKey, fetchSessions]);
 
   // ── Filtered sessions ──────────────────────────────────────────────────
-  // When a folder is active, only sessions in that folder (or one of its
-  // worktrees) are shown. Match on the canonical encoded project-dir name
-  // (which is what Claude CLI uses on disk) to avoid ambiguous decoding when
-  // paths contain hyphens. Also accept exact projectPath matches as a
-  // fallback for session-index entries.
-  const allowedFolderPaths: string[] = activeFolder
-    ? [activeFolder, ...worktrees.map((w) => w.path)]
-    : [];
-  const allowedDirNames: Set<string> | null = activeFolder
-    ? new Set(allowedFolderPaths.map((p) => encodeProjectDirName(p)))
-    : null;
-  const allowedPathSet: Set<string> | null = activeFolder
-    ? new Set(allowedFolderPaths)
-    : null;
+  // When a folder is active, show only sessions from that exact folder. Each
+  // worktree is its own folder — to view its sessions, click it (which sets
+  // it as the active folder). This guarantees worktrees are isolated from
+  // each other and from the main checkout. Match on the canonical encoded
+  // project-dir name (Claude CLI's on-disk format) with a fallback to exact
+  // projectPath match.
+  const allowedDirName = activeFolder ? encodeProjectDirName(activeFolder) : null;
 
   const filteredSessions = sessions.filter((s) => {
-    if (allowedDirNames && allowedPathSet) {
-      const dirMatch = s.projectDirName && allowedDirNames.has(s.projectDirName);
-      const pathMatch = s.projectPath && allowedPathSet.has(s.projectPath);
+    if (allowedDirName && activeFolder) {
+      const dirMatch = s.projectDirName === allowedDirName;
+      const pathMatch = s.projectPath === activeFolder;
       if (!dirMatch && !pathMatch) return false;
     }
     if (!searchQuery.trim()) return true;
