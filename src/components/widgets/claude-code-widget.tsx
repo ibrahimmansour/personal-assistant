@@ -906,15 +906,25 @@ export function ClaudeCodeWidget() {
 
   // ── Filtered sessions ──────────────────────────────────────────────────
   // When a folder is active, only sessions in that folder (or one of its
-  // worktrees) are shown. Otherwise show all sessions.
-  const allowedPaths: Set<string> | null = activeFolder
-    ? new Set([activeFolder, ...worktrees.map((w) => w.path)])
+  // worktrees) are shown. Match on the canonical encoded project-dir name
+  // (which is what Claude CLI uses on disk) to avoid ambiguous decoding when
+  // paths contain hyphens. Also accept exact projectPath matches as a
+  // fallback for session-index entries.
+  const allowedFolderPaths: string[] = activeFolder
+    ? [activeFolder, ...worktrees.map((w) => w.path)]
+    : [];
+  const allowedDirNames: Set<string> | null = activeFolder
+    ? new Set(allowedFolderPaths.map((p) => encodeProjectDirName(p)))
+    : null;
+  const allowedPathSet: Set<string> | null = activeFolder
+    ? new Set(allowedFolderPaths)
     : null;
 
   const filteredSessions = sessions.filter((s) => {
-    if (allowedPaths) {
-      const sessionPath = s.projectPath || decodeProjectDirName(s.projectDirName);
-      if (!sessionPath || !allowedPaths.has(sessionPath)) return false;
+    if (allowedDirNames && allowedPathSet) {
+      const dirMatch = s.projectDirName && allowedDirNames.has(s.projectDirName);
+      const pathMatch = s.projectPath && allowedPathSet.has(s.projectPath);
+      if (!dirMatch && !pathMatch) return false;
     }
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
@@ -958,7 +968,7 @@ export function ClaudeCodeWidget() {
                   folder={activeFolder}
                   worktrees={worktrees}
                   branches={branches}
-                  onPick={(path) => startNewSession(path)}
+                  onPick={(path) => selectActiveFolder(path)}
                   onRefresh={() => fetchWorktrees(activeFolder)}
                 />
               )}
@@ -1335,26 +1345,32 @@ function WorktreesSection({
         </button>
       </div>
       <div className="space-y-0.5 max-h-32 overflow-y-auto">
-        {worktrees.map((wt) => (
-          <div
-            key={wt.path}
-            className="group flex items-center gap-1.5 text-[11px] px-1.5 py-1 rounded hover:bg-muted cursor-pointer"
-            onClick={() => onPick(wt.path)}
-            title={wt.path}
-          >
-            <GitBranch className="h-3 w-3 shrink-0 text-muted-foreground" />
-            <span className="flex-1 truncate">{wt.branch || (wt.path.split("/").pop() || wt.path)}</span>
-            {!wt.bare && worktrees.length > 1 && (
-              <button
-                onClick={(e) => { e.stopPropagation(); removeWorktree(wt.path); }}
-                className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity"
-                title="Remove worktree"
-              >
-                <Trash2 className="h-2.5 w-2.5" />
-              </button>
-            )}
-          </div>
-        ))}
+        {worktrees.map((wt) => {
+          const isActive = wt.path === folder;
+          return (
+            <div
+              key={wt.path}
+              className={cn(
+                "group flex items-center gap-1.5 text-[11px] px-1.5 py-1 rounded cursor-pointer",
+                isActive ? "bg-accent text-accent-foreground" : "hover:bg-muted",
+              )}
+              onClick={() => onPick(wt.path)}
+              title={`${wt.path} — click to filter sessions to this worktree`}
+            >
+              <GitBranch className="h-3 w-3 shrink-0 text-muted-foreground" />
+              <span className="flex-1 truncate">{wt.branch || (wt.path.split("/").pop() || wt.path)}</span>
+              {!wt.bare && worktrees.length > 1 && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); removeWorktree(wt.path); }}
+                  className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity"
+                  title="Remove worktree"
+                >
+                  <Trash2 className="h-2.5 w-2.5" />
+                </button>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       {showAdd && (
