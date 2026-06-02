@@ -37,7 +37,10 @@ function parseLine(raw: string): ChatMessage | null {
     if (!msg) return null;
     const text = extractTextFromContent(msg.content, /*forUser*/ true);
     if (!text) return null;
-    if (text.startsWith("<command-name>") || text.startsWith("<local-command-stdout>")) return null;
+    // Skip CLI meta-messages. Claude wraps internal command bookkeeping in
+    // tags like <command-name>, <local-command-stdout>, <local-command-caveat>,
+    // etc. None of these are user-typed and they shouldn't appear in chat.
+    if (isCliMetaText(text)) return null;
     return {
       id: parsed.uuid || `u-${parsed.timestamp || ""}-${Math.random().toString(36).slice(2, 8)}`,
       role: "user",
@@ -62,6 +65,23 @@ function parseLine(raw: string): ChatMessage | null {
   }
 
   return null;
+}
+
+// Detect Claude CLI meta-messages that shouldn't appear in the chat UI.
+// The CLI wraps internal command bookkeeping in tags like
+//   <command-name>, <command-message>, <command-args>,
+//   <local-command-stdout>, <local-command-stderr>, <local-command-caveat>,
+// and the message often begins with one of those tags. We also catch
+// messages that consist *entirely* of one or more wrapped blocks of those
+// tag families with nothing else.
+function isCliMetaText(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) return true;
+  if (/^<(command-[a-z-]+|local-command-[a-z-]+)>/i.test(trimmed)) return true;
+  // Also treat content that's only meta blocks (e.g. wrapped twice) as meta.
+  const stripped = trimmed.replace(/<\/?(command-[a-z-]+|local-command-[a-z-]+)>/gi, "").trim();
+  if (!stripped) return true;
+  return false;
 }
 
 // Pull human-visible text out of a `message.content` field with various shapes.
