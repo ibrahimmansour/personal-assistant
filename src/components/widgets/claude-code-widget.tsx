@@ -93,6 +93,8 @@ interface SessionState {
   pendingPrompts: string[];
   /** True while a terminal is being created (avoid double-spawn). */
   spawningTerminal: boolean;
+  /** Model alias to pass via `--model` when spawning a fresh CLI (ignored for resumes). */
+  model: string | null;
   /** True while we're waiting for an assistant response after the user submitted. */
   waitingForReply: boolean;
   /** ID of the most recent assistant message we've seen — used to detect "new reply arrived". */
@@ -195,6 +197,8 @@ interface OpenSessionOpts {
   /** When set, run `claude --resume <id>` instead of a fresh session. */
   resumeId?: string;
   label?: string;
+  /** Model alias for the new session (`opus`, `sonnet`, `haiku`, ...). Ignored for resumes. */
+  model?: string;
 }
 
 /**
@@ -221,6 +225,7 @@ function openSession(opts: OpenSessionOpts): SessionState {
     sse: null,
     pendingPrompts: [],
     spawningTerminal: false,
+    model: opts.model && opts.model !== "default" ? opts.model : null,
     waitingForReply: false,
     lastAssistantMessageId: null,
     subscribers: new Set(),
@@ -259,9 +264,14 @@ async function spawnTerminal(state: SessionState): Promise<boolean> {
     // if it has a tilde or escaped characters).
     const cwd = state.cwd && state.cwd.trim() ? state.cwd.trim() : "";
 
+    // For resumed sessions, the model is dictated by the saved JSONL — don't
+    // override it via --model. For fresh sessions, pass --model only when the
+    // user has explicitly selected a non-default option; "default" means
+    // "let the CLI use its own saved default".
+    const modelArg = !state.sessionId && state.model ? ` --model ${state.model}` : "";
     const claudeCmd = state.sessionId
       ? `claude --dangerously-skip-permissions --resume ${state.sessionId}`
-      : "claude --dangerously-skip-permissions";
+      : `claude --dangerously-skip-permissions${modelArg}`;
     // Build: cd "<path>" && <claudeCmd>. Skip the cd if cwd is empty.
     const cmd = cwd
       ? `cd ${shellQuote(cwd)} && ${claudeCmd}`
@@ -970,7 +980,7 @@ export function ClaudeCodeWidget() {
       // Make this the active folder for the worktrees panel
       setActiveFolder(cwd);
       try { localStorage.setItem("claude-code-active-folder", cwd); } catch {}
-      const state = openSession({ cwd, label: "New session" });
+      const state = openSession({ cwd, label: "New session", model: selectedModel });
       // For brand-new sessions we spawn the terminal eagerly so the CLI is up
       // and the JSONL gets created.
       spawnTerminal(state);
@@ -980,7 +990,7 @@ export function ClaudeCodeWidget() {
     } finally {
       setCreating(false);
     }
-  }, [persistRecentFolder]);
+  }, [persistRecentFolder, selectedModel]);
 
   // ── Set active folder (persist to localStorage) ────────────────────────
   const selectActiveFolder = useCallback((folder: string | null) => {
