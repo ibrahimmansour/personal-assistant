@@ -1008,8 +1008,15 @@ export function ClaudeCodeWidget() {
                 size="sm"
                 variant="default"
                 className="w-full"
-                onClick={() => setShowFolderPicker(true)}
+                onClick={() => {
+                  // If a folder is already selected, start a session there
+                  // immediately. Only show the picker when there's nothing
+                  // to default to.
+                  if (activeFolder) startNewSession(activeFolder);
+                  else setShowFolderPicker(true);
+                }}
                 disabled={creating}
+                title={activeFolder ? `New session in ${activeFolder}` : "Pick a folder"}
               >
                 {creating ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> : <Plus className="h-3.5 w-3.5 mr-1.5" />}
                 New Session
