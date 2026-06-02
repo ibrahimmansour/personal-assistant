@@ -32,6 +32,8 @@ import {
   Trash2,
   Search,
   GitBranch,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState, useEffect, useRef, useCallback } from "react";
@@ -61,24 +63,20 @@ interface ClaudeSessionInfo {
   projectDirName: string;
 }
 
-interface ClaudeProject {
-  dirName: string;
-  path: string;
-}
-
 interface SessionState {
   /** Stable client-side key. For new sessions we use `pending-<n>`; for resumes we use the sessionId. */
   key: string;
   /** Real Claude session ID once known (matches the JSONL filename). Same as `key` for resumes. */
   sessionId: string | null;
-  /** xterm.Terminal instance */
-  terminal: any;
-  /** xterm FitAddon */
-  fitAddon: any;
-  /** WebSocket to the PTY server */
-  ws: WebSocket;
+  /** xterm.Terminal instance — created lazily when user submits or opens terminal view. */
+  terminal: any | null;
+  /** xterm FitAddon — created with the terminal. */
+  fitAddon: any | null;
+  /** WebSocket to the PTY server — exists only while a terminal is alive. */
+  ws: WebSocket | null;
+  /** Whether the underlying CLI process is currently running. False before terminal is spawned and after exit. */
   alive: boolean;
-  /** Working directory the terminal was launched in */
+  /** Working directory the terminal would be launched in. */
   cwd: string;
   /** Display label */
   label: string;
@@ -90,6 +88,10 @@ interface SessionState {
   messages: ChatMessage[];
   /** SSE EventSource currently tailing the JSONL file. */
   sse: EventSource | null;
+  /** Pending prompts queued while the terminal is being spawned. Sent in order on PTY ready. */
+  pendingPrompts: string[];
+  /** True while a terminal is being created (avoid double-spawn). */
+  spawningTerminal: boolean;
   /** Subscribers that re-render when this session updates. */
   subscribers: Set<() => void>;
 }
@@ -104,9 +106,17 @@ const PTY_WS_URL = typeof window !== "undefined"
   : "ws://localhost:4445";
 
 // Convert an absolute path into the encoded directory name Claude CLI uses.
+// Note: caller should pass an absolute path (not "~"). The CLI expands ~ before
+// computing the encoded name.
 function encodeProjectDirName(absPath: string): string {
   if (!absPath || absPath === "/") return "-";
   return absPath.replace(/\//g, "-");
+}
+
+// Decode "-Users-d067576-projects-personal-assistant" → "/Users/d067576/projects/personal-assistant"
+function decodeProjectDirName(dirName: string): string {
+  if (!dirName || dirName === "-") return "/";
+  return dirName.replace(/^-/, "/").replace(/-/g, "/");
 }
 
 function notifySubscribers(state: SessionState) {
@@ -175,23 +185,73 @@ function getTermTheme() {
 
 // ─── Session creation / lifecycle ────────────────────────────────────────────
 
-interface CreateSessionOpts {
+interface OpenSessionOpts {
   cwd: string;
   /** When set, run `claude --resume <id>` instead of a fresh session. */
   resumeId?: string;
   label?: string;
 }
 
-async function createSession(opts: CreateSessionOpts): Promise<SessionState | null> {
+/**
+ * Open a session — creates the SessionState shell with no terminal.
+ * For RESUMED sessions, attaches the SSE tail immediately so the chat populates.
+ * For NEW sessions, the SSE tail starts only after a terminal is spawned and
+ * the JSONL file appears on disk (because there is no session ID yet).
+ */
+function openSession(opts: OpenSessionOpts): SessionState {
+  const key = opts.resumeId || `pending-${pendingCounter++}`;
+
+  const state: SessionState = {
+    key,
+    sessionId: opts.resumeId || null,
+    terminal: null,
+    fitAddon: null,
+    ws: null,
+    alive: false, // becomes true once the terminal is spawned
+    cwd: opts.cwd,
+    label: opts.label || (opts.resumeId ? `Resumed ${opts.resumeId.slice(0, 8)}` : "New session"),
+    isResume: !!opts.resumeId,
+    projectDirName: encodeProjectDirName(opts.cwd),
+    messages: [],
+    sse: null,
+    pendingPrompts: [],
+    spawningTerminal: false,
+    subscribers: new Set(),
+  };
+
+  sessionStore.set(state.key, state);
+
+  if (state.sessionId) {
+    attachSse(state);
+  }
+
+  return state;
+}
+
+/**
+ * Lazily create the PTY terminal for a session. If already alive or being
+ * spawned, this is a no-op. After the PTY is open, any queued
+ * `pendingPrompts` are flushed to the terminal in order.
+ */
+async function spawnTerminal(state: SessionState): Promise<boolean> {
+  if (state.alive || state.spawningTerminal) return state.alive;
+  if (state.ws) return false; // there's already an exited terminal — ignore
+
+  state.spawningTerminal = true;
+  notifySubscribers(state);
+
   try {
     const { Terminal } = await import("@xterm/xterm");
     const { FitAddon } = await import("@xterm/addon-fit");
     const { WebLinksAddon } = await import("@xterm/addon-web-links");
     await import("@xterm/xterm/css/xterm.css");
 
-    const cmd = opts.resumeId
-      ? `claude --dangerously-skip-permissions --resume ${opts.resumeId}`
+    const cmd = state.sessionId
+      ? `claude --dangerously-skip-permissions --resume ${state.sessionId}`
       : "claude --dangerously-skip-permissions";
+
+    // Resolve cwd: keep "~" or absolute paths, otherwise no cwd → server uses $HOME.
+    const cwd = state.cwd && state.cwd.trim() ? state.cwd.trim() : "";
 
     const theme = getTermTheme();
     const terminal = new Terminal({
@@ -218,28 +278,15 @@ async function createSession(opts: CreateSessionOpts): Promise<SessionState | nu
     document.body.removeChild(tmpDiv);
 
     const wsUrl = new URL(PTY_WS_URL);
-    wsUrl.searchParams.set("cwd", opts.cwd);
+    if (cwd) wsUrl.searchParams.set("cwd", cwd);
     wsUrl.searchParams.set("cmd", cmd);
 
     const ws = new WebSocket(wsUrl.toString());
 
-    const key = opts.resumeId || `pending-${pendingCounter++}`;
-
-    const state: SessionState = {
-      key,
-      sessionId: opts.resumeId || null,
-      terminal,
-      fitAddon,
-      ws,
-      alive: true,
-      cwd: opts.cwd,
-      label: opts.label || (opts.resumeId ? `Resumed ${opts.resumeId.slice(0, 8)}` : "New session"),
-      isResume: !!opts.resumeId,
-      projectDirName: encodeProjectDirName(opts.cwd),
-      messages: [],
-      sse: null,
-      subscribers: new Set(),
-    };
+    state.terminal = terminal;
+    state.fitAddon = fitAddon;
+    state.ws = ws;
+    state.alive = true;
 
     ws.onopen = () => {
       try {
@@ -247,6 +294,18 @@ async function createSession(opts: CreateSessionOpts): Promise<SessionState | nu
         const dims = fitAddon.proposeDimensions();
         if (dims) ws.send(JSON.stringify({ type: "resize", cols: dims.cols, rows: dims.rows }));
       } catch {}
+
+      // Flush queued prompts after the CLI has had a moment to start its TUI.
+      // The CLI needs a few hundred ms before it accepts input on the prompt line.
+      const flushQueue = () => {
+        if (!state.pendingPrompts.length) return;
+        for (const p of state.pendingPrompts) {
+          try { ws.send(JSON.stringify({ type: "input", data: p })); } catch {}
+        }
+        state.pendingPrompts = [];
+        notifySubscribers(state);
+      };
+      setTimeout(flushQueue, 1500);
     };
 
     ws.onmessage = (event) => {
@@ -280,20 +339,19 @@ async function createSession(opts: CreateSessionOpts): Promise<SessionState | nu
       }
     });
 
-    sessionStore.set(state.key, state);
-
-    // For resume sessions we know the sessionId immediately — start tailing now.
-    if (state.sessionId) {
-      attachSse(state);
-    } else {
-      // For new sessions we need to wait until the JSONL appears. Poll the project dir.
+    // For NEW sessions, kick off polling for the new JSONL file so SSE can attach.
+    if (!state.sessionId) {
       pollForNewSessionId(state);
     }
 
-    return state;
+    state.spawningTerminal = false;
+    notifySubscribers(state);
+    return true;
   } catch (err) {
-    console.error("[claude-code-widget] createSession failed:", err);
-    return null;
+    console.error("[claude-code-widget] spawnTerminal failed:", err);
+    state.spawningTerminal = false;
+    notifySubscribers(state);
+    return false;
   }
 }
 
@@ -313,7 +371,9 @@ async function pollForNewSessionId(state: SessionState) {
   let attempts = 0;
   const interval = setInterval(async () => {
     attempts++;
-    if (!state.alive || state.sessionId || attempts > 120) {
+    // Stop if the session has been resolved already, or we've been polling for 2 minutes,
+    // or the session was destroyed.
+    if (state.sessionId || attempts > 120 || !sessionStore.has(state.key)) {
       clearInterval(interval);
       return;
     }
@@ -373,9 +433,25 @@ function attachSse(state: SessionState) {
   };
 }
 
-function pasteIntoTerminal(state: SessionState, text: string) {
-  if (!state.alive || state.ws.readyState !== WebSocket.OPEN) return false;
-  state.ws.send(JSON.stringify({ type: "input", data: text }));
+/**
+ * Submit a prompt to the session. If the terminal is alive, paste directly.
+ * Otherwise, queue the prompt and lazily spawn the terminal — pending prompts
+ * are flushed once the PTY is ready.
+ */
+async function submitPrompt(state: SessionState, text: string): Promise<boolean> {
+  const payload = text.endsWith("\r") ? text : text + "\r";
+
+  if (state.alive && state.ws && state.ws.readyState === WebSocket.OPEN) {
+    state.ws.send(JSON.stringify({ type: "input", data: payload }));
+    return true;
+  }
+
+  // Queue the prompt and ensure a terminal is being spawned.
+  state.pendingPrompts.push(payload);
+  notifySubscribers(state);
+  if (!state.spawningTerminal && !state.alive) {
+    spawnTerminal(state);
+  }
   return true;
 }
 
@@ -383,10 +459,21 @@ function destroySession(key: string) {
   const state = sessionStore.get(key);
   if (!state) return;
   try { state.sse?.close(); } catch {}
-  try { state.ws.close(); } catch {}
-  try { state.terminal.dispose(); } catch {}
+  try { state.ws?.close(); } catch {}
+  try { state.terminal?.dispose(); } catch {}
   state.subscribers.clear();
   sessionStore.delete(key);
+}
+
+/** Stop just the terminal/PTY for this session, keeping chat & SSE alive. */
+function stopTerminal(state: SessionState) {
+  try { state.ws?.close(); } catch {}
+  try { state.terminal?.dispose(); } catch {}
+  state.terminal = null;
+  state.fitAddon = null;
+  state.ws = null;
+  state.alive = false;
+  notifySubscribers(state);
 }
 
 // ─── Subscribe-hook for a single session ─────────────────────────────────────
@@ -431,20 +518,46 @@ function summarizeToolInput(name: string, input: unknown): string {
   return "";
 }
 
-function ToolUsePill({ name, input, expanded }: { name: string; input?: unknown; expanded: boolean }) {
+function ToolUsePill({ name, input }: { name: string; input?: unknown }) {
+  const [open, setOpen] = useState(false);
   const summary = summarizeToolInput(name, input);
+  const hasDetails = input !== undefined && input !== null;
+
+  let pretty = "";
+  if (hasDetails) {
+    try {
+      pretty = JSON.stringify(input, null, 2);
+    } catch {
+      pretty = String(input);
+    }
+  }
+
   return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded bg-muted/60 text-muted-foreground border border-border/60 mr-1 mt-1",
-        expanded ? "max-w-full" : "max-w-[280px]"
-      )}
-      title={summary || name}
-    >
-      <Wrench className="h-2.5 w-2.5 shrink-0" />
-      <span className="font-medium">{name}</span>
-      {summary && (
-        <span className="font-mono text-[10px] truncate opacity-80">{summary}</span>
+    <span className="inline-flex flex-col items-stretch mr-1 mt-1 max-w-full">
+      <button
+        type="button"
+        onClick={() => hasDetails && setOpen((v) => !v)}
+        className={cn(
+          "inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded bg-muted/60 text-muted-foreground border border-border/60",
+          hasDetails && "hover:bg-muted cursor-pointer",
+          !hasDetails && "cursor-default",
+        )}
+        title={summary || name}
+      >
+        {hasDetails ? (
+          open ? <ChevronDown className="h-2.5 w-2.5 shrink-0" /> : <ChevronRight className="h-2.5 w-2.5 shrink-0" />
+        ) : (
+          <Wrench className="h-2.5 w-2.5 shrink-0" />
+        )}
+        <span className="font-medium">{name}</span>
+        {summary && (
+          <span className={cn("font-mono text-[10px] opacity-80", open ? "" : "truncate max-w-[260px]")}>{summary}</span>
+        )}
+      </button>
+      {open && hasDetails && (
+        <pre className="mt-1 px-2 py-1.5 rounded bg-background/60 border border-border/60 text-[10px] font-mono overflow-x-auto whitespace-pre-wrap break-words">
+          {pretty}
+        </pre>
       )}
     </span>
   );
@@ -605,8 +718,6 @@ export function ClaudeCodeWidget() {
 
   // Sessions list (from disk)
   const [sessions, setSessions] = useState<ClaudeSessionInfo[]>([]);
-  const [projects, setProjects] = useState<ClaudeProject[]>([]);
-  const [projectFilter, setProjectFilter] = useState<string | null>(null);
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -637,21 +748,21 @@ export function ClaudeCodeWidget() {
   }, []);
 
   // ── Fetch session list ─────────────────────────────────────────────────
+  // When `activeFolder` is set, only sessions whose project dir matches that
+  // folder (or one of its worktrees) are returned.
   const fetchSessions = useCallback(async () => {
     setSessionsLoading(true);
     try {
-      const url = projectFilter
-        ? `/api/claude-sessions?project=${encodeURIComponent(projectFilter)}`
-        : "/api/claude-sessions";
-      const res = await fetch(url);
+      // Always pull the global list (the API only filters by exact project
+      // dirname, but the user-facing filter is "this folder + its worktrees").
+      const res = await fetch("/api/claude-sessions");
       if (res.ok) {
         const data = await res.json();
         setSessions(data.sessions || []);
-        setProjects(data.projects || []);
       }
     } catch {}
     setSessionsLoading(false);
-  }, [projectFilter]);
+  }, []);
 
   useEffect(() => {
     fetchSessions();
@@ -669,7 +780,7 @@ export function ClaudeCodeWidget() {
     const observer = new MutationObserver(() => {
       const theme = getTermTheme();
       for (const s of sessionStore.values()) {
-        try { s.terminal.options.theme = theme; } catch {}
+        try { if (s.terminal) s.terminal.options.theme = theme; } catch {}
       }
     });
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
@@ -684,12 +795,13 @@ export function ClaudeCodeWidget() {
       // Make this the active folder for the worktrees panel
       setActiveFolder(cwd);
       try { localStorage.setItem("claude-code-active-folder", cwd); } catch {}
-      const state = await createSession({ cwd, label: "New session" });
-      if (state) {
-        setActiveKey(state.key);
-        setView("chat");
-        setShowFolderPicker(false);
-      }
+      const state = openSession({ cwd, label: "New session" });
+      // For brand-new sessions we spawn the terminal eagerly so the CLI is up
+      // and the JSONL gets created.
+      spawnTerminal(state);
+      setActiveKey(state.key);
+      setView("chat");
+      setShowFolderPicker(false);
     } finally {
       setCreating(false);
     }
@@ -735,9 +847,11 @@ export function ClaudeCodeWidget() {
     }
   }, [activeFolder, fetchWorktrees]);
 
-  // ── Resume an existing session in its original cwd ────────────────────
-  const resumeSession = useCallback(async (s: ClaudeSessionInfo) => {
-    // If a session with this id is already running in our store, just switch to it.
+  // ── Resume an existing session: open the chat view from JSONL only.
+  // Terminal is NOT spawned here — it's spawned lazily when the user submits
+  // a prompt or clicks the Terminal toggle.
+  const resumeSession = useCallback((s: ClaudeSessionInfo) => {
+    // If a session with this id is already in our store, just switch to it.
     const existing = sessionStore.get(s.sessionId);
     if (existing) {
       setActiveKey(existing.key);
@@ -745,18 +859,28 @@ export function ClaudeCodeWidget() {
       return;
     }
 
-    setCreating(true);
-    try {
-      const cwd = s.projectPath || "~";
-      const label = s.summary || s.firstPrompt?.slice(0, 30) || s.sessionId.slice(0, 8);
-      const state = await createSession({ cwd, resumeId: s.sessionId, label });
-      if (state) {
-        setActiveKey(state.key);
-        setView("chat");
-      }
-    } finally {
-      setCreating(false);
+    // Resolve a usable cwd. Prefer the explicit projectPath; fall back to
+    // decoding the project directory name. Default to home only if both fail.
+    let cwd = (s.projectPath && s.projectPath.trim()) || "";
+    if (!cwd && s.projectDirName) {
+      const decoded = decodeProjectDirName(s.projectDirName);
+      if (decoded && decoded !== "/") cwd = decoded;
     }
+    if (!cwd) cwd = "~";
+
+    const label = s.summary || s.firstPrompt?.slice(0, 30) || s.sessionId.slice(0, 8);
+    const state = openSession({ cwd, resumeId: s.sessionId, label });
+    // Make sure projectDirName matches the JSONL location (the API gives us
+    // the dir name explicitly; it may differ from the encoded cwd).
+    if (s.projectDirName) {
+      state.projectDirName = s.projectDirName;
+      // Restart SSE in case it was attached with a wrong projectDirName hint.
+      try { state.sse?.close(); } catch {}
+      state.sse = null;
+      attachSse(state);
+    }
+    setActiveKey(state.key);
+    setView("chat");
   }, []);
 
   const closeActiveSession = useCallback(() => {
@@ -781,7 +905,17 @@ export function ClaudeCodeWidget() {
   }, [activeKey, fetchSessions]);
 
   // ── Filtered sessions ──────────────────────────────────────────────────
+  // When a folder is active, only sessions in that folder (or one of its
+  // worktrees) are shown. Otherwise show all sessions.
+  const allowedPaths: Set<string> | null = activeFolder
+    ? new Set([activeFolder, ...worktrees.map((w) => w.path)])
+    : null;
+
   const filteredSessions = sessions.filter((s) => {
+    if (allowedPaths) {
+      const sessionPath = s.projectPath || decodeProjectDirName(s.projectDirName);
+      if (!sessionPath || !allowedPaths.has(sessionPath)) return false;
+    }
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
     return (
@@ -838,23 +972,20 @@ export function ClaudeCodeWidget() {
                   className="pl-7 h-7 text-xs"
                 />
               </div>
-
-              {projects.length > 0 && (
-                <select
-                  value={projectFilter || ""}
-                  onChange={(e) => setProjectFilter(e.target.value || null)}
-                  className="w-full text-xs px-2 py-1 rounded border border-border bg-background"
-                >
-                  <option value="">All projects</option>
-                  {projects.map((p) => (
-                    <option key={p.dirName} value={p.dirName}>{p.path || p.dirName}</option>
-                  ))}
-                </select>
-              )}
             </div>
 
             <ScrollArea className="flex-1 min-h-0">
               <div className="px-2 pb-2 space-y-1">
+                <div className="flex items-center justify-between pt-1 pb-0.5">
+                  <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
+                    Sessions
+                  </span>
+                  <span className="text-[10px] text-muted-foreground">
+                    {activeFolder
+                      ? `${filteredSessions.length} in folder`
+                      : `${filteredSessions.length} total`}
+                  </span>
+                </div>
                 {sessionsLoading && sessions.length === 0 && (
                   <div className="text-xs text-muted-foreground py-4 text-center">
                     <Loader2 className="h-3.5 w-3.5 animate-spin inline mr-1.5" />
@@ -863,7 +994,7 @@ export function ClaudeCodeWidget() {
                 )}
                 {!sessionsLoading && filteredSessions.length === 0 && (
                   <div className="text-xs text-muted-foreground py-4 text-center">
-                    No sessions
+                    {activeFolder ? "No sessions in this folder" : "No sessions"}
                   </div>
                 )}
                 {filteredSessions.map((s) => {
@@ -1446,14 +1577,12 @@ function ChatView({ state, showToolCalls }: { state: SessionState; showToolCalls
 
   const send = useCallback(() => {
     const text = input.trim();
-    if (!text || !state.alive) return;
+    if (!text) return;
     setSending(true);
-    // Paste prompt + ENTER. Claude CLI's TUI will receive each char and submit on \r.
-    const ok = pasteIntoTerminal(state, text + "\r");
-    if (ok) {
-      setInput("");
-      setWaiting(true);
-    }
+    // Submit prompt: pastes into a live terminal, or queues + lazily spawns one.
+    submitPrompt(state, text + "\r");
+    setInput("");
+    setWaiting(true);
     setSending(false);
   }, [input, state]);
 
@@ -1471,7 +1600,13 @@ function ChatView({ state, showToolCalls }: { state: SessionState; showToolCalls
             {state.messages.map((m) => (
               <ChatBubble key={m.id} message={m} showToolCalls={showToolCalls} />
             ))}
-            {waiting && <ThinkingIndicator />}
+            {waiting && (
+              <ThinkingIndicator
+                label={state.spawningTerminal || (!state.alive && state.pendingPrompts.length > 0)
+                  ? "Starting Claude…"
+                  : undefined}
+              />
+            )}
           </div>
         )}
       </div>
@@ -1487,16 +1622,24 @@ function ChatView({ state, showToolCalls }: { state: SessionState; showToolCalls
                 send();
               }
             }}
-            placeholder={state.alive ? "Send a message to Claude…" : "Session ended"}
-            disabled={!state.alive || sending}
+            placeholder={
+              state.alive
+                ? "Send a message to Claude…"
+                : state.spawningTerminal
+                ? "Starting Claude…"
+                : state.ws
+                ? "Session ended"
+                : "Send a message — the CLI will start when you submit"
+            }
+            disabled={sending || (state.ws !== null && !state.alive)}
             rows={1}
             className="flex-1 resize-none px-2 py-1.5 text-sm rounded-md border border-border bg-background min-h-[36px] max-h-[120px] focus:outline-none focus:ring-1 focus:ring-primary/40"
           />
-          <Button size="sm" onClick={send} disabled={!input.trim() || !state.alive}>
+          <Button size="sm" onClick={send} disabled={!input.trim() || (state.ws !== null && !state.alive)}>
             <Send className="h-3.5 w-3.5" />
           </Button>
         </div>
-        {!state.alive && (
+        {state.ws !== null && !state.alive && !state.spawningTerminal && (
           <div className="text-[10px] text-muted-foreground mt-1">
             The Claude process exited. Close and start a new session.
           </div>
@@ -1506,7 +1649,7 @@ function ChatView({ state, showToolCalls }: { state: SessionState; showToolCalls
   );
 }
 
-function ThinkingIndicator() {
+function ThinkingIndicator({ label }: { label?: string }) {
   return (
     <div className="flex gap-2">
       <div className="h-6 w-6 shrink-0 rounded-full flex items-center justify-center bg-muted">
@@ -1514,7 +1657,7 @@ function ThinkingIndicator() {
       </div>
       <div className="rounded-lg px-3 py-2 bg-muted text-sm text-muted-foreground inline-flex items-center gap-1.5">
         <Loader2 className="h-3 w-3 animate-spin" />
-        <span className="text-xs">Claude is thinking…</span>
+        <span className="text-xs">{label || "Claude is thinking…"}</span>
       </div>
     </div>
   );
@@ -1539,8 +1682,8 @@ function ChatBubble({ message, showToolCalls }: { message: ChatMessage; showTool
           <div className="space-y-1">
             {message.text && <div>{renderText(message.text)}</div>}
             {showToolCalls && message.toolUses && message.toolUses.length > 0 && (
-              <div className="flex flex-wrap items-center gap-0">
-                {message.toolUses.map((t, i) => <ToolUsePill key={i} name={t.name} input={t.input} expanded />)}
+              <div className="flex flex-wrap items-stretch gap-0">
+                {message.toolUses.map((t, i) => <ToolUsePill key={i} name={t.name} input={t.input} />)}
               </div>
             )}
           </div>
@@ -1573,32 +1716,40 @@ function TerminalView({ state }: { state: SessionState }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const roRef = useRef<ResizeObserver | null>(null);
 
-  // Mount/unmount: move xterm element in/out of the visible container
+  // If the terminal isn't running yet, spawn it now (lazily on first view).
+  useEffect(() => {
+    if (!state.terminal && !state.spawningTerminal && !state.ws) {
+      spawnTerminal(state);
+    }
+  }, [state]);
+
+  // Mount/unmount: move xterm element in/out of the visible container.
+  // Re-runs whenever the underlying terminal instance changes (i.e. after
+  // a lazy spawn completes).
   useEffect(() => {
     const container = containerRef.current;
-    if (!container) return;
+    if (!container || !state.terminal) return;
+
     const xtermEl = state.terminal.element as HTMLElement | undefined;
-    if (xtermEl) {
-      container.appendChild(xtermEl);
-    }
+    if (xtermEl) container.appendChild(xtermEl);
 
     requestAnimationFrame(() => {
       try {
-        state.fitAddon.fit();
-        const dims = state.fitAddon.proposeDimensions();
-        if (dims && state.ws.readyState === WebSocket.OPEN) {
+        state.fitAddon?.fit();
+        const dims = state.fitAddon?.proposeDimensions();
+        if (dims && state.ws && state.ws.readyState === WebSocket.OPEN) {
           state.ws.send(JSON.stringify({ type: "resize", cols: dims.cols, rows: dims.rows }));
         }
       } catch {}
-      try { state.terminal.focus(); } catch {}
+      try { state.terminal?.focus(); } catch {}
     });
 
     const ro = new ResizeObserver(() => {
       requestAnimationFrame(() => {
         try {
-          state.fitAddon.fit();
-          const dims = state.fitAddon.proposeDimensions();
-          if (dims && state.ws.readyState === WebSocket.OPEN) {
+          state.fitAddon?.fit();
+          const dims = state.fitAddon?.proposeDimensions();
+          if (dims && state.ws && state.ws.readyState === WebSocket.OPEN) {
             state.ws.send(JSON.stringify({ type: "resize", cols: dims.cols, rows: dims.rows }));
           }
         } catch {}
@@ -1614,7 +1765,16 @@ function TerminalView({ state }: { state: SessionState }) {
         container.removeChild(xtermEl);
       }
     };
-  }, [state]);
+  }, [state, state.terminal]);
+
+  if (!state.terminal) {
+    return (
+      <div className="h-full w-full flex items-center justify-center text-xs text-muted-foreground gap-2">
+        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        {state.spawningTerminal ? "Starting Claude…" : "Preparing terminal…"}
+      </div>
+    );
+  }
 
   return (
     <div
