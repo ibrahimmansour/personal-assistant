@@ -35,6 +35,7 @@ import {
   ChevronDown,
   ChevronRight,
   Sparkles,
+  Palette,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState, useEffect, useRef, useCallback } from "react";
@@ -682,6 +683,71 @@ function ToolUsePill({ name, input }: { name: string; input?: unknown }) {
   );
 }
 
+// ─── Chat themes ─────────────────────────────────────────────────────────────
+
+type ChatTheme = "default" | "bubbles" | "compact" | "terminal" | "document";
+
+const THEME_OPTIONS: { value: ChatTheme; label: string; description: string }[] = [
+  { value: "default", label: "Default", description: "Rounded bubbles, classic shadcn look" },
+  { value: "bubbles", label: "Bubbles", description: "Chat-app style — fuller rounding, grouped messages" },
+  { value: "compact", label: "Compact", description: "Dense, no avatars, glyph-only role markers" },
+  { value: "terminal", label: "Terminal", description: "Monospaced, ASCII prompts ($/>) on every line" },
+  { value: "document", label: "Document", description: "Transcript style — full-width, role labels" },
+];
+
+function ThemePicker({
+  value,
+  onChange,
+}: {
+  value: ChatTheme;
+  onChange: (v: ChatTheme) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const onClick = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    if (open) document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, [open]);
+
+  const current = THEME_OPTIONS.find((t) => t.value === value) || THEME_OPTIONS[0];
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1 px-2 h-7 text-xs rounded-md hover:bg-muted text-muted-foreground hover:text-foreground"
+        title={`Theme: ${current.label}`}
+      >
+        <Palette className="h-3 w-3" />
+        <ChevronDown className="h-3 w-3" />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 z-20 w-64 rounded-md border border-border bg-popover shadow-md py-1">
+          {THEME_OPTIONS.map((t) => (
+            <button
+              key={t.value}
+              type="button"
+              onClick={() => { onChange(t.value); setOpen(false); }}
+              className={cn(
+                "w-full text-left px-2 py-1.5 hover:bg-accent flex flex-col gap-0.5",
+                t.value === value && "bg-accent",
+              )}
+            >
+              <span className="text-xs font-medium">{t.label}</span>
+              <span className="text-[10px] text-muted-foreground">{t.description}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Model picker ────────────────────────────────────────────────────────────
 
 const MODEL_OPTIONS: { value: string; label: string; description: string }[] = [
@@ -905,6 +971,20 @@ export function ClaudeCodeWidget() {
     if (typeof window === "undefined") return "default";
     return localStorage.getItem("claude-code-model") || "default";
   });
+
+  // Chat UI theme. Pure visual preference, persisted locally.
+  const [chatTheme, setChatTheme] = useState<ChatTheme>(() => {
+    if (typeof window === "undefined") return "default";
+    const v = localStorage.getItem("claude-code-chat-theme");
+    if (v && ["default", "bubbles", "compact", "terminal", "document"].includes(v)) {
+      return v as ChatTheme;
+    }
+    return "default";
+  });
+  const updateChatTheme = useCallback((t: ChatTheme) => {
+    setChatTheme(t);
+    try { localStorage.setItem("claude-code-chat-theme", t); } catch {}
+  }, []);
 
   // Active folder + worktrees
   const [activeFolder, setActiveFolder] = useState<string | null>(() => {
@@ -1315,6 +1395,10 @@ export function ClaudeCodeWidget() {
             {active && (
               <>
                 {view === "chat" && (
+                  <ThemePicker value={chatTheme} onChange={updateChatTheme} />
+                )}
+
+                {view === "chat" && (
                   <ModelPicker
                     value={selectedModel}
                     onChange={setSelectedModel}
@@ -1389,7 +1473,7 @@ export function ClaudeCodeWidget() {
             ) : !active ? (
               <EmptyState onNew={() => setShowFolderPicker(true)} />
             ) : view === "chat" ? (
-              <ChatView state={active} showToolCalls={showToolCalls} />
+              <ChatView state={active} showToolCalls={showToolCalls} theme={chatTheme} />
             ) : (
               <TerminalView state={active} />
             )}
@@ -1800,7 +1884,15 @@ function FolderPickerPanel({ value, onChange, recent, onPick, onClose }: FolderP
 
 // ─── Chat view ───────────────────────────────────────────────────────────────
 
-function ChatView({ state, showToolCalls }: { state: SessionState; showToolCalls: boolean }) {
+function ChatView({
+  state,
+  showToolCalls,
+  theme,
+}: {
+  state: SessionState;
+  showToolCalls: boolean;
+  theme: ChatTheme;
+}) {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -1821,29 +1913,59 @@ function ChatView({ state, showToolCalls }: { state: SessionState; showToolCalls
     const text = input.trim();
     if (!text) return;
     setSending(true);
-    // Submit prompt: pastes into a live terminal, or queues + lazily spawns one.
-    // submitPrompt also sets state.waitingForReply on the session.
     submitPrompt(state, text + "\r");
     setInput("");
     setSending(false);
   }, [input, state]);
 
+  // Spacing between messages depends on theme.
+  const listSpacing = theme === "compact"
+    ? "space-y-1"
+    : theme === "terminal"
+    ? "space-y-1.5"
+    : theme === "document"
+    ? "space-y-4"
+    : "space-y-3";
+
+  // Visible (non-empty) messages — used to drive avatar-grouping.
+  const visibleMessages = state.messages.filter((m) => {
+    return (m.text && m.text.trim().length > 0) || (showToolCalls && m.toolUses && m.toolUses.length > 0);
+  });
+
   return (
     <div className="h-full flex flex-col">
-      <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto px-3 py-2">
-        {state.messages.length === 0 ? (
+      <div ref={scrollRef} className={cn(
+        "flex-1 min-h-0 overflow-y-auto",
+        theme === "terminal" ? "px-3 py-2 bg-card/40 font-mono" : "px-3 py-2",
+        theme === "document" && "px-6 py-4 max-w-3xl mx-auto w-full",
+      )}>
+        {visibleMessages.length === 0 ? (
           <div className="h-full flex items-center justify-center text-xs text-muted-foreground">
             {state.sessionId
               ? "Waiting for first message…"
               : "Starting Claude — first message will appear here once Claude responds…"}
           </div>
         ) : (
-          <div className="space-y-3">
-            {state.messages.map((m) => (
-              <ChatBubble key={m.id} message={m} showToolCalls={showToolCalls} />
-            ))}
+          <div className={listSpacing}>
+            {visibleMessages.map((m, idx) => {
+              // Hide avatar for consecutive same-role messages in themes that
+              // benefit from grouping (bubbles, document). Other themes ignore
+              // the prop.
+              const prev = idx > 0 ? visibleMessages[idx - 1] : null;
+              const showAvatar = !prev || prev.role !== m.role;
+              return (
+                <ChatBubble
+                  key={m.id}
+                  message={m}
+                  showToolCalls={showToolCalls}
+                  theme={theme}
+                  showAvatar={showAvatar}
+                />
+              );
+            })}
             {waiting && (
               <ThinkingIndicator
+                theme={theme}
                 label={state.spawningTerminal || (!state.alive && state.pendingPrompts.length > 0)
                   ? "Starting Claude…"
                   : undefined}
@@ -1875,7 +1997,10 @@ function ChatView({ state, showToolCalls }: { state: SessionState; showToolCalls
             }
             disabled={sending || (state.ws !== null && !state.alive)}
             rows={1}
-            className="flex-1 resize-none px-2 py-1.5 text-sm rounded-md border border-border bg-background min-h-[36px] max-h-[120px] focus:outline-none focus:ring-1 focus:ring-primary/40"
+            className={cn(
+              "flex-1 resize-none px-2 py-1.5 text-sm rounded-md border border-border bg-background min-h-[36px] max-h-[120px] focus:outline-none focus:ring-1 focus:ring-primary/40",
+              theme === "terminal" && "font-mono",
+            )}
           />
           <Button size="sm" onClick={send} disabled={!input.trim() || (state.ws !== null && !state.alive)}>
             <Send className="h-3.5 w-3.5" />
@@ -1891,13 +2016,46 @@ function ChatView({ state, showToolCalls }: { state: SessionState; showToolCalls
   );
 }
 
-function ThinkingIndicator({ label }: { label?: string }) {
+function ThinkingIndicator({ label, theme }: { label?: string; theme?: ChatTheme }) {
+  const t = theme || "default";
+  if (t === "terminal") {
+    return (
+      <div className="font-mono text-xs text-muted-foreground flex items-center gap-1.5 py-0.5">
+        <Loader2 className="h-3 w-3 animate-spin" />
+        <span>{label || "claude is thinking…"}</span>
+      </div>
+    );
+  }
+  if (t === "document") {
+    return (
+      <div className="text-xs text-muted-foreground italic flex items-center gap-1.5 py-1">
+        <Loader2 className="h-3 w-3 animate-spin" />
+        <span>{label || "Claude is thinking…"}</span>
+      </div>
+    );
+  }
+  if (t === "compact") {
+    return (
+      <div className="text-xs text-muted-foreground flex items-center gap-1.5 px-1 py-0.5">
+        <Loader2 className="h-3 w-3 animate-spin" />
+        <span>{label || "thinking…"}</span>
+      </div>
+    );
+  }
+  // default + bubbles
+  const isBubbles = t === "bubbles";
   return (
     <div className="flex gap-2">
-      <div className="h-6 w-6 shrink-0 rounded-full flex items-center justify-center bg-muted">
+      <div className={cn(
+        "h-6 w-6 shrink-0 rounded-full flex items-center justify-center bg-muted",
+        isBubbles && "h-7 w-7"
+      )}>
         <Bot className="h-3.5 w-3.5" />
       </div>
-      <div className="rounded-lg px-3 py-2 bg-muted text-sm text-muted-foreground inline-flex items-center gap-1.5">
+      <div className={cn(
+        "px-3 py-2 bg-muted text-sm text-muted-foreground inline-flex items-center gap-1.5",
+        isBubbles ? "rounded-2xl rounded-tl-sm" : "rounded-lg",
+      )}>
         <Loader2 className="h-3 w-3 animate-spin" />
         <span className="text-xs">{label || "Claude is thinking…"}</span>
       </div>
@@ -1905,48 +2063,154 @@ function ThinkingIndicator({ label }: { label?: string }) {
   );
 }
 
-function ChatBubble({ message, showToolCalls }: { message: ChatMessage; showToolCalls: boolean }) {
+function ChatBubble({
+  message,
+  showToolCalls,
+  theme,
+  showAvatar,
+}: {
+  message: ChatMessage;
+  showToolCalls: boolean;
+  theme: ChatTheme;
+  /** When false, avatar is hidden (used by themes that group consecutive same-role messages). */
+  showAvatar: boolean;
+}) {
   const [copied, setCopied] = useState(false);
   const isUser = message.role === "user";
   const hasContent = (message.text && message.text.trim().length > 0) || (showToolCalls && message.toolUses && message.toolUses.length > 0);
   if (!hasContent) return null;
-  return (
-    <div className={cn("flex gap-2", isUser && "flex-row-reverse")}>
-      <div className={cn("h-6 w-6 shrink-0 rounded-full flex items-center justify-center text-[10px] font-semibold",
-        isUser ? "bg-primary text-primary-foreground" : "bg-muted")}>
-        {isUser ? "U" : <Bot className="h-3.5 w-3.5" />}
+
+  const copyBtn = (
+    <button
+      onClick={() => {
+        try {
+          navigator.clipboard.writeText(message.text);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        } catch {}
+      }}
+      className={cn(
+        "absolute -top-1.5 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded bg-background border border-border shadow-sm",
+        isUser ? "-left-1.5" : "-right-1.5"
+      )}
+      title="Copy"
+    >
+      <Copy className="h-2.5 w-2.5" />
+      {copied && <span className="absolute -top-5 right-0 text-[9px] bg-foreground text-background px-1 rounded">Copied</span>}
+    </button>
+  );
+
+  const body = isUser ? (
+    <div className="whitespace-pre-wrap break-words">{message.text}</div>
+  ) : (
+    <div className="space-y-1">
+      {message.text && <div>{renderText(message.text)}</div>}
+      {showToolCalls && message.toolUses && message.toolUses.length > 0 && (
+        <div className="flex flex-wrap items-stretch gap-0">
+          {message.toolUses.map((t, i) => <ToolUsePill key={i} name={t.name} input={t.input} />)}
+        </div>
+      )}
+    </div>
+  );
+
+  // ── Terminal theme: monospaced, ASCII prompt prefix ──────────────────
+  if (theme === "terminal") {
+    return (
+      <div className="group relative font-mono text-xs">
+        <div className="flex gap-2">
+          <span className={cn("shrink-0 select-none", isUser ? "text-emerald-500" : "text-purple-500")}>
+            {isUser ? ">" : "$"}
+          </span>
+          <div className={cn("flex-1 min-w-0 break-words whitespace-pre-wrap", isUser && "text-foreground", !isUser && "text-foreground")}>
+            {body}
+          </div>
+        </div>
+        {copyBtn}
       </div>
-      <div className={cn("group max-w-[85%] rounded-lg px-3 py-2 text-sm relative",
-        isUser ? "bg-primary text-primary-foreground" : "bg-muted")}>
-        {isUser ? (
-          <div className="whitespace-pre-wrap break-words">{message.text}</div>
-        ) : (
-          <div className="space-y-1">
-            {message.text && <div>{renderText(message.text)}</div>}
-            {showToolCalls && message.toolUses && message.toolUses.length > 0 && (
-              <div className="flex flex-wrap items-stretch gap-0">
-                {message.toolUses.map((t, i) => <ToolUsePill key={i} name={t.name} input={t.input} />)}
-              </div>
-            )}
+    );
+  }
+
+  // ── Document theme: full-width, role label, no bubble ───────────────
+  if (theme === "document") {
+    return (
+      <div className="group relative">
+        {showAvatar && (
+          <div className={cn(
+            "text-[10px] font-semibold uppercase tracking-wider mb-1",
+            isUser ? "text-primary" : "text-muted-foreground"
+          )}>
+            {isUser ? "You" : "Claude"}
           </div>
         )}
-        <button
-          onClick={() => {
-            try {
-              navigator.clipboard.writeText(message.text);
-              setCopied(true);
-              setTimeout(() => setCopied(false), 1500);
-            } catch {}
-          }}
-          className={cn(
-            "absolute -top-1.5 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded bg-background border border-border shadow-sm",
-            isUser ? "-left-1.5" : "-right-1.5"
-          )}
-          title="Copy"
-        >
-          <Copy className="h-2.5 w-2.5" />
-          {copied && <span className="absolute -top-5 right-0 text-[9px] bg-foreground text-background px-1 rounded">Copied</span>}
-        </button>
+        <div className={cn(
+          "text-sm leading-relaxed",
+          isUser && "text-foreground/95",
+        )}>
+          {body}
+        </div>
+        {copyBtn}
+      </div>
+    );
+  }
+
+  // ── Compact theme: dense, no avatar, role glyph in text margin ──────
+  if (theme === "compact") {
+    return (
+      <div className="group relative flex gap-1.5 text-xs">
+        <span className={cn(
+          "shrink-0 select-none w-3 text-right font-semibold",
+          isUser ? "text-primary" : "text-muted-foreground"
+        )}>
+          {isUser ? "U" : "C"}
+        </span>
+        <div className="flex-1 min-w-0 break-words">
+          {body}
+        </div>
+        {copyBtn}
+      </div>
+    );
+  }
+
+  // ── Bubbles theme: chat-app style, larger rounding, conditional avatar ─
+  if (theme === "bubbles") {
+    return (
+      <div className={cn("flex gap-2", isUser && "flex-row-reverse")}>
+        <div className={cn(
+          "shrink-0",
+          showAvatar
+            ? "h-7 w-7 rounded-full flex items-center justify-center text-[10px] font-semibold " + (isUser ? "bg-primary text-primary-foreground" : "bg-muted")
+            : "h-7 w-7"
+        )}>
+          {showAvatar && (isUser ? "U" : <Bot className="h-3.5 w-3.5" />)}
+        </div>
+        <div className={cn(
+          "group max-w-[85%] px-3.5 py-2 text-sm relative",
+          isUser
+            ? "bg-primary text-primary-foreground rounded-2xl rounded-tr-sm"
+            : "bg-muted rounded-2xl rounded-tl-sm",
+        )}>
+          {body}
+          {copyBtn}
+        </div>
+      </div>
+    );
+  }
+
+  // ── Default theme: current rounded-lg bubble look ───────────────────
+  return (
+    <div className={cn("flex gap-2", isUser && "flex-row-reverse")}>
+      <div className={cn(
+        "h-6 w-6 shrink-0 rounded-full flex items-center justify-center text-[10px] font-semibold",
+        isUser ? "bg-primary text-primary-foreground" : "bg-muted"
+      )}>
+        {isUser ? "U" : <Bot className="h-3.5 w-3.5" />}
+      </div>
+      <div className={cn(
+        "group max-w-[85%] rounded-lg px-3 py-2 text-sm relative",
+        isUser ? "bg-primary text-primary-foreground" : "bg-muted"
+      )}>
+        {body}
+        {copyBtn}
       </div>
     </div>
   );
