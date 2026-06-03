@@ -60,8 +60,8 @@ export async function GET(request: NextRequest) {
             }
             allSessions.push({
               sessionId: entry.sessionId,
-              summary: entry.summary || "",
-              firstPrompt: entry.firstPrompt || "",
+              summary: cleanTitle(entry.summary || ""),
+              firstPrompt: cleanTitle(entry.firstPrompt || ""),
               messageCount: entry.messageCount || 0,
               created: entry.created || "",
               modified: entry.modified || "",
@@ -111,7 +111,7 @@ export async function GET(request: NextRequest) {
           allSessions.push({
             sessionId,
             summary: "",
-            firstPrompt,
+            firstPrompt: cleanTitle(firstPrompt),
             messageCount,
             created: fileStat.birthtime.toISOString(),
             modified: fileStat.mtime.toISOString(),
@@ -149,11 +149,10 @@ function decodeProjectDirName(dirName: string): string {
 
 // Extract user-facing text from a message.content field that may be a string,
 // an array of typed blocks, or some other shape. Skips tool_result blocks and
-// CLI meta-strings.
+// CLI / IDE meta-prompts.
 function extractUserText(content: unknown): string {
   if (typeof content === "string") {
-    if (content.startsWith("<command-name>") || content.startsWith("<local-command-stdout>")) return "";
-    return content;
+    return isMetaPrompt(content) ? "" : content;
   }
   if (Array.isArray(content)) {
     const parts: string[] = [];
@@ -163,9 +162,43 @@ function extractUserText(content: unknown): string {
         if (b.type === "text" && typeof b.text === "string") parts.push(b.text);
       }
     }
-    return parts.join("\n");
+    const joined = parts.join("\n");
+    return isMetaPrompt(joined) ? "" : joined;
   }
   return "";
+}
+
+// Detect CLI / IDE meta-prompts that shouldn't be used as session titles.
+// These are messages the host (Claude Code CLI, IDE bridge, etc.) injects
+// into the conversation: <command-name>, <local-command-stdout>,
+// <local-command-caveat>, <ide_opened_file>, <ide_selection>, …
+function isMetaPrompt(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) return true;
+  if (/^<(command-[a-z-]+|local-command-[a-z-]+|ide_[a-z_-]+)>/i.test(trimmed)) return true;
+  // Content composed only of wrapped meta blocks (in any combination).
+  const stripped = trimmed.replace(/<\/?(command-[a-z-]+|local-command-[a-z-]+|ide_[a-z_-]+)>/gi, "").trim();
+  if (!stripped) return true;
+  return false;
+}
+
+// Clean a title string (summary or first-prompt) for display: strip leading
+// meta-block wrappers, collapse whitespace, take the first non-empty line.
+function cleanTitle(raw: string): string {
+  if (!raw) return "";
+  // Strip any leading meta blocks (entirely tagged content disappears).
+  let s = raw.replace(/<(command-[a-z-]+|local-command-[a-z-]+|ide_[a-z_-]+)>[\s\S]*?<\/\1>/gi, " ");
+  // Strip orphan tags
+  s = s.replace(/<\/?(command-[a-z-]+|local-command-[a-z-]+|ide_[a-z_-]+)>/gi, " ");
+  // Collapse whitespace
+  s = s.replace(/\s+/g, " ").trim();
+  // Take the first sentence-ish chunk (first 120 chars or to first period+space)
+  if (s.length > 120) {
+    const dot = s.indexOf(". ");
+    if (dot > 20 && dot < 120) s = s.slice(0, dot + 1);
+    else s = s.slice(0, 120).trimEnd() + "…";
+  }
+  return s;
 }
 
 // ─── POST: Fetch remote VPS sessions or tmux sessions ────────────────────────
