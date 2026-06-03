@@ -25,6 +25,11 @@ interface ClaudeSession {
   gitBranch: string;
   projectPath: string;
   projectDirName: string;
+  /** Whether a .jsonl log file actually exists on disk for this session.
+   *  Index entries can outlive their logs after CLI compaction. False means
+   *  the chat view will be empty until the user resumes (which makes the CLI
+   *  start writing a new log). */
+  hasLog: boolean;
 }
 
 export async function GET(request: NextRequest) {
@@ -46,21 +51,25 @@ export async function GET(request: NextRequest) {
       try {
         const indexData = JSON.parse(await readFile(indexPath, "utf-8"));
         if (indexData.entries) {
-          // The index can list sessions whose .jsonl was deleted by the CLI.
-          // Surface only entries whose file actually exists on disk —
-          // otherwise the user clicks a phantom session and the chat sits on
-          // "Waiting for first message…" forever because there's nothing to tail.
+          // Surface every index entry — the CLI keeps useful metadata
+          // (summary, firstPrompt, mtime) even after the underlying .jsonl
+          // gets compacted/deleted, and `claude --resume <id>` is happy to
+          // recreate a fresh log. The phantom flag lets the chat view
+          // show a sensible empty state instead of waiting forever.
           for (const entry of indexData.entries) {
             const claimedPath: string | undefined = entry.fullPath;
             const candidatePath = claimedPath || join(projectPath, `${entry.sessionId}.jsonl`);
+            let fileExists = false;
             try {
               await access(candidatePath, fsConstants.F_OK);
-            } catch {
-              continue; // file no longer exists — skip the phantom entry
-            }
+              fileExists = true;
+            } catch {}
+
+            const rawSummary = entry.summary || "";
+            const usableSummary = isErrorSummary(rawSummary) ? "" : rawSummary;
             allSessions.push({
               sessionId: entry.sessionId,
-              summary: cleanTitle(entry.summary || ""),
+              summary: cleanTitle(usableSummary),
               firstPrompt: cleanTitle(entry.firstPrompt || ""),
               messageCount: entry.messageCount || 0,
               created: entry.created || "",
@@ -68,6 +77,7 @@ export async function GET(request: NextRequest) {
               gitBranch: entry.gitBranch || "",
               projectPath: entry.projectPath || indexData.originalPath || "",
               projectDirName: projectDir,
+              hasLog: fileExists,
             });
           }
           continue;
@@ -121,6 +131,7 @@ export async function GET(request: NextRequest) {
             // only when the JSONL has no usable cwd.
             projectPath: realCwd || decodeProjectDirName(projectDir),
             projectDirName: projectDir,
+            hasLog: true,
           });
         } catch {}
       }
@@ -180,6 +191,27 @@ function isMetaPrompt(text: string): boolean {
   const stripped = trimmed.replace(/<\/?(command-[a-z-]+|local-command-[a-z-]+|ide_[a-z_-]+)>/gi, "").trim();
   if (!stripped) return true;
   return false;
+}
+
+// Detect summaries the CLI generated from a failed/errored session, e.g.
+// "Invalid API key · Please run /login", "API Error: 400 …", "API Error: 404
+// <!DOCTYPE html>…". These aren't real session titles — the CLI's /resume
+// hides them and falls back to the first user prompt. We do the same.
+function isErrorSummary(text: string): boolean {
+  if (!text) return false;
+  const t = text.trim();
+  return (
+    /^invalid api key\b/i.test(t) ||
+    /^api error\b/i.test(t) ||
+    /^error\s*:/i.test(t) ||
+    /^http \d{3}/i.test(t) ||
+    /<!DOCTYPE html/i.test(t) ||
+    /^\d{3}\s+(bad request|not found|internal server error|forbidden|unauthorized)/i.test(t) ||
+    /rate limit/i.test(t) ||
+    /overloaded/i.test(t) ||
+    /^connection error/i.test(t) ||
+    /^model .* (not (found|available)|incompatibility)/i.test(t)
+  );
 }
 
 // Clean a title string (summary or first-prompt) for display: strip leading
@@ -270,6 +302,8 @@ export async function POST(request: NextRequest) {
                 gitBranch: entry.gitBranch || "",
                 projectPath: entry.projectPath || data.originalPath || "",
                 projectDirName: "",
+                // Remote sessions: we don't stat the file, assume present.
+                hasLog: true,
               });
             }
           }

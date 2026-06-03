@@ -65,6 +65,11 @@ interface ClaudeSessionInfo {
   gitBranch: string;
   projectPath: string;
   projectDirName: string;
+  /** Whether the underlying JSONL log still exists on disk. False for
+   *  index-only entries whose log has been cleaned up — those can still be
+   *  resumed (CLI re-creates the log) but the chat view will be empty until
+   *  the next prompt. */
+  hasLog?: boolean;
 }
 
 interface SessionState {
@@ -86,6 +91,11 @@ interface SessionState {
   label: string;
   /** Was this started via --resume? */
   isResume: boolean;
+  /** True if the original JSONL log existed on disk when we opened this
+   *  session. Index-only (phantom) sessions have hasLog=false; resuming them
+   *  is fine — the CLI starts a fresh log — but the chat view should show a
+   *  graceful empty state rather than "Waiting for first message…". */
+  hasLog: boolean;
   /** Encoded project dir name in ~/.claude/projects/ (e.g. "-Users-foo-bar"). */
   projectDirName: string;
   /** Current chat messages (parsed from JSONL via SSE). */
@@ -202,6 +212,9 @@ interface OpenSessionOpts {
   label?: string;
   /** Model alias for the new session (`opus`, `sonnet`, `haiku`, ...). Ignored for resumes. */
   model?: string;
+  /** Whether the JSONL log for this session exists on disk. False when the
+   *  session is being created from an index-only entry. */
+  hasLog?: boolean;
 }
 
 /**
@@ -223,6 +236,9 @@ function openSession(opts: OpenSessionOpts): SessionState {
     cwd: opts.cwd,
     label: opts.label || (opts.resumeId ? `Resumed ${opts.resumeId.slice(0, 8)}` : "New session"),
     isResume: !!opts.resumeId,
+    // Default to true for fresh sessions and explicit-true resumes; only
+    // index-only entries pass hasLog=false.
+    hasLog: opts.hasLog !== false,
     projectDirName: encodeProjectDirName(opts.cwd),
     messages: [],
     sse: null,
@@ -1185,7 +1201,7 @@ export function ClaudeCodeWidget() {
     const cwd = (s.projectPath && s.projectPath.trim()) || "~";
 
     const label = s.summary || s.firstPrompt?.slice(0, 30) || s.sessionId.slice(0, 8);
-    const state = openSession({ cwd, resumeId: s.sessionId, label });
+    const state = openSession({ cwd, resumeId: s.sessionId, label, hasLog: s.hasLog !== false });
     // The API gives us the canonical project dir name; openSession's default
     // (encoded from cwd) may not match if the path or session moved. Set it
     // before SSE attaches.
@@ -1940,8 +1956,10 @@ function ChatView({
         theme === "document" && "px-6 py-4 max-w-3xl mx-auto w-full",
       )}>
         {visibleMessages.length === 0 ? (
-          <div className="h-full flex items-center justify-center text-xs text-muted-foreground">
-            {state.sessionId
+          <div className="h-full flex items-center justify-center text-xs text-muted-foreground text-center px-4">
+            {!state.hasLog && state.isResume
+              ? "This session's log was cleaned up by the CLI. Send a new prompt to continue — Claude will re-create the log."
+              : state.sessionId
               ? "Waiting for first message…"
               : "Starting Claude — first message will appear here once Claude responds…"}
           </div>
