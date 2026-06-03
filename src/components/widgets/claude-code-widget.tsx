@@ -36,6 +36,8 @@ import {
   ChevronRight,
   Sparkles,
   Palette,
+  Star,
+  Pencil,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState, useEffect, useRef, useCallback } from "react";
@@ -120,6 +122,74 @@ interface SessionState {
 
 const sessionStore = new Map<string, SessionState>();
 let pendingCounter = 1;
+
+// ─── Per-session metadata: custom name + starred ─────────────────────────────
+// Stored locally (the CLI's sessions-index.json is its own thing — we don't
+// touch it). Keyed by session ID.
+
+interface SessionMeta {
+  customName?: string;
+  starred?: boolean;
+}
+
+const META_STORAGE_KEY = "claude-code-session-meta";
+
+function loadSessionMetaMap(): Record<string, SessionMeta> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = localStorage.getItem(META_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveSessionMetaMap(map: Record<string, SessionMeta>) {
+  if (typeof window === "undefined") return;
+  try { localStorage.setItem(META_STORAGE_KEY, JSON.stringify(map)); } catch {}
+}
+
+const metaSubscribers = new Set<() => void>();
+function notifyMetaSubscribers() {
+  for (const fn of Array.from(metaSubscribers)) {
+    try { fn(); } catch {}
+  }
+}
+
+function getSessionMeta(sessionId: string): SessionMeta {
+  return loadSessionMetaMap()[sessionId] || {};
+}
+
+function setSessionMeta(sessionId: string, patch: Partial<SessionMeta>) {
+  const map = loadSessionMetaMap();
+  const merged = { ...(map[sessionId] || {}), ...patch };
+  // Drop empty strings so they don't override the natural title.
+  if (merged.customName !== undefined && !merged.customName.trim()) {
+    delete merged.customName;
+  }
+  if (Object.keys(merged).length === 0) {
+    delete map[sessionId];
+  } else {
+    map[sessionId] = merged;
+  }
+  saveSessionMetaMap(map);
+  notifyMetaSubscribers();
+}
+
+function useSessionMetaMap(): Record<string, SessionMeta> {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const onChange = () => setTick((t) => t + 1);
+    metaSubscribers.add(onChange);
+    return () => { metaSubscribers.delete(onChange); };
+  }, []);
+  // Read on every render so we pick up any cross-tab changes too (storage
+  // events would be even better, but localStorage is local-only for this
+  // single-user dashboard).
+  return loadSessionMetaMap();
+}
 
 const PTY_WS_URL = typeof window !== "undefined"
   ? `ws://${window.location.hostname}:4445`
@@ -1021,6 +1091,7 @@ export function ClaudeCodeWidget() {
 
   // Subscribe to active session
   const active = useSessionSubscription(activeKey);
+  const sessionMetaMap = useSessionMetaMap();
 
   // ── Manage SSE connections ─────────────────────────────────────────────
   // Browsers cap concurrent EventSource connections at ~6 per origin (over
@@ -1200,7 +1271,8 @@ export function ClaudeCodeWidget() {
     // the JSONL file's `cwd` field). Fall back to home only if it's missing.
     const cwd = (s.projectPath && s.projectPath.trim()) || "~";
 
-    const label = s.summary || s.firstPrompt?.slice(0, 30) || s.sessionId.slice(0, 8);
+    const customName = getSessionMeta(s.sessionId).customName;
+    const label = customName || s.summary || s.firstPrompt?.slice(0, 30) || s.sessionId.slice(0, 8);
     const state = openSession({ cwd, resumeId: s.sessionId, label, hasLog: s.hasLog !== false });
     // The API gives us the canonical project dir name; openSession's default
     // (encoded from cwd) may not match if the path or session moved. Set it
@@ -1219,7 +1291,11 @@ export function ClaudeCodeWidget() {
   }, [activeKey]);
 
   const deleteSessionFromDisk = useCallback(async (sess: ClaudeSessionInfo) => {
-    if (!confirm(`Delete session "${sess.summary || sess.firstPrompt?.slice(0, 40) || sess.sessionId}"?`)) return;
+    const display = getSessionMeta(sess.sessionId).customName
+      || sess.summary
+      || sess.firstPrompt?.slice(0, 40)
+      || sess.sessionId;
+    if (!confirm(`Delete session "${display}"?`)) return;
     try {
       await fetch("/api/claude-sessions", {
         method: "POST",
@@ -1229,6 +1305,13 @@ export function ClaudeCodeWidget() {
       // If currently open, close it
       if (sessionStore.has(sess.sessionId)) destroySession(sess.sessionId);
       if (activeKey === sess.sessionId) setActiveKey(null);
+      // Drop any rename/star metadata for this session.
+      const map = loadSessionMetaMap();
+      if (map[sess.sessionId]) {
+        delete map[sess.sessionId];
+        saveSessionMetaMap(map);
+        notifyMetaSubscribers();
+      }
       fetchSessions();
     } catch {}
   }, [activeKey, fetchSessions]);
@@ -1250,12 +1333,22 @@ export function ClaudeCodeWidget() {
     }
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
+    const meta = sessionMetaMap[s.sessionId];
     return (
       s.summary?.toLowerCase().includes(q) ||
       s.firstPrompt?.toLowerCase().includes(q) ||
       s.projectPath?.toLowerCase().includes(q) ||
-      s.sessionId.toLowerCase().includes(q)
+      s.sessionId.toLowerCase().includes(q) ||
+      meta?.customName?.toLowerCase().includes(q)
     );
+  });
+
+  // Sort: starred sessions first (preserving their relative order), then the
+  // rest in API order (already sorted by mtime desc).
+  const sortedSessions = [...filteredSessions].sort((a, b) => {
+    const aStar = sessionMetaMap[a.sessionId]?.starred ? 1 : 0;
+    const bStar = sessionMetaMap[b.sessionId]?.starred ? 1 : 0;
+    return bStar - aStar;
   });
 
   return (
@@ -1336,41 +1429,17 @@ export function ClaudeCodeWidget() {
                     {activeFolder ? "No sessions in this folder" : "No sessions"}
                   </div>
                 )}
-                {filteredSessions.map((s) => {
-                  const isActive = activeKey === s.sessionId;
-                  const isRunning = sessionStore.has(s.sessionId);
-                  const title = s.summary || s.firstPrompt || s.sessionId.slice(0, 8);
-                  return (
-                    <div
-                      key={s.sessionId}
-                      className={cn(
-                        "group rounded-md px-2 py-1.5 cursor-pointer text-xs transition-colors flex items-start gap-1.5",
-                        isActive ? "bg-primary/15 text-foreground" : "hover:bg-muted",
-                      )}
-                      onClick={() => resumeSession(s)}
-                      title={title}
-                    >
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1">
-                          {isRunning && (
-                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" title="Running" />
-                          )}
-                          <span className="truncate font-medium">{title.slice(0, 60)}</span>
-                        </div>
-                        <div className="text-[10px] text-muted-foreground truncate mt-0.5">
-                          {s.projectPath || s.projectDirName}
-                        </div>
-                      </div>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); deleteSessionFromDisk(s); }}
-                        className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity"
-                        title="Delete session"
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </button>
-                    </div>
-                  );
-                })}
+                {sortedSessions.map((s) => (
+                  <SessionListItem
+                    key={s.sessionId}
+                    session={s}
+                    meta={sessionMetaMap[s.sessionId] || {}}
+                    isActive={activeKey === s.sessionId}
+                    isRunning={sessionStore.has(s.sessionId)}
+                    onClick={() => resumeSession(s)}
+                    onDelete={() => deleteSessionFromDisk(s)}
+                  />
+                ))}
               </div>
             </ScrollArea>
 
@@ -1399,7 +1468,9 @@ export function ClaudeCodeWidget() {
 
             <div className="flex-1 min-w-0">
               <div className="text-xs font-medium truncate">
-                {active ? active.label : "No session"}
+                {active
+                  ? (active.sessionId && sessionMetaMap[active.sessionId]?.customName) || active.label
+                  : "No session"}
               </div>
               {active && (
                 <div className="text-[10px] text-muted-foreground truncate">
@@ -1497,6 +1568,144 @@ export function ClaudeCodeWidget() {
         </div>
       </div>
     </WidgetWrapper>
+  );
+}
+
+// ─── Session list item ───────────────────────────────────────────────────────
+
+function SessionListItem({
+  session,
+  meta,
+  isActive,
+  isRunning,
+  onClick,
+  onDelete,
+}: {
+  session: ClaudeSessionInfo;
+  meta: SessionMeta;
+  isActive: boolean;
+  isRunning: boolean;
+  onClick: () => void;
+  onDelete: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draftName, setDraftName] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Title source: customName overrides everything; otherwise the API-cleaned
+  // summary (if real); otherwise firstPrompt; finally the session id prefix.
+  const naturalTitle = session.summary || session.firstPrompt || session.sessionId.slice(0, 8);
+  const title = (meta.customName && meta.customName.trim()) || naturalTitle;
+  const starred = !!meta.starred;
+
+  const startEdit = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setDraftName(meta.customName || naturalTitle);
+    setEditing(true);
+    setTimeout(() => {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }, 0);
+  };
+
+  const commitEdit = () => {
+    const next = draftName.trim();
+    // Treat the natural title as the "no rename" baseline. If the user's
+    // input matches it, clear customName (i.e. unset rename).
+    if (!next || next === naturalTitle) {
+      setSessionMeta(session.sessionId, { customName: undefined });
+    } else {
+      setSessionMeta(session.sessionId, { customName: next });
+    }
+    setEditing(false);
+  };
+
+  const cancelEdit = () => {
+    setEditing(false);
+    setDraftName("");
+  };
+
+  const toggleStar = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSessionMeta(session.sessionId, { starred: !starred });
+  };
+
+  return (
+    <div
+      className={cn(
+        "group rounded-md px-2 py-1.5 cursor-pointer text-xs transition-colors flex items-start gap-1.5",
+        isActive ? "bg-primary/15 text-foreground" : "hover:bg-muted",
+      )}
+      onClick={editing ? undefined : onClick}
+      title={editing ? "" : title}
+    >
+      {/* Star toggle */}
+      <button
+        onClick={toggleStar}
+        className={cn(
+          "shrink-0 mt-0.5 transition-opacity",
+          starred
+            ? "text-amber-500 opacity-100"
+            : "text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-amber-500",
+        )}
+        title={starred ? "Unstar session" : "Star session"}
+      >
+        <Star className={cn("h-3 w-3", starred && "fill-amber-500")} />
+      </button>
+
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-1">
+          {isRunning && (
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" title="Running" />
+          )}
+          {editing ? (
+            <input
+              ref={inputRef}
+              type="text"
+              value={draftName}
+              onChange={(e) => setDraftName(e.target.value)}
+              onClick={(e) => e.stopPropagation()}
+              onKeyDown={(e) => {
+                e.stopPropagation();
+                if (e.key === "Enter") { e.preventDefault(); commitEdit(); }
+                else if (e.key === "Escape") { e.preventDefault(); cancelEdit(); }
+              }}
+              onBlur={commitEdit}
+              className="flex-1 min-w-0 bg-background text-foreground border border-input rounded px-1 py-0 text-xs h-5 focus:outline-none focus:ring-1 focus:ring-primary/40"
+            />
+          ) : (
+            <span className="truncate font-medium">
+              {title.slice(0, 60)}
+              {meta.customName && meta.customName.trim() && (
+                <Pencil className="inline h-2 w-2 ml-1 align-middle text-muted-foreground opacity-60" />
+              )}
+            </span>
+          )}
+        </div>
+        <div className="text-[10px] text-muted-foreground truncate mt-0.5">
+          {session.projectPath || session.projectDirName}
+        </div>
+      </div>
+
+      {!editing && (
+        <div className="shrink-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button
+            onClick={startEdit}
+            className="text-muted-foreground hover:text-foreground p-0.5"
+            title="Rename"
+          >
+            <Pencil className="h-3 w-3" />
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); onDelete(); }}
+            className="text-muted-foreground hover:text-destructive p-0.5"
+            title="Delete session"
+          >
+            <Trash2 className="h-3 w-3" />
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -2134,12 +2343,25 @@ function ChatBubble({
   // ── Terminal theme: monospaced, ASCII prompt prefix ──────────────────
   if (theme === "terminal") {
     return (
-      <div className="group relative font-mono text-xs">
+      <div
+        className={cn(
+          "group relative font-mono text-xs",
+          isUser
+            ? "border-l-2 border-emerald-500 bg-emerald-500/5 pl-2 pr-2 py-1 -mx-2 rounded-r"
+            : "px-1",
+        )}
+      >
         <div className="flex gap-2">
-          <span className={cn("shrink-0 select-none", isUser ? "text-emerald-500" : "text-purple-500")}>
+          <span className={cn(
+            "shrink-0 select-none",
+            isUser ? "text-emerald-500 font-bold" : "text-purple-500",
+          )}>
             {isUser ? ">" : "$"}
           </span>
-          <div className={cn("flex-1 min-w-0 break-words whitespace-pre-wrap", isUser && "text-foreground", !isUser && "text-foreground")}>
+          <div className={cn(
+            "flex-1 min-w-0 break-words whitespace-pre-wrap",
+            isUser ? "text-emerald-700 dark:text-emerald-300 font-semibold" : "text-foreground",
+          )}>
             {body}
           </div>
         </div>
