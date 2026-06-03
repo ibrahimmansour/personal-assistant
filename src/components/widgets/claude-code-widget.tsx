@@ -934,6 +934,49 @@ function renderInlineFormatting(text: string): React.ReactNode {
   return <>{parts}</>;
 }
 
+// ─── Markdown table detection helpers ───────────────────────────────────────
+
+/** Detect a markdown table-header line — the next line must be a separator
+ *  composed of pipes and dashes (with optional colons for alignment). */
+function isTableHeader(line: string, nextLine: string | undefined): boolean {
+  if (!line || !nextLine) return false;
+  if (!line.includes("|")) return false;
+  // Header line must have at least one pipe between content; after splitting,
+  // we need at least 2 cells.
+  const cells = splitTableRow(line);
+  if (cells.length < 2) return false;
+  // Separator: only pipes, dashes, colons, and spaces, with at least one dash.
+  const sep = nextLine.trim();
+  if (!/^\|?(\s*:?-+:?\s*\|)+\s*:?-+:?\s*\|?$/.test(sep) && !/^\s*:?-+:?(\s*\|\s*:?-+:?)+\s*$/.test(sep)) return false;
+  // Number of separator cells must match number of header cells.
+  const sepCells = sep.replace(/^\||\|$/g, "").split("|").map((s) => s.trim()).filter(Boolean);
+  return sepCells.length === cells.length;
+}
+
+/** Split a "| a | b | c |" or "a | b | c" row into its cells. */
+function splitTableRow(raw: string): string[] {
+  const trimmed = raw.trim();
+  // Strip a leading and trailing pipe if present.
+  const stripped = trimmed.replace(/^\|/, "").replace(/\|$/, "");
+  return stripped.split("|").map((c) => c.trim());
+}
+
+type TableAlign = "left" | "right" | "center" | undefined;
+
+/** Parse alignment markers from a separator line (`:---`, `---:`, `:---:`). */
+function parseTableAlignments(sepLine: string, expected: number): TableAlign[] {
+  const sep = sepLine.trim().replace(/^\||\|$/g, "");
+  const cells = sep.split("|").map((s) => s.trim());
+  return cells.slice(0, expected).map((c): TableAlign => {
+    const left = c.startsWith(":");
+    const right = c.endsWith(":");
+    if (left && right) return "center";
+    if (right) return "right";
+    if (left) return "left";
+    return undefined;
+  });
+}
+
 function renderText(text: string): React.ReactNode {
   const lines = text.split("\n");
   const blocks: React.ReactNode[] = [];
@@ -999,6 +1042,69 @@ function renderText(text: string): React.ReactNode {
       continue;
     }
 
+    // Markdown table (header row, separator row of dashes, then body rows).
+    // Recognises both "| h | h |" and "h | h" styles. Cells may contain
+    // inline formatting (bold, code, etc.).
+    if (isTableHeader(line, lines[i + 1])) {
+      const headerCells = splitTableRow(line);
+      const aligns = parseTableAlignments(lines[i + 1], headerCells.length);
+      i += 2;
+      const rows: string[][] = [];
+      while (i < lines.length && lines[i].includes("|") && lines[i].trim()) {
+        rows.push(splitTableRow(lines[i]));
+        i++;
+      }
+      blocks.push(
+        <div key={key++} className="my-2 overflow-x-auto rounded-md border border-border">
+          <table className="w-full text-xs border-collapse">
+            <thead className="bg-muted/60">
+              <tr>
+                {headerCells.map((h, hi) => (
+                  <th
+                    key={hi}
+                    className={cn(
+                      "px-2 py-1.5 font-semibold border-b border-border whitespace-nowrap",
+                      aligns[hi] === "right" && "text-right",
+                      aligns[hi] === "center" && "text-center",
+                      (!aligns[hi] || aligns[hi] === "left") && "text-left",
+                    )}
+                  >
+                    {renderInlineFormatting(h)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, ri) => (
+                <tr
+                  key={ri}
+                  className={cn(
+                    ri !== rows.length - 1 && "border-b border-border/40",
+                    ri % 2 === 1 && "bg-muted/20",
+                  )}
+                >
+                  {headerCells.map((_, ci) => (
+                    <td
+                      key={ci}
+                      className={cn(
+                        "px-2 py-1.5 align-top",
+                        aligns[ci] === "right" && "text-right",
+                        aligns[ci] === "center" && "text-center",
+                        (!aligns[ci] || aligns[ci] === "left") && "text-left",
+                      )}
+                    >
+                      {renderInlineFormatting(row[ci] ?? "")}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+      continue;
+    }
+
     // Blank line
     if (line.trim() === "") {
       blocks.push(<div key={key++} className="h-2" />);
@@ -1015,7 +1121,8 @@ function renderText(text: string): React.ReactNode {
       !lines[i].startsWith("```") &&
       !lines[i].match(/^(#{1,6})\s+/) &&
       !/^[-*]\s+/.test(lines[i]) &&
-      !/^\d+\.\s+/.test(lines[i])
+      !/^\d+\.\s+/.test(lines[i]) &&
+      !isTableHeader(lines[i], lines[i + 1])
     ) {
       paraLines.push(lines[i]);
       i++;
