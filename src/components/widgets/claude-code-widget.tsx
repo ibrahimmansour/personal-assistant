@@ -124,8 +124,11 @@ const sessionStore = new Map<string, SessionState>();
 let pendingCounter = 1;
 
 // ─── Per-session metadata: custom name + starred ─────────────────────────────
-// Stored locally (the CLI's sessions-index.json is its own thing — we don't
-// touch it). Keyed by session ID.
+// Persisted server-side (~/.personal-assistant/claude-session-meta.json) so
+// renames and stars sync across browsers / devices for the same dashboard
+// install. localStorage is used as an offline cache so the UI is responsive
+// before the server fetch finishes and across reloads when the server is
+// briefly unavailable.
 
 interface SessionMeta {
   customName?: string;
@@ -133,22 +136,34 @@ interface SessionMeta {
 }
 
 const META_STORAGE_KEY = "claude-code-session-meta";
+const META_API_URL = "/api/claude-sessions/meta";
 
-function loadSessionMetaMap(): Record<string, SessionMeta> {
+// In-memory cache: the source of truth at runtime. Hydrated first from
+// localStorage (instant) and then from the server (authoritative). Updates
+// write here first, then to localStorage, then queue a server PATCH.
+let metaCache: Record<string, SessionMeta> | null = null;
+let serverHydrationPromise: Promise<void> | null = null;
+
+function readLocalStorageMeta(): Record<string, SessionMeta> {
   if (typeof window === "undefined") return {};
   try {
     const raw = localStorage.getItem(META_STORAGE_KEY);
     if (!raw) return {};
     const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === "object" ? parsed : {};
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
   } catch {
     return {};
   }
 }
 
-function saveSessionMetaMap(map: Record<string, SessionMeta>) {
+function writeLocalStorageMeta(map: Record<string, SessionMeta>) {
   if (typeof window === "undefined") return;
   try { localStorage.setItem(META_STORAGE_KEY, JSON.stringify(map)); } catch {}
+}
+
+function ensureCache(): Record<string, SessionMeta> {
+  if (metaCache === null) metaCache = readLocalStorageMeta();
+  return metaCache;
 }
 
 const metaSubscribers = new Set<() => void>();
@@ -158,12 +173,57 @@ function notifyMetaSubscribers() {
   }
 }
 
+/**
+ * Hydrate the cache from the server on first call. If the server has data,
+ * it wins (across-device persistence). If the server is empty but
+ * localStorage has entries, push them up so old local-only data isn't lost.
+ * Subsequent calls return the same in-flight promise.
+ */
+function hydrateFromServer(): Promise<void> {
+  if (serverHydrationPromise) return serverHydrationPromise;
+  if (typeof window === "undefined") return Promise.resolve();
+
+  serverHydrationPromise = (async () => {
+    try {
+      const res = await fetch(META_API_URL, { cache: "no-store" });
+      if (!res.ok) return;
+      const data = (await res.json()) as { meta?: Record<string, SessionMeta> };
+      const serverMap = data.meta || {};
+      const localMap = readLocalStorageMeta();
+
+      if (Object.keys(serverMap).length > 0) {
+        // Server is the source of truth.
+        metaCache = serverMap;
+        writeLocalStorageMeta(serverMap);
+      } else if (Object.keys(localMap).length > 0) {
+        // First time on a server with no meta — push localStorage data up so
+        // existing renames migrate to the shared store.
+        metaCache = localMap;
+        try {
+          await fetch(META_API_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "replace", meta: localMap }),
+          });
+        } catch {}
+      } else {
+        metaCache = {};
+      }
+      notifyMetaSubscribers();
+    } catch {
+      // Server unavailable — keep using whatever localStorage gave us.
+    }
+  })();
+
+  return serverHydrationPromise;
+}
+
 function getSessionMeta(sessionId: string): SessionMeta {
-  return loadSessionMetaMap()[sessionId] || {};
+  return ensureCache()[sessionId] || {};
 }
 
 function setSessionMeta(sessionId: string, patch: Partial<SessionMeta>) {
-  const map = loadSessionMetaMap();
+  const map = { ...ensureCache() };
   const merged = { ...(map[sessionId] || {}), ...patch };
   // Drop empty strings so they don't override the natural title.
   if (merged.customName !== undefined && !merged.customName.trim()) {
@@ -174,8 +234,44 @@ function setSessionMeta(sessionId: string, patch: Partial<SessionMeta>) {
   } else {
     map[sessionId] = merged;
   }
-  saveSessionMetaMap(map);
+  metaCache = map;
+  writeLocalStorageMeta(map);
   notifyMetaSubscribers();
+
+  // Persist to server (fire-and-forget). Failure leaves the cache + local
+  // copy intact so the user still sees the change locally; next change
+  // attempt will retry.
+  if (typeof window !== "undefined") {
+    const newEntry = map[sessionId];
+    fetch(META_API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(
+        newEntry
+          ? { action: "set", sessionId, meta: newEntry }
+          : { action: "delete", sessionId },
+      ),
+    }).catch(() => {});
+  }
+}
+
+/** Drop a session's meta entry both locally and on the server (used when the
+ *  underlying session is deleted). */
+function deleteSessionMeta(sessionId: string) {
+  const map = { ...ensureCache() };
+  if (map[sessionId]) {
+    delete map[sessionId];
+    metaCache = map;
+    writeLocalStorageMeta(map);
+    notifyMetaSubscribers();
+  }
+  if (typeof window !== "undefined") {
+    fetch(META_API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "delete", sessionId }),
+    }).catch(() => {});
+  }
 }
 
 function useSessionMetaMap(): Record<string, SessionMeta> {
@@ -183,12 +279,12 @@ function useSessionMetaMap(): Record<string, SessionMeta> {
   useEffect(() => {
     const onChange = () => setTick((t) => t + 1);
     metaSubscribers.add(onChange);
+    // Kick off server hydration on first mount; updates re-render via
+    // notifyMetaSubscribers when the fetch resolves.
+    hydrateFromServer();
     return () => { metaSubscribers.delete(onChange); };
   }, []);
-  // Read on every render so we pick up any cross-tab changes too (storage
-  // events would be even better, but localStorage is local-only for this
-  // single-user dashboard).
-  return loadSessionMetaMap();
+  return ensureCache();
 }
 
 const PTY_WS_URL = typeof window !== "undefined"
@@ -1412,13 +1508,8 @@ export function ClaudeCodeWidget() {
       // If currently open, close it
       if (sessionStore.has(sess.sessionId)) destroySession(sess.sessionId);
       if (activeKey === sess.sessionId) setActiveKey(null);
-      // Drop any rename/star metadata for this session.
-      const map = loadSessionMetaMap();
-      if (map[sess.sessionId]) {
-        delete map[sess.sessionId];
-        saveSessionMetaMap(map);
-        notifyMetaSubscribers();
-      }
+      // Drop any rename/star metadata for this session (server + local).
+      deleteSessionMeta(sess.sessionId);
       fetchSessions();
     } catch {}
   }, [activeKey, fetchSessions]);
