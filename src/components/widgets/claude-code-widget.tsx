@@ -38,6 +38,7 @@ import {
   Palette,
   Star,
   Pencil,
+  Paperclip,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState, useEffect, useRef, useCallback } from "react";
@@ -303,6 +304,11 @@ function encodeProjectDirName(absPath: string): string {
 // Wraps in single quotes and escapes any embedded single quotes.
 function shellQuote(s: string): string {
   return `'${s.replace(/'/g, `'\\''`)}'`;
+}
+
+// Escape a string for safe use inside a RegExp literal pattern.
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function notifySubscribers(state: SessionState) {
@@ -2319,6 +2325,21 @@ function ChatView({
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Pasted/dropped image attachments. Each becomes an @<path> reference in
+  // the prompt; previews are shown above the textarea until the prompt is
+  // sent. Path is the absolute path the CLI will read; previewUrl is the
+  // local blob URL for the thumbnail.
+  const [attachments, setAttachments] = useState<{
+    id: string;
+    path: string;
+    filename: string;
+    previewUrl: string;
+  }[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   // Read waiting state directly from the session — it's per-session, so
   // switching to another session shows that session's own waiting state
@@ -2332,14 +2353,121 @@ function ChatView({
     el.scrollTop = el.scrollHeight;
   }, [state.messages.length, waiting]);
 
+  // Clean up blob URLs on unmount.
+  useEffect(() => {
+    return () => {
+      for (const a of attachments) {
+        try { URL.revokeObjectURL(a.previewUrl); } catch {}
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Upload a single image file and append it to the attachments list,
+  // inserting an @<path> reference into the textarea at the caret.
+  const uploadFile = useCallback(async (file: File) => {
+    if (!file.type.startsWith("image/")) {
+      setUploadError("Only image files are supported");
+      return;
+    }
+    setUploadError(null);
+    setUploading(true);
+    try {
+      const res = await fetch("/api/claude-sessions/upload", {
+        method: "POST",
+        headers: { "Content-Type": file.type },
+        body: file,
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data?.error || `Upload failed (${res.status})`);
+      }
+      const data = (await res.json()) as { path: string; filename: string };
+      const previewUrl = URL.createObjectURL(file);
+      const att = { id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, path: data.path, filename: data.filename, previewUrl };
+      setAttachments((prev) => [...prev, att]);
+
+      // Insert "@<path> " into the textarea at the caret position. Use the
+      // ref to compute the new selection so the caret lands after the
+      // inserted reference.
+      const ref = `@${data.path} `;
+      const ta = textareaRef.current;
+      if (ta) {
+        const start = ta.selectionStart ?? ta.value.length;
+        const end = ta.selectionEnd ?? ta.value.length;
+        const next = ta.value.slice(0, start) + ref + ta.value.slice(end);
+        setInput(next);
+        // Defer caret positioning to after React commits the new value.
+        requestAnimationFrame(() => {
+          if (textareaRef.current) {
+            const pos = start + ref.length;
+            textareaRef.current.setSelectionRange(pos, pos);
+            textareaRef.current.focus();
+          }
+        });
+      } else {
+        setInput((v) => (v ? v + " " + ref : ref));
+      }
+    } catch (e) {
+      setUploadError(e instanceof Error ? e.message : "Upload failed");
+    } finally {
+      setUploading(false);
+    }
+  }, []);
+
+  const removeAttachment = useCallback((id: string) => {
+    setAttachments((prev) => {
+      const att = prev.find((a) => a.id === id);
+      if (att) {
+        try { URL.revokeObjectURL(att.previewUrl); } catch {}
+        // Strip the corresponding @<path> reference from the textarea.
+        setInput((v) => v.replace(new RegExp(`\\s*@${escapeRegExp(att.path)}\\s*`), " ").replace(/\s+/g, " ").trim());
+      }
+      return prev.filter((a) => a.id !== id);
+    });
+  }, []);
+
+  const onPaste = useCallback((e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = Array.from(e.clipboardData?.items || []);
+    const imageItems = items.filter((it) => it.kind === "file" && it.type.startsWith("image/"));
+    if (imageItems.length === 0) return; // let the default text paste happen
+    e.preventDefault();
+    for (const it of imageItems) {
+      const file = it.getAsFile();
+      if (file) uploadFile(file);
+    }
+  }, [uploadFile]);
+
+  const onDrop = useCallback((e: React.DragEvent<HTMLTextAreaElement>) => {
+    const files = Array.from(e.dataTransfer?.files || []).filter((f) => f.type.startsWith("image/"));
+    if (files.length === 0) return;
+    e.preventDefault();
+    for (const f of files) uploadFile(f);
+  }, [uploadFile]);
+
+  const onPickFiles = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []).filter((f) => f.type.startsWith("image/"));
+    for (const f of files) uploadFile(f);
+    // Reset so picking the same file twice still triggers change.
+    e.target.value = "";
+  }, [uploadFile]);
+
   const send = useCallback(() => {
     const text = input.trim();
     if (!text) return;
     setSending(true);
     submitPrompt(state, text + "\r");
     setInput("");
+    // Clear attachments — their @<path> references are already in the text
+    // we just sent, the CLI will read them. The temp files stay on disk so
+    // the CLI can still read them; we don't try to clean them up.
+    for (const a of attachments) {
+      try { URL.revokeObjectURL(a.previewUrl); } catch {}
+    }
+    setAttachments([]);
+    setUploadError(null);
     setSending(false);
-  }, [input, state]);
+  }, [input, state, attachments]);
 
   // Spacing between messages depends on theme.
   const listSpacing = theme === "compact"
@@ -2400,11 +2528,68 @@ function ChatView({
         )}
       </div>
 
-      <div className="shrink-0 border-t border-border p-2">
-        <div className="flex gap-1.5">
+      <div className="shrink-0 border-t border-border p-2 space-y-1.5">
+        {/* Attachment thumbnails */}
+        {(attachments.length > 0 || uploading || uploadError) && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {attachments.map((a) => (
+              <div
+                key={a.id}
+                className="group relative h-12 w-12 rounded border border-border overflow-hidden bg-muted"
+                title={a.path}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={a.previewUrl} alt={a.filename} className="h-full w-full object-cover" />
+                <button
+                  type="button"
+                  onClick={() => removeAttachment(a.id)}
+                  className="absolute top-0 right-0 bg-foreground/70 text-background rounded-bl px-0.5 py-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                  title="Remove"
+                >
+                  <X className="h-2.5 w-2.5" />
+                </button>
+              </div>
+            ))}
+            {uploading && (
+              <div className="h-12 w-12 rounded border border-border bg-muted flex items-center justify-center">
+                <Loader2 className="h-3 w-3 animate-spin" />
+              </div>
+            )}
+            {uploadError && (
+              <div className="text-[10px] text-destructive">{uploadError}</div>
+            )}
+          </div>
+        )}
+
+        <div className="flex gap-1.5 items-end">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            className="hidden"
+            onChange={onPickFiles}
+          />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={sending || uploading || (state.ws !== null && !state.alive)}
+            className="shrink-0 h-9 w-9 rounded-md border border-border bg-background hover:bg-muted text-muted-foreground hover:text-foreground flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Attach image"
+          >
+            <Paperclip className="h-3.5 w-3.5" />
+          </button>
           <textarea
+            ref={textareaRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
+            onPaste={onPaste}
+            onDrop={onDrop}
+            onDragOver={(e) => {
+              if (Array.from(e.dataTransfer?.items || []).some((it) => it.kind === "file")) {
+                e.preventDefault();
+              }
+            }}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
@@ -2413,7 +2598,7 @@ function ChatView({
             }}
             placeholder={
               state.alive
-                ? "Send a message to Claude…"
+                ? "Send a message to Claude… (paste an image to attach)"
                 : state.spawningTerminal
                 ? "Starting Claude…"
                 : state.ws
@@ -2432,7 +2617,7 @@ function ChatView({
           </Button>
         </div>
         {state.ws !== null && !state.alive && !state.spawningTerminal && (
-          <div className="text-[10px] text-muted-foreground mt-1">
+          <div className="text-[10px] text-muted-foreground">
             The Claude process exited. Close and start a new session.
           </div>
         )}
