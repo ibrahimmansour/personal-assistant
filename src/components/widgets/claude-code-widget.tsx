@@ -42,6 +42,7 @@ import {
   Clock,
   Calendar as CalendarIcon,
   RotateCw,
+  HelpCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState, useEffect, useRef, useCallback } from "react";
@@ -141,6 +142,19 @@ interface SessionState {
   waitingForReply: boolean;
   /** ID of the most recent assistant message we've seen — used to detect "new reply arrived". */
   lastAssistantMessageId: string | null;
+  /** True when the terminal output has been idle for a few seconds AND the
+   *  tail of the buffer matches a question/confirmation pattern — Claude is
+   *  sitting at a TUI prompt waiting for our input (e.g. permission dialogs
+   *  or interactive selections). Surfaces as a "needs input" banner in chat. */
+  terminalAwaitingInput: boolean;
+  /** Snippet of the recent terminal text used to derive terminalAwaitingInput;
+   *  shown to the user as a hint of what Claude is asking. */
+  terminalAwaitingHint: string;
+  /** Rolling buffer of the most recent terminal output (last ~4 KB) used to
+   *  detect TUI prompts. Stripped of ANSI escape sequences. */
+  terminalRecentText: string;
+  /** Timer handle for the idle-detection callback. */
+  terminalIdleTimer: ReturnType<typeof setTimeout> | null;
   /** Subscribers that re-render when this session updates. */
   subscribers: Set<() => void>;
 }
@@ -337,6 +351,95 @@ function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+// ─── Inline-question detection (for assistant chat messages) ────────────────
+
+/**
+ * Decide whether an assistant message text "ends in a question" — a soft
+ * signal that Claude is waiting for the user to weigh in. We're conservative
+ * about false positives: rhetorical questions in the middle of a long
+ * paragraph don't count; only a real question mark within the last few
+ * non-empty lines.
+ */
+function messageHasOpenQuestion(text: string): boolean {
+  if (!text) return false;
+  const trimmed = text.trim();
+  if (!trimmed.endsWith("?")) {
+    // Allow a trailing closing parenthesis or quote: "... do this?)"
+    if (!/[?][)"'`]$/.test(trimmed)) return false;
+  }
+  // Some assistant turns end with a generic "let me know if you have any
+  // questions?" — that's a closer, not a real question. Filter out a few.
+  const tailLine = trimmed.split(/\n+/).slice(-1)[0] || "";
+  if (/let me know.*questions/i.test(tailLine)) return false;
+  return true;
+}
+
+// ─── Terminal-prompt detection ───────────────────────────────────────────────
+
+/** Regexes covering common ANSI escape sequences (CSI/OSC/SS3) and a handful
+ *  of control bytes the CLI uses to redraw its TUI. Stripping these gives us
+ *  a reasonably clean text view of what's on screen. */
+const ANSI_RE = /\x1b\][^\x07]*\x07|\x1b\[\??[\d;]*[A-Za-z]|\x1b[()][\dA-Za-z]|\x1b[=>]|\x1b[NO]|\x1b\][^\x1b]*\x1b\\|\r/g;
+
+function stripAnsi(input: string): string {
+  // eslint-disable-next-line no-control-regex
+  return input.replace(ANSI_RE, "");
+}
+
+/**
+ * Decide whether the trailing snippet of terminal text looks like Claude is
+ * sitting at an interactive prompt waiting for user input. We sniff for:
+ *  - Yes/no style questions: "(y/n)", "(yes/no)", "[y/n]"
+ *  - Numbered selection menus (CLI's permission prompt: "1. Yes 2. No, ...")
+ *  - "❯ " or "> " selectors (TUI list pickers like /resume)
+ *  - Plain "?" at the very end with no recent assistant turn marker
+ *
+ * Returns a short hint of what's being asked, or "" if nothing matches.
+ */
+function detectTerminalPrompt(rawText: string): string {
+  if (!rawText) return "";
+  // Keep only the last ~800 chars — TUI prompts always live at the bottom.
+  const tail = rawText.slice(-800);
+  const lines = tail.split("\n").map((l) => l.trim()).filter(Boolean);
+  if (lines.length === 0) return "";
+
+  // 1. y/n style on the last few lines.
+  const lastFew = lines.slice(-6).join(" ");
+  if (/\b(y\/n|yes\/no|y\s*\/\s*n)\b/i.test(lastFew)) {
+    const m = lines.slice(-6).reverse().find((l) => /\?/.test(l));
+    return m ? m.slice(0, 120) : "Confirmation requested";
+  }
+
+  // 2. Numbered menu: at least 2 lines starting with "1." and "2." within the tail.
+  const optionLines = lines.slice(-20).filter((l) => /^[❯>]?\s*\d+\.\s+/.test(l));
+  if (optionLines.length >= 2) {
+    // The question is usually the line just above the first option.
+    const idx = lines.findIndex((l) => /^[❯>]?\s*1\.\s+/.test(l));
+    const prompt = idx > 0 ? lines[idx - 1] : "Choice required";
+    return (prompt + " (" + optionLines.length + " options)").slice(0, 160);
+  }
+
+  // 3. TUI selector ("❯ option") with no other progress markers.
+  if (lines.slice(-10).some((l) => l.startsWith("❯ "))) {
+    const idx = lines.slice(-10).findIndex((l) => l.startsWith("❯ "));
+    const offset = lines.length - 10 + idx;
+    const prompt = offset > 0 ? lines[offset - 1] : "Selection required";
+    return prompt.slice(0, 160);
+  }
+
+  // 4. Last non-empty line ends with a question mark — and isn't obviously a
+  //    Claude reply marker (no "·" / spinner glyph). Conservative: only trigger
+  //    if the line is short (<= 200 chars), which interactive prompts usually are.
+  const last = lines[lines.length - 1];
+  if (last && last.endsWith("?") && last.length <= 200) {
+    // Avoid false positives: the input box itself is typically empty or has
+    // a placeholder; the prompt question is on a separate line.
+    return last.slice(0, 160);
+  }
+
+  return "";
+}
+
 function notifySubscribers(state: SessionState) {
   for (const fn of Array.from(state.subscribers)) {
     try { fn(); } catch {}
@@ -403,6 +506,54 @@ function getTermTheme() {
 
 // ─── Session creation / lifecycle ────────────────────────────────────────────
 
+/** How long the terminal must stay quiet before we re-evaluate whether
+ *  Claude is sitting at a prompt. Long enough that streaming output (which
+ *  arrives in bursts) doesn't trigger us mid-reply, short enough that the
+ *  user gets a hint quickly. */
+const TERMINAL_IDLE_MS = 2500;
+
+/** Maximum size of the rolling text buffer we keep per session for prompt
+ *  detection. Trimmed from the start whenever it grows past this. */
+const TERMINAL_BUFFER_MAX = 4096;
+
+/**
+ * Record a chunk of raw terminal output, append (ANSI-stripped) to the
+ * rolling buffer, and reschedule the idle timer. When the timer fires
+ * without further output, run detectTerminalPrompt over the buffer tail
+ * and update terminalAwaitingInput accordingly.
+ */
+function recordTerminalChunk(state: SessionState, chunk: string) {
+  if (!chunk) return;
+
+  // Reset awaiting flag on any fresh activity — Claude is doing something
+  // again. The idle timer will set it back to true if we go quiet at a
+  // prompt-looking screen.
+  if (state.terminalAwaitingInput) {
+    state.terminalAwaitingInput = false;
+    state.terminalAwaitingHint = "";
+    notifySubscribers(state);
+  }
+
+  const stripped = stripAnsi(chunk);
+  state.terminalRecentText = (state.terminalRecentText + stripped).slice(-TERMINAL_BUFFER_MAX);
+
+  if (state.terminalIdleTimer) clearTimeout(state.terminalIdleTimer);
+  state.terminalIdleTimer = setTimeout(() => {
+    state.terminalIdleTimer = null;
+    const hint = detectTerminalPrompt(state.terminalRecentText);
+    if (hint) {
+      // Only mark as awaiting input if the chat itself isn't currently
+      // waiting on a reply (which would be the normal "Claude is working"
+      // case, not a TUI prompt).
+      if (!state.waitingForReply) {
+        state.terminalAwaitingInput = true;
+        state.terminalAwaitingHint = hint;
+        notifySubscribers(state);
+      }
+    }
+  }, TERMINAL_IDLE_MS);
+}
+
 interface OpenSessionOpts {
   cwd: string;
   /** When set, run `claude --resume <id>` instead of a fresh session. */
@@ -445,6 +596,10 @@ function openSession(opts: OpenSessionOpts): SessionState {
     model: opts.model && opts.model !== "default" ? opts.model : null,
     waitingForReply: false,
     lastAssistantMessageId: null,
+    terminalAwaitingInput: false,
+    terminalAwaitingHint: "",
+    terminalRecentText: "",
+    terminalIdleTimer: null,
     subscribers: new Set(),
   };
 
@@ -561,9 +716,12 @@ async function spawnTerminal(state: SessionState): Promise<boolean> {
         const msg = JSON.parse(event.data);
         if (msg.type === "output") {
           terminal.write(msg.data);
+          recordTerminalChunk(state, typeof msg.data === "string" ? msg.data : "");
         } else if (msg.type === "exit") {
           terminal.writeln("\r\n\x1b[90m[Process exited]\x1b[0m");
           state.alive = false;
+          state.terminalAwaitingInput = false;
+          if (state.terminalIdleTimer) clearTimeout(state.terminalIdleTimer);
           notifySubscribers(state);
         }
       } catch {
@@ -584,6 +742,14 @@ async function spawnTerminal(state: SessionState): Promise<boolean> {
     terminal.onData((data: string) => {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: "input", data }));
+      }
+      // The user typed something into the terminal — assume they're responding
+      // to whatever Claude was asking. Clear the awaiting flag so the chat's
+      // banner doesn't linger.
+      if (state.terminalAwaitingInput) {
+        state.terminalAwaitingInput = false;
+        state.terminalAwaitingHint = "";
+        notifySubscribers(state);
       }
     });
 
@@ -749,6 +915,9 @@ async function submitPrompt(state: SessionState, text: string): Promise<boolean>
   // SSE handler when the next assistant message lands. Per-session, so
   // other sessions' chat views don't show the indicator.
   state.waitingForReply = true;
+  // Submitting from chat is itself a response — clear any pending TUI prompt.
+  state.terminalAwaitingInput = false;
+  state.terminalAwaitingHint = "";
 
   if (state.alive && state.ws && state.ws.readyState === WebSocket.OPEN) {
     sendPromptAndEnter(state.ws, promptText);
@@ -791,6 +960,8 @@ function destroySession(key: string) {
   try { state.sse?.close(); } catch {}
   try { state.ws?.close(); } catch {}
   try { state.terminal?.dispose(); } catch {}
+  if (state.terminalIdleTimer) clearTimeout(state.terminalIdleTimer);
+  state.terminalIdleTimer = null;
   state.subscribers.clear();
   // Remove every alias pointing to this state (a pending session may have
   // been re-keyed once its real session ID resolved, leaving an alias entry).
@@ -803,10 +974,14 @@ function destroySession(key: string) {
 function stopTerminal(state: SessionState) {
   try { state.ws?.close(); } catch {}
   try { state.terminal?.dispose(); } catch {}
+  if (state.terminalIdleTimer) clearTimeout(state.terminalIdleTimer);
+  state.terminalIdleTimer = null;
   state.terminal = null;
   state.fitAddon = null;
   state.ws = null;
   state.alive = false;
+  state.terminalAwaitingInput = false;
+  state.terminalAwaitingHint = "";
   notifySubscribers(state);
 }
 
@@ -1842,7 +2017,12 @@ export function ClaudeCodeWidget() {
             ) : !active ? (
               <EmptyState onNew={() => setShowFolderPicker(true)} />
             ) : view === "chat" ? (
-              <ChatView state={active} showToolCalls={showToolCalls} theme={chatTheme} />
+              <ChatView
+                state={active}
+                showToolCalls={showToolCalls}
+                theme={chatTheme}
+                onOpenTerminal={() => setView("terminal")}
+              />
             ) : (
               <TerminalView state={active} />
             )}
@@ -2411,10 +2591,13 @@ function ChatView({
   state,
   showToolCalls,
   theme,
+  onOpenTerminal,
 }: {
   state: SessionState;
   showToolCalls: boolean;
   theme: ChatTheme;
+  /** Called when the user clicks "Open terminal" on the TUI-prompt banner. */
+  onOpenTerminal: () => void;
 }) {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -2465,6 +2648,26 @@ function ChatView({
   // switching to another session shows that session's own waiting state
   // (clean here, busy elsewhere, etc.).
   const waiting = state.waitingForReply;
+
+  // Inline question detection: when Claude's most recent assistant message
+  // ends with a question and we're not still waiting on more turns, show a
+  // subtle "Claude is asking…" banner above the input.
+  const lastVisibleAssistant = (() => {
+    for (let i = state.messages.length - 1; i >= 0; i--) {
+      const m = state.messages[i];
+      if (m.role === "assistant" && m.text && m.text.trim()) return m;
+      if (m.role === "user") return null;
+    }
+    return null;
+  })();
+  const inlineQuestionPending =
+    !waiting &&
+    !!lastVisibleAssistant &&
+    messageHasOpenQuestion(lastVisibleAssistant.text);
+
+  // Terminal-only TUI prompt detection: Claude is sitting at a y/n confirm
+  // or selection menu that doesn't appear in the JSONL.
+  const terminalQuestionPending = state.terminalAwaitingInput && !!state.terminalAwaitingHint;
 
   // Auto-scroll on new messages and when waiting flag toggles
   useEffect(() => {
@@ -2678,6 +2881,38 @@ function ChatView({
             {uploadError && (
               <div className="text-[10px] text-destructive">{uploadError}</div>
             )}
+          </div>
+        )}
+
+        {/* "Claude needs your input" banners. Two flavours: an inline
+            question in the latest assistant text (chat answers it), or a
+            TUI-only prompt visible in the terminal (terminal answers it). */}
+        {inlineQuestionPending && (
+          <div className="rounded-md border border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300 px-2.5 py-1.5 text-xs flex items-center gap-2">
+            <HelpCircle className="h-3.5 w-3.5 shrink-0" />
+            <span className="flex-1">Claude is asking a question — type your answer below.</span>
+          </div>
+        )}
+        {terminalQuestionPending && (
+          <div className="rounded-md border border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300 px-2.5 py-1.5 text-xs flex items-start gap-2">
+            <HelpCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <div className="font-medium">Claude needs input in the terminal</div>
+              {state.terminalAwaitingHint && (
+                <div className="text-[10px] opacity-80 mt-0.5 truncate" title={state.terminalAwaitingHint}>
+                  {state.terminalAwaitingHint}
+                </div>
+              )}
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-6 px-2 text-[10px] shrink-0 border-amber-500/40 hover:bg-amber-500/20"
+              onClick={onOpenTerminal}
+            >
+              <TerminalIcon className="h-3 w-3 mr-1" />
+              Open terminal
+            </Button>
           </div>
         )}
 
