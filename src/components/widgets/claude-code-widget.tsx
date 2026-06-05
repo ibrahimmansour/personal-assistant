@@ -39,6 +39,9 @@ import {
   Star,
   Pencil,
   Paperclip,
+  Clock,
+  Calendar as CalendarIcon,
+  RotateCw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState, useEffect, useRef, useCallback } from "react";
@@ -56,6 +59,29 @@ interface ChatMessage {
   /** end_turn | tool_use | max_tokens | stop_sequence | null */
   stopReason?: string | null;
   timestamp: string;
+}
+
+// Schedule recurrence rule + entry shape returned by /api/claude-sessions/schedules.
+type ScheduleRecurrence =
+  | { type: "once" }
+  | { type: "every"; intervalMinutes: number }
+  | { type: "daily"; hour: number; minute: number }
+  | { type: "weekly"; weekdays: number[]; hour: number; minute: number };
+
+interface ScheduleEntry {
+  id: string;
+  sessionId: string;
+  cwd: string;
+  prompt: string;
+  nextRunAt: string;
+  lastRunAt?: string;
+  lastStatus?: "ok" | "error";
+  lastError?: string;
+  recurrence: ScheduleRecurrence;
+  enabled: boolean;
+  createdAt: string;
+  label?: string;
+  model?: string;
 }
 
 interface ClaudeSessionInfo {
@@ -1294,6 +1320,11 @@ export function ClaudeCodeWidget() {
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
+  // Scheduled prompts (server-backed). Fetched periodically; modified via
+  // the schedule modal and the schedules panel.
+  const [schedules, setSchedules] = useState<ScheduleEntry[]>([]);
+  const [showSchedules, setShowSchedules] = useState(false);
+
   // Folder picker state
   const [folderInput, setFolderInput] = useState("");
   const [recentFolders, setRecentFolders] = useState<string[]>([]);
@@ -1371,6 +1402,36 @@ export function ClaudeCodeWidget() {
     const id = setInterval(fetchSessions, 8000);
     return () => clearInterval(id);
   }, [sidebarOpen, fetchSessions]);
+
+  // ── Fetch scheduled prompts ────────────────────────────────────────────
+  const fetchSchedules = useCallback(async () => {
+    try {
+      const res = await fetch("/api/claude-sessions/schedules");
+      if (res.ok) {
+        const data = await res.json();
+        setSchedules(data.schedules || []);
+      }
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    fetchSchedules();
+  }, [fetchSchedules]);
+
+  // Refresh schedules whenever the panel is opened so the list reflects any
+  // server-side runs that have happened since last view.
+  useEffect(() => {
+    if (showSchedules) fetchSchedules();
+  }, [showSchedules, fetchSchedules]);
+
+  // Listen for a custom event fired when a schedule is created elsewhere
+  // (e.g. from the schedule modal inside ChatView) so the sidebar count
+  // and list update without manual refresh.
+  useEffect(() => {
+    const onChange = () => fetchSchedules();
+    window.addEventListener("claude-schedules-changed", onChange);
+    return () => window.removeEventListener("claude-schedules-changed", onChange);
+  }, [fetchSchedules]);
 
   // ── Theme sync for all open terminals ──────────────────────────────────
   useEffect(() => {
@@ -1647,7 +1708,24 @@ export function ClaudeCodeWidget() {
               </div>
             </ScrollArea>
 
-            <div className="p-2 border-t border-border shrink-0">
+            <div className="p-2 border-t border-border shrink-0 space-y-1">
+              <Button
+                size="sm"
+                variant="ghost"
+                className="w-full text-xs justify-between"
+                onClick={() => setShowSchedules(true)}
+                title="View scheduled prompts"
+              >
+                <span className="inline-flex items-center gap-1.5">
+                  <Clock className="h-3 w-3" />
+                  Schedules
+                </span>
+                {schedules.filter((x) => x.enabled).length > 0 && (
+                  <span className="text-[10px] px-1 py-0 rounded bg-primary text-primary-foreground">
+                    {schedules.filter((x) => x.enabled).length}
+                  </span>
+                )}
+              </Button>
               <Button size="sm" variant="ghost" className="w-full text-xs" onClick={fetchSessions}>
                 <RefreshCw className={cn("h-3 w-3 mr-1.5", sessionsLoading && "animate-spin")} />
                 Refresh
@@ -1771,6 +1849,22 @@ export function ClaudeCodeWidget() {
           </div>
         </div>
       </div>
+
+      {showSchedules && (
+        <SchedulesPanel
+          schedules={schedules}
+          sessions={sessions}
+          onClose={() => setShowSchedules(false)}
+          onChange={fetchSchedules}
+          onOpenSession={(sessionId) => {
+            const s = sessions.find((x) => x.sessionId === sessionId);
+            if (s) {
+              setShowSchedules(false);
+              resumeSession(s);
+            }
+          }}
+        />
+      )}
     </WidgetWrapper>
   );
 }
@@ -2328,6 +2422,28 @@ function ChatView({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Manually-resizable textarea height. Auto-grows with content up to a
+  // soft cap; the user can drag a handle above the textarea to set a
+  // preferred minimum height.
+  const [textareaMinHeight, setTextareaMinHeight] = useState<number>(() => {
+    if (typeof window === "undefined") return 56;
+    const v = parseInt(localStorage.getItem("claude-code-textarea-height") || "", 10);
+    return Number.isFinite(v) && v > 0 ? Math.min(v, 600) : 56;
+  });
+  const persistTextareaHeight = useCallback((h: number) => {
+    setTextareaMinHeight(h);
+    try { localStorage.setItem("claude-code-textarea-height", String(Math.round(h))); } catch {}
+  }, []);
+
+  // Auto-resize the textarea to fit content (within its min/max bounds).
+  useEffect(() => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    ta.style.height = "auto";
+    const next = Math.max(textareaMinHeight, Math.min(ta.scrollHeight, 600));
+    ta.style.height = `${next}px`;
+  }, [input, textareaMinHeight]);
+
   // Pasted/dropped image attachments. Each becomes an @<path> reference in
   // the prompt; previews are shown above the textarea until the prompt is
   // sent. Path is the absolute path the CLI will read; previewUrl is the
@@ -2340,6 +2456,10 @@ function ChatView({
   }[]>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+
+  // Schedule modal: when set, the prompt staged for scheduling is shown
+  // along with the date/time/recurrence picker. Cleared on save or cancel.
+  const [schedulingPrompt, setSchedulingPrompt] = useState<string | null>(null);
 
   // Read waiting state directly from the session — it's per-session, so
   // switching to another session shows that session's own waiting state
@@ -2484,7 +2604,7 @@ function ChatView({
   });
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="relative h-full flex flex-col">
       <div ref={scrollRef} className={cn(
         "flex-1 min-h-0 overflow-y-auto",
         theme === "terminal" ? "px-3 py-2 bg-card/40 font-mono" : "px-3 py-2",
@@ -2561,6 +2681,14 @@ function ChatView({
           </div>
         )}
 
+        {/* Drag handle to manually resize the textarea */}
+        <ResizeHandle
+          height={textareaMinHeight}
+          onChange={persistTextareaHeight}
+          minHeight={56}
+          maxHeight={600}
+        />
+
         <div className="flex gap-1.5 items-end">
           <input
             ref={fileInputRef}
@@ -2591,14 +2719,14 @@ function ChatView({
               }
             }}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
+              if (e.key === "Enter" && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
                 e.preventDefault();
                 send();
               }
             }}
             placeholder={
               state.alive
-                ? "Send a message to Claude… (paste an image to attach)"
+                ? "Send a message to Claude… (Shift+Enter for newline, paste an image to attach)"
                 : state.spawningTerminal
                 ? "Starting Claude…"
                 : state.ws
@@ -2607,14 +2735,32 @@ function ChatView({
             }
             disabled={sending || (state.ws !== null && !state.alive)}
             rows={1}
+            style={{ minHeight: textareaMinHeight, maxHeight: 600 }}
             className={cn(
-              "flex-1 resize-none px-2 py-1.5 text-sm rounded-md border border-border bg-background min-h-[36px] max-h-[120px] focus:outline-none focus:ring-1 focus:ring-primary/40",
+              "flex-1 resize-none px-2 py-1.5 text-sm rounded-md border border-border bg-background overflow-y-auto focus:outline-none focus:ring-1 focus:ring-primary/40",
               theme === "terminal" && "font-mono",
             )}
           />
-          <Button size="sm" onClick={send} disabled={!input.trim() || (state.ws !== null && !state.alive)}>
-            <Send className="h-3.5 w-3.5" />
-          </Button>
+          <div className="flex flex-col gap-1 shrink-0">
+            <Button
+              size="sm"
+              onClick={send}
+              disabled={!input.trim() || (state.ws !== null && !state.alive)}
+              title="Send (Enter)"
+            >
+              <Send className="h-3.5 w-3.5" />
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setSchedulingPrompt(input.trim())}
+              disabled={!input.trim() || !state.sessionId}
+              title={state.sessionId ? "Schedule this prompt" : "Save the session first by sending one prompt, then schedule the next"}
+              className="h-7 px-2"
+            >
+              <Clock className="h-3.5 w-3.5" />
+            </Button>
+          </div>
         </div>
         {state.ws !== null && !state.alive && !state.spawningTerminal && (
           <div className="text-[10px] text-muted-foreground">
@@ -2622,6 +2768,66 @@ function ChatView({
           </div>
         )}
       </div>
+
+      {schedulingPrompt !== null && state.sessionId && (
+        <ScheduleModal
+          sessionId={state.sessionId}
+          cwd={state.cwd}
+          prompt={schedulingPrompt}
+          onSaved={() => {
+            setSchedulingPrompt(null);
+            // Clear the input — the prompt has been queued for later.
+            setInput("");
+            setAttachments((prev) => {
+              for (const a of prev) {
+                try { URL.revokeObjectURL(a.previewUrl); } catch {}
+              }
+              return [];
+            });
+          }}
+          onCancel={() => setSchedulingPrompt(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+function ResizeHandle({
+  height,
+  onChange,
+  minHeight,
+  maxHeight,
+}: {
+  height: number;
+  onChange: (h: number) => void;
+  minHeight: number;
+  maxHeight: number;
+}) {
+  const onMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startH = height;
+    const onMove = (ev: MouseEvent) => {
+      // Dragging UP makes the textarea TALLER (delta is negative).
+      const next = Math.max(minHeight, Math.min(maxHeight, startH + (startY - ev.clientY)));
+      onChange(next);
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
+  return (
+    <div
+      onMouseDown={onMouseDown}
+      onDoubleClick={() => onChange(minHeight === 56 ? 56 : minHeight)}
+      title="Drag to resize the input — double-click to reset"
+      className="h-1.5 w-full cursor-ns-resize flex items-center justify-center group"
+    >
+      <div className="h-0.5 w-8 rounded-full bg-border group-hover:bg-muted-foreground/40 transition-colors" />
     </div>
   );
 }
@@ -2834,6 +3040,401 @@ function ChatBubble({
       )}>
         {body}
         {copyBtn}
+      </div>
+    </div>
+  );
+}
+
+// ─── Schedules panel (read-only list with run-now / disable / delete) ───────
+
+function SchedulesPanel({
+  schedules,
+  sessions,
+  onClose,
+  onChange,
+  onOpenSession,
+}: {
+  schedules: ScheduleEntry[];
+  sessions: ClaudeSessionInfo[];
+  onClose: () => void;
+  onChange: () => void;
+  onOpenSession: (sessionId: string) => void;
+}) {
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const sessionMap = new Map(sessions.map((s) => [s.sessionId, s]));
+
+  const update = async (id: string, body: Record<string, unknown>) => {
+    setBusyId(id);
+    setError(null);
+    try {
+      const res = await fetch("/api/claude-sessions/schedules", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data?.error || `HTTP ${res.status}`);
+      }
+      onChange();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  return (
+    <div className="absolute inset-0 z-30 flex items-stretch justify-center bg-background/85" onClick={onClose}>
+      <div
+        className="w-full max-w-2xl m-4 rounded-md border border-border bg-popover shadow-lg flex flex-col max-h-full"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-2 p-3 border-b border-border shrink-0">
+          <Clock className="h-4 w-4 text-primary" />
+          <div className="text-sm font-semibold">Scheduled prompts</div>
+          <div className="text-xs text-muted-foreground">
+            {schedules.filter((s) => s.enabled).length} active · {schedules.length} total
+          </div>
+          <div className="flex-1" />
+          <button onClick={onClose} className="p-1 rounded hover:bg-muted text-muted-foreground" title="Close">
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+
+        {error && (
+          <div className="px-3 py-2 text-xs text-destructive border-b border-border shrink-0">{error}</div>
+        )}
+
+        <ScrollArea className="flex-1 min-h-0">
+          {schedules.length === 0 ? (
+            <div className="p-6 text-center text-xs text-muted-foreground">
+              No scheduled prompts yet. Click the clock icon next to a prompt to schedule it.
+            </div>
+          ) : (
+            <div className="divide-y divide-border">
+              {schedules.map((s) => {
+                const session = sessionMap.get(s.sessionId);
+                const sessionTitle = session?.summary || session?.firstPrompt || s.sessionId.slice(0, 8);
+                const next = new Date(s.nextRunAt);
+                const last = s.lastRunAt ? new Date(s.lastRunAt) : null;
+                return (
+                  <div key={s.id} className={cn("p-3 space-y-1.5", !s.enabled && "opacity-60")}>
+                    <div className="flex items-start gap-2">
+                      <div className="flex-1 min-w-0">
+                        {s.label && <div className="text-xs font-semibold truncate">{s.label}</div>}
+                        <button
+                          onClick={() => onOpenSession(s.sessionId)}
+                          className="text-[10px] text-muted-foreground hover:text-foreground hover:underline truncate text-left block max-w-full"
+                          title={`Session: ${sessionTitle}`}
+                        >
+                          {sessionTitle}
+                        </button>
+                        <div className="text-xs whitespace-pre-wrap break-words mt-1 max-h-20 overflow-y-auto bg-muted/40 rounded p-1.5">
+                          {s.prompt}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3 text-[10px] text-muted-foreground flex-wrap">
+                      <span title="Next run">
+                        <CalendarIcon className="h-2.5 w-2.5 inline mr-0.5" />
+                        Next: {next.toLocaleString()}
+                      </span>
+                      <span><RotateCw className="h-2.5 w-2.5 inline mr-0.5" />{describeRecurrence(s.recurrence)}</span>
+                      {last && (
+                        <span className={cn(s.lastStatus === "error" && "text-destructive")}>
+                          Last: {last.toLocaleString()} {s.lastStatus === "error" && "(error)"}
+                        </span>
+                      )}
+                    </div>
+
+                    {s.lastError && (
+                      <div className="text-[10px] text-destructive line-clamp-2" title={s.lastError}>
+                        {s.lastError}
+                      </div>
+                    )}
+
+                    <div className="flex items-center gap-1 pt-1">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-6 text-[10px] px-2"
+                        onClick={() => update(s.id, { action: "run-now", id: s.id })}
+                        disabled={busyId === s.id}
+                      >
+                        {busyId === s.id ? <Loader2 className="h-3 w-3 animate-spin" /> : "Run now"}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-6 text-[10px] px-2"
+                        onClick={() => update(s.id, { action: "update", id: s.id, patch: { enabled: !s.enabled } })}
+                        disabled={busyId === s.id}
+                      >
+                        {s.enabled ? "Disable" : "Enable"}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-6 text-[10px] px-2 text-destructive hover:text-destructive"
+                        onClick={() => {
+                          if (!confirm("Delete this schedule?")) return;
+                          update(s.id, { action: "delete", id: s.id });
+                        }}
+                        disabled={busyId === s.id}
+                      >
+                        Delete
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </ScrollArea>
+      </div>
+    </div>
+  );
+}
+
+function describeRecurrence(r: ScheduleRecurrence): string {
+  switch (r.type) {
+    case "once": return "Once";
+    case "every": return `Every ${r.intervalMinutes} min`;
+    case "daily": return `Daily at ${String(r.hour).padStart(2, "0")}:${String(r.minute).padStart(2, "0")}`;
+    case "weekly": {
+      const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+      const which = r.weekdays.length === 7 ? "every day" : r.weekdays.map((d) => days[d]).join(", ");
+      return `${which} at ${String(r.hour).padStart(2, "0")}:${String(r.minute).padStart(2, "0")}`;
+    }
+  }
+}
+
+// ─── Schedule modal ──────────────────────────────────────────────────────────
+
+type RecurrenceUI =
+  | { type: "once" }
+  | { type: "every"; intervalMinutes: number }
+  | { type: "daily"; hour: number; minute: number }
+  | { type: "weekly"; weekdays: number[]; hour: number; minute: number };
+
+function defaultRunAtIso(): string {
+  // Default: tomorrow at 02:00 in the user's local timezone.
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  d.setHours(2, 0, 0, 0);
+  return toLocalInputValue(d);
+}
+
+/** Convert a Date into the value format that <input type="datetime-local"> uses. */
+function toLocalInputValue(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function fromLocalInputValue(v: string): Date | null {
+  if (!v) return null;
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function ScheduleModal({
+  sessionId,
+  cwd,
+  prompt,
+  onSaved,
+  onCancel,
+}: {
+  sessionId: string;
+  cwd: string;
+  prompt: string;
+  onSaved: () => void;
+  onCancel: () => void;
+}) {
+  const [runAt, setRunAt] = useState<string>(defaultRunAtIso());
+  const [recurrence, setRecurrence] = useState<RecurrenceUI>({ type: "once" });
+  const [label, setLabel] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = async () => {
+    const when = fromLocalInputValue(runAt);
+    if (!when) { setError("Pick a valid date and time"); return; }
+    if (when.getTime() <= Date.now() && recurrence.type === "once") {
+      setError("Pick a future time for one-shot schedules"); return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/claude-sessions/schedules", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "create",
+          sessionId,
+          cwd,
+          prompt,
+          nextRunAt: when.toISOString(),
+          recurrence,
+          label: label.trim() || undefined,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data?.error || `HTTP ${res.status}`);
+      }
+      try { window.dispatchEvent(new CustomEvent("claude-schedules-changed")); } catch {}
+      onSaved();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to create schedule");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="absolute inset-0 z-30 flex items-center justify-center bg-background/80 p-4" onClick={onCancel}>
+      <div
+        className="w-full max-w-md rounded-md border border-border bg-popover shadow-lg p-3 space-y-3"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center gap-2">
+          <Clock className="h-4 w-4 text-primary" />
+          <div className="text-sm font-semibold">Schedule prompt</div>
+          <div className="flex-1" />
+          <button
+            onClick={onCancel}
+            className="p-1 rounded hover:bg-muted text-muted-foreground"
+            title="Cancel"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+
+        <div className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">
+          Prompt
+        </div>
+        <div className="rounded border border-border bg-muted/40 p-2 text-xs max-h-32 overflow-y-auto whitespace-pre-wrap break-words">
+          {prompt}
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">
+            First run
+          </label>
+          <Input
+            type="datetime-local"
+            value={runAt}
+            onChange={(e) => setRunAt(e.target.value)}
+            className="h-8 text-xs"
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">
+            Recurrence
+          </label>
+          <select
+            value={recurrence.type}
+            onChange={(e) => {
+              const t = e.target.value as RecurrenceUI["type"];
+              if (t === "once") setRecurrence({ type: "once" });
+              else if (t === "every") setRecurrence({ type: "every", intervalMinutes: 60 });
+              else if (t === "daily") {
+                const d = fromLocalInputValue(runAt);
+                setRecurrence({ type: "daily", hour: d?.getHours() ?? 2, minute: d?.getMinutes() ?? 0 });
+              } else if (t === "weekly") {
+                const d = fromLocalInputValue(runAt);
+                setRecurrence({ type: "weekly", weekdays: [d?.getDay() ?? 1], hour: d?.getHours() ?? 9, minute: d?.getMinutes() ?? 0 });
+              }
+            }}
+            className="w-full h-8 text-xs rounded-md border border-border bg-background px-2"
+          >
+            <option value="once">Run once</option>
+            <option value="every">Repeat every N minutes</option>
+            <option value="daily">Daily at HH:MM</option>
+            <option value="weekly">Weekly on chosen days</option>
+          </select>
+        </div>
+
+        {recurrence.type === "every" && (
+          <Input
+            type="number"
+            min={1}
+            value={recurrence.intervalMinutes}
+            onChange={(e) => setRecurrence({ type: "every", intervalMinutes: Math.max(1, parseInt(e.target.value || "1", 10)) })}
+            className="h-8 text-xs"
+            placeholder="Interval (minutes)"
+          />
+        )}
+        {(recurrence.type === "daily" || recurrence.type === "weekly") && (
+          <div className="flex gap-2">
+            <Input
+              type="number" min={0} max={23}
+              value={recurrence.hour}
+              onChange={(e) => setRecurrence({ ...recurrence, hour: Math.min(23, Math.max(0, parseInt(e.target.value || "0", 10))) })}
+              className="h-8 text-xs flex-1"
+              placeholder="HH"
+            />
+            <Input
+              type="number" min={0} max={59}
+              value={recurrence.minute}
+              onChange={(e) => setRecurrence({ ...recurrence, minute: Math.min(59, Math.max(0, parseInt(e.target.value || "0", 10))) })}
+              className="h-8 text-xs flex-1"
+              placeholder="MM"
+            />
+          </div>
+        )}
+        {recurrence.type === "weekly" && (
+          <div className="flex gap-1 flex-wrap">
+            {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d, idx) => {
+              const on = recurrence.weekdays.includes(idx);
+              return (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => {
+                    const next = on
+                      ? recurrence.weekdays.filter((w) => w !== idx)
+                      : [...recurrence.weekdays, idx].sort();
+                    setRecurrence({ ...recurrence, weekdays: next });
+                  }}
+                  className={cn(
+                    "px-2 h-7 text-[10px] rounded border",
+                    on ? "bg-primary text-primary-foreground border-primary" : "bg-background border-border hover:bg-muted",
+                  )}
+                >
+                  {d}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        <div className="space-y-1.5">
+          <label className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">
+            Label (optional)
+          </label>
+          <Input
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+            placeholder="Daily standup summary"
+            className="h-8 text-xs"
+          />
+        </div>
+
+        {error && <div className="text-xs text-destructive">{error}</div>}
+
+        <div className="flex justify-end gap-1.5 pt-1">
+          <Button variant="ghost" size="sm" onClick={onCancel} disabled={busy}>Cancel</Button>
+          <Button size="sm" onClick={submit} disabled={busy}>
+            {busy ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Clock className="h-3 w-3 mr-1" />}
+            Schedule
+          </Button>
+        </div>
       </div>
     </div>
   );
