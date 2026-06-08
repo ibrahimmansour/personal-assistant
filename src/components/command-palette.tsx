@@ -511,7 +511,7 @@ function actionLabel(action: AIAction): string {
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export function CommandPalette() {
-  const { open, filterWidget, setOpen, closeSearch, clearFilter } = useCommandPalette();
+  const { open, filterWidget, setOpen, closeSearch, clearFilter, collapseAllWidgets } = useCommandPalette();
   const [search, setSearch] = useState("");
   const [widgetData, setWidgetData] = useState<SearchResult[]>([]);
   const [fileResults, setFileResults] = useState<SearchResult[]>([]);
@@ -784,6 +784,10 @@ export function CommandPalette() {
     function handleKeyDown(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key === "p") {
         e.preventDefault();
+        // Exit fullscreen first so the portaled dialog is visible
+        if (document.fullscreenElement) {
+          document.exitFullscreen().catch(() => {});
+        }
         setOpen(!open);
       }
     }
@@ -1048,6 +1052,9 @@ export function CommandPalette() {
       }
       if (activeFocusId) exitFocusMode();
 
+      // Collapse any currently expanded widget before navigating to the new one
+      collapseAllWidgets();
+
       // For bookmarks, open URL directly (no detail view in widget)
       if (item.widgetType === "bookmarks" && item.itemId) {
         // Ensure widget is visible and expand it, then open the URL
@@ -1071,7 +1078,7 @@ export function CommandPalette() {
         );
       }, 100);
     },
-    [widgets, ensureWidgetVisible, navigateTo, closeSearch, activeWorkspace, setActiveWorkspace, activeFocusId, exitFocusMode]
+    [widgets, ensureWidgetVisible, navigateTo, closeSearch, activeWorkspace, setActiveWorkspace, activeFocusId, exitFocusMode, collapseAllWidgets]
   );
 
   const runAndClose = useCallback((fn: () => void) => {
@@ -1238,6 +1245,8 @@ export function CommandPalette() {
                       setActiveWorkspace("dashboard");
                     }
                     if (activeFocusId) exitFocusMode();
+                    // Collapse any currently expanded widget first
+                    collapseAllWidgets();
                     // Ensure the widget is visible (no-op if already visible)
                     ensureWidgetVisible(widget.id);
                     setTimeout(() => {

@@ -238,16 +238,6 @@ export function BookmarksWidget() {
 
   // ─── Render ──────────────────────────────────────────────────────────────
 
-  if (loading) {
-    return (
-      <WidgetWrapper title="Bookmarks" widgetType="bookmarks" icon={<Bookmark className="h-4 w-4" />} expandRequested={expandRequested} onExpandHandled={onExpandHandled}>
-        <div className="flex items-center justify-center h-full text-muted-foreground">
-          <div className="h-4 w-4 border-2 border-muted-foreground/30 border-t-primary rounded-full animate-spin" />
-        </div>
-      </WidgetWrapper>
-    );
-  }
-
   return (
     <WidgetWrapper
       title="Bookmarks"
@@ -255,7 +245,7 @@ export function BookmarksWidget() {
       icon={<Bookmark className="h-4 w-4" />}
       expandRequested={expandRequested}
       onExpandHandled={onExpandHandled}
-      headerAction={
+      headerAction={loading ? undefined : (
         <div className="flex items-center gap-1">
           <button
             onClick={() => { setShowFilter((v) => !v); if (showFilter) setFilterQuery(""); }}
@@ -274,8 +264,13 @@ export function BookmarksWidget() {
             <Plus className="h-3.5 w-3.5" />
           </button>
         </div>
-      }
+      )}
     >
+      {loading ? (
+        <div className="flex items-center justify-center h-full text-muted-foreground">
+          <div className="h-4 w-4 border-2 border-muted-foreground/30 border-t-primary rounded-full animate-spin" />
+        </div>
+      ) : (
       <div className="flex flex-col h-full gap-2">
         {showFilter && (
           <div className="flex items-center gap-2 shrink-0">
@@ -462,6 +457,7 @@ export function BookmarksWidget() {
           )}
         </div>
       </div>
+      )}
     </WidgetWrapper>
   );
 }

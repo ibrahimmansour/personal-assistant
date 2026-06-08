@@ -868,61 +868,75 @@ export function EmailWidget() {
       (fetchedEmail?.id === selectedId ? fetchedEmail : null)
     : null;
 
-  // ─── Rules panel view ─────────────────────────────────────────────
-  if (showRulesPanel) {
-    return (
-      <WidgetWrapper
-        title="Email"
-        widgetType="email"
-        icon={<Mail className="h-4 w-4" />}
-        expandRequested={expandRequested}
-        onExpandHandled={onExpandHandled}
+  // Determine which view we're in for header actions
+  const isDetailView = !!(selectedId && (selectedEmail || fetchingEmail));
+  const emailGroupId = isDetailView && selectedEmail ? emailClassification.get(selectedEmail.id) : null;
+  const emailGroup = emailGroupId ? groups.find((g) => g.id === emailGroupId) : null;
+
+  // Build headerAction based on current view
+  const headerAction = showRulesPanel ? undefined : isDetailView ? (
+    <div className="flex items-center gap-1">
+      <button
+        onClick={() => { setSelectedId(null); setFetchedEmail(null); setReplyOpen(false); setReplyText(""); setSendError(null); setSendSuccess(false); }}
+        className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted"
+        title="Back to inbox"
       >
+        <ArrowLeft className="h-3.5 w-3.5" />
+      </button>
+      {selectedEmail?.webLink && (
+        <a
+          href={selectedEmail.webLink}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted"
+          title="Open in Outlook"
+        >
+          <ExternalLink className="h-3.5 w-3.5" />
+        </a>
+      )}
+    </div>
+  ) : (
+    <div className="flex items-center gap-2">
+      {!loading && !error && unreadCount > 0 && (
+        <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full font-medium">
+          {unreadCount} new
+        </span>
+      )}
+      <button
+        onClick={() => setShowRulesPanel(true)}
+        className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted"
+        title="Manage email groups & rules"
+      >
+        <Settings2 className="h-3.5 w-3.5" />
+      </button>
+      <button
+        onClick={fetchEmails}
+        disabled={loading}
+        className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted disabled:opacity-50"
+      >
+        <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
+      </button>
+    </div>
+  );
+
+  return (
+    <WidgetWrapper
+      title="Email"
+      widgetType="email"
+      icon={<Mail className="h-4 w-4" />}
+      expandRequested={expandRequested}
+      onExpandHandled={onExpandHandled}
+      headerAction={headerAction}
+    >
+      {/* ─── Rules panel view ───────────────────────────────────────────── */}
+      {showRulesPanel ? (
         <RulesPanel
           groups={groups}
           onSave={saveRules}
           onClose={() => setShowRulesPanel(false)}
         />
-      </WidgetWrapper>
-    );
-  }
-
-  // ─── Detail view ──────────────────────────────────────────────────
-  if (selectedId && (selectedEmail || fetchingEmail)) {
-    const emailGroupId = selectedEmail ? emailClassification.get(selectedEmail.id) : null;
-    const emailGroup = emailGroupId ? groups.find((g) => g.id === emailGroupId) : null;
-
-    return (
-      <WidgetWrapper
-        title="Email"
-        widgetType="email"
-        icon={<Mail className="h-4 w-4" />}
-        expandRequested={expandRequested}
-        onExpandHandled={onExpandHandled}
-        headerAction={
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => { setSelectedId(null); setFetchedEmail(null); setReplyOpen(false); setReplyText(""); setSendError(null); setSendSuccess(false); }}
-              className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted"
-              title="Back to inbox"
-            >
-              <ArrowLeft className="h-3.5 w-3.5" />
-            </button>
-            {selectedEmail?.webLink && (
-              <a
-                href={selectedEmail.webLink}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted"
-                title="Open in Outlook"
-              >
-                <ExternalLink className="h-3.5 w-3.5" />
-              </a>
-            )}
-          </div>
-        }
-      >
-        {fetchingEmail && !selectedEmail ? (
+      ) : isDetailView ? (
+        fetchingEmail && !selectedEmail ? (
           <div className="flex items-center justify-center h-full">
             <div className="flex flex-col items-center gap-2 text-muted-foreground">
               <Loader2 className="h-5 w-5 animate-spin" />
@@ -1107,44 +1121,8 @@ export function EmailWidget() {
             </div>
           )}
         </div>
-        ) : null}
-      </WidgetWrapper>
-    );
-  }
-
-  // ─── List view ────────────────────────────────────────────────────
-  return (
-    <WidgetWrapper
-      title="Email"
-      widgetType="email"
-      icon={<Mail className="h-4 w-4" />}
-      expandRequested={expandRequested}
-      onExpandHandled={onExpandHandled}
-      headerAction={
-        <div className="flex items-center gap-2">
-          {!loading && !error && unreadCount > 0 && (
-            <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full font-medium">
-              {unreadCount} new
-            </span>
-          )}
-          <button
-            onClick={() => setShowRulesPanel(true)}
-            className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted"
-            title="Manage email groups & rules"
-          >
-            <Settings2 className="h-3.5 w-3.5" />
-          </button>
-          <button
-            onClick={fetchEmails}
-            disabled={loading}
-            className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted disabled:opacity-50"
-          >
-            <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
-          </button>
-        </div>
-      }
-    >
-      {loading && emails.length === 0 ? (
+        ) : null
+      ) : loading && emails.length === 0 ? (
         <div className="flex items-center justify-center h-full">
           <div className="flex flex-col items-center gap-2 text-muted-foreground">
             <Loader2 className="h-5 w-5 animate-spin" />

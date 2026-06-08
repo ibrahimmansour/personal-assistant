@@ -17,16 +17,20 @@ export type FontFamily = "geist" | "inter" | "mono" | "system" | "serif";
 
 export type FontSize = "xs" | "sm" | "base" | "lg" | "xl";
 
+export type Density = "compact" | "comfortable" | "spacious";
+
 export interface AppearanceConfig {
   colorTheme: ColorTheme;
   fontFamily: FontFamily;
   fontSize: FontSize;
+  density: Density;
 }
 
 const defaultAppearance: AppearanceConfig = {
   colorTheme: "zinc",
   fontFamily: "geist",
   fontSize: "base",
+  density: "comfortable",
 };
 
 interface AppearanceContextType {
@@ -34,6 +38,7 @@ interface AppearanceContextType {
   setColorTheme: (theme: ColorTheme) => void;
   setFontFamily: (font: FontFamily) => void;
   setFontSize: (size: FontSize) => void;
+  setDensity: (density: Density) => void;
   increaseFontSize: () => void;
   decreaseFontSize: () => void;
 }
@@ -76,6 +81,12 @@ export const fontSizes: { id: FontSize; label: string; scale: number }[] = [
 
 const fontSizeOrder: FontSize[] = ["xs", "sm", "base", "lg", "xl"];
 
+export const densityOptions: { id: Density; label: string; description: string }[] = [
+  { id: "compact", label: "Compact", description: "More widgets, less spacing" },
+  { id: "comfortable", label: "Comfortable", description: "Balanced density" },
+  { id: "spacious", label: "Spacious", description: "Fewer widgets, more space" },
+];
+
 export function AppearanceProvider({ children }: { children: React.ReactNode }) {
   const [appearance, setAppearance] = useState<AppearanceConfig>(defaultAppearance);
   const [mounted, setMounted] = useState(false);
@@ -96,9 +107,9 @@ export function AppearanceProvider({ children }: { children: React.ReactNode }) 
     if (!mounted) return;
     const html = document.documentElement;
 
-    // Remove old theme/font/size classes
+    // Remove old theme/font/size/density classes
     html.classList.forEach((cls) => {
-      if (cls.startsWith("theme-") || cls.startsWith("font-choice-") || cls.startsWith("font-size-")) {
+      if (cls.startsWith("theme-") || cls.startsWith("font-choice-") || cls.startsWith("font-size-") || cls.startsWith("density-")) {
         html.classList.remove(cls);
       }
     });
@@ -111,6 +122,7 @@ export function AppearanceProvider({ children }: { children: React.ReactNode }) 
     if (appearance.fontSize !== "base") {
       html.classList.add(`font-size-${appearance.fontSize}`);
     }
+    html.classList.add(`density-${appearance.density}`);
   }, [appearance, mounted]);
 
   const persist = useCallback((updated: AppearanceConfig) => {
@@ -139,6 +151,13 @@ export function AppearanceProvider({ children }: { children: React.ReactNode }) 
     [appearance, persist]
   );
 
+  const setDensity = useCallback(
+    (density: Density) => {
+      persist({ ...appearance, density });
+    },
+    [appearance, persist]
+  );
+
   const increaseFontSize = useCallback(() => {
     const idx = fontSizeOrder.indexOf(appearance.fontSize);
     if (idx < fontSizeOrder.length - 1) {
@@ -154,7 +173,7 @@ export function AppearanceProvider({ children }: { children: React.ReactNode }) 
   }, [appearance, persist]);
 
   return (
-    <AppearanceContext.Provider value={{ appearance, setColorTheme, setFontFamily, setFontSize, increaseFontSize, decreaseFontSize }}>
+    <AppearanceContext.Provider value={{ appearance, setColorTheme, setFontFamily, setFontSize, setDensity, increaseFontSize, decreaseFontSize }}>
       {children}
     </AppearanceContext.Provider>
   );

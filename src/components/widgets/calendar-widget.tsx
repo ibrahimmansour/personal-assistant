@@ -139,42 +139,60 @@ export function CalendarWidget() {
   const todayEvents = events.filter((e) => e.isToday);
   const selectedEvent = selectedId ? events.find((e) => e.id === selectedId) : null;
 
-  // Detail view for a selected event
-  if (selectedEvent) {
-    const duration = selectedEvent.isAllDay
-      ? "All day"
-      : formatDuration(selectedEvent.startRaw, selectedEvent.endRaw);
+  // Compute detail-view derived values (safe even when no event selected)
+  const duration = selectedEvent
+    ? (selectedEvent.isAllDay ? "All day" : formatDuration(selectedEvent.startRaw, selectedEvent.endRaw))
+    : "";
 
-    return (
-      <WidgetWrapper
-        title="Today's Schedule"
-        widgetType="calendar"
-        icon={<Calendar className="h-4 w-4" />}
-        expandRequested={expandRequested}
-        onExpandHandled={onExpandHandled}
-        headerAction={
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => setSelectedId(null)}
-              className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted"
-              title="Back to schedule"
-            >
-              <ArrowLeft className="h-3.5 w-3.5" />
-            </button>
-            {selectedEvent.webLink && (
-              <a
-                href={selectedEvent.webLink}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted"
-                title="Open in Outlook"
-              >
-                <ExternalLink className="h-3.5 w-3.5" />
-              </a>
-            )}
-          </div>
-        }
+  // Build headerAction based on current view
+  const headerAction = selectedEvent ? (
+    <div className="flex items-center gap-1">
+      <button
+        onClick={() => setSelectedId(null)}
+        className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted"
+        title="Back to schedule"
       >
+        <ArrowLeft className="h-3.5 w-3.5" />
+      </button>
+      {selectedEvent.webLink && (
+        <a
+          href={selectedEvent.webLink}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted"
+          title="Open in Outlook"
+        >
+          <ExternalLink className="h-3.5 w-3.5" />
+        </a>
+      )}
+    </div>
+  ) : (
+    <div className="flex items-center gap-2">
+      {!loading && !error && (
+        <span className="text-xs text-muted-foreground">
+          {todayEvents.length} events
+        </span>
+      )}
+      <button
+        onClick={fetchEvents}
+        disabled={loading}
+        className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted disabled:opacity-50"
+      >
+        <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
+      </button>
+    </div>
+  );
+
+  return (
+    <WidgetWrapper
+      title="Today's Schedule"
+      widgetType="calendar"
+      icon={<Calendar className="h-4 w-4" />}
+      expandRequested={expandRequested}
+      onExpandHandled={onExpandHandled}
+      headerAction={headerAction}
+    >
+      {selectedEvent ? (
         <div className="flex flex-col h-full">
           {/* Title with color dot */}
           <div className="flex items-start gap-2 mb-3">
@@ -272,36 +290,7 @@ export function CalendarWidget() {
             </>
           )}
         </div>
-      </WidgetWrapper>
-    );
-  }
-
-  // List view
-  return (
-    <WidgetWrapper
-      title="Today's Schedule"
-      widgetType="calendar"
-      icon={<Calendar className="h-4 w-4" />}
-      expandRequested={expandRequested}
-      onExpandHandled={onExpandHandled}
-      headerAction={
-        <div className="flex items-center gap-2">
-          {!loading && !error && (
-            <span className="text-xs text-muted-foreground">
-              {todayEvents.length} events
-            </span>
-          )}
-          <button
-            onClick={fetchEvents}
-            disabled={loading}
-            className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted disabled:opacity-50"
-          >
-            <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
-          </button>
-        </div>
-      }
-    >
-      {loading && events.length === 0 ? (
+      ) : loading && events.length === 0 ? (
         <div className="flex items-center justify-center h-full">
           <div className="flex flex-col items-center gap-2 text-muted-foreground">
             <Loader2 className="h-5 w-5 animate-spin" />

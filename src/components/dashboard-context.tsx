@@ -7,7 +7,7 @@ import { getDefaultLayouts, getDefaultWidgets } from "@/lib/dashboard-config";
 import { useProfile, type ProfileId } from "@/components/profile-context";
 
 // Bump this when you change the default layout to force a reset
-const LAYOUT_VERSION = 17;
+const LAYOUT_VERSION = 18;
 const COLS = 12;
 
 interface DashboardContextType {

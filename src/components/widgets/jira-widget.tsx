@@ -328,43 +328,71 @@ export function JiraWidget() {
     : issues;
 
   // Detail view
-  if (selectedKey) {
-    const listIssue = issues.find((i) => i.key === selectedKey);
-    const TypeIcon = typeIcons[detail?.type || listIssue?.type || ""] || ListTodo;
-    const priorityCfg = priorityConfig[detail?.priority || listIssue?.priority || ""] || priorityConfig.Medium;
-    const PriorityIcon = priorityCfg.icon;
-    const statusBadge = getStatusBadge(detail?.status || listIssue?.status || "");
-    const issueUrl = detail?.url || listIssue?.url || `https://jira.tools.sap/browse/${selectedKey}`;
+  const isDetailView = !!selectedKey;
+  const listIssue = selectedKey ? issues.find((i) => i.key === selectedKey) : null;
+  const TypeIcon = isDetailView ? (typeIcons[detail?.type || listIssue?.type || ""] || ListTodo) : ListTodo;
+  const priorityCfg = isDetailView ? (priorityConfig[detail?.priority || listIssue?.priority || ""] || priorityConfig.Medium) : priorityConfig.Medium;
+  const PriorityIcon = priorityCfg.icon;
+  const statusBadge = isDetailView ? getStatusBadge(detail?.status || listIssue?.status || "") : null;
+  const issueUrl = isDetailView ? (detail?.url || listIssue?.url || `https://jira.tools.sap/browse/${selectedKey}`) : "";
 
-    return (
-      <WidgetWrapper
-        title="Jira Issues"
-        widgetType="jira"
-        icon={jiraIcon}
-        expandRequested={expandRequested}
-        onExpandHandled={onExpandHandled}
-        headerAction={
-          <div className="flex items-center gap-1">
-            <button
-              onClick={closeDetail}
-              className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted"
-              title="Back to list"
-            >
-              <ArrowLeft className="h-3.5 w-3.5" />
-            </button>
-            <a
-              href={issueUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted"
-              title="Open in Jira"
-            >
-              <ExternalLink className="h-3.5 w-3.5" />
-            </a>
-          </div>
-        }
+  // Build headerAction based on current view
+  const headerAction = isDetailView ? (
+    <div className="flex items-center gap-1">
+      <button
+        onClick={closeDetail}
+        className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted"
+        title="Back to list"
       >
-        {detailLoading ? (
+        <ArrowLeft className="h-3.5 w-3.5" />
+      </button>
+      <a
+        href={issueUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted"
+        title="Open in Jira"
+      >
+        <ExternalLink className="h-3.5 w-3.5" />
+      </a>
+    </div>
+  ) : (
+    <div className="flex items-center gap-2">
+      {!loading && !error && !authRequired && (
+        <span className="text-xs text-muted-foreground">
+          {issues.length} open
+        </span>
+      )}
+      <button
+        onClick={() => { setShowFilter((v) => !v); if (showFilter) setFilterQuery(""); }}
+        className={cn(
+          "text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted",
+          showFilter && "text-primary bg-primary/10"
+        )}
+      >
+        <Search className="h-3.5 w-3.5" />
+      </button>
+      <button
+        onClick={fetchIssues}
+        disabled={loading}
+        className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted disabled:opacity-50"
+      >
+        <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
+      </button>
+    </div>
+  );
+
+  return (
+    <WidgetWrapper
+      title="Jira Issues"
+      widgetType="jira"
+      icon={jiraIcon}
+      expandRequested={expandRequested}
+      onExpandHandled={onExpandHandled}
+      headerAction={headerAction}
+    >
+      {isDetailView ? (
+        detailLoading ? (
           <div className="flex items-center justify-center h-full">
             <div className="flex flex-col items-center gap-2 text-muted-foreground">
               <Loader2 className="h-5 w-5 animate-spin" />
@@ -399,8 +427,8 @@ export function JiraWidget() {
               <Badge variant="secondary" className="text-[10px] px-1.5 py-0 font-mono">
                 {detail.key}
               </Badge>
-              <Badge variant="secondary" className={cn("text-[10px] px-1.5 py-0", statusBadge.color)}>
-                {statusBadge.label}
+              <Badge variant="secondary" className={cn("text-[10px] px-1.5 py-0", statusBadge?.color)}>
+                {statusBadge?.label}
               </Badge>
               <span className="flex items-center gap-0.5">
                 <PriorityIcon className={cn("h-3 w-3", priorityCfg.color)} />
@@ -514,46 +542,8 @@ export function JiraWidget() {
               </>
             )}
           </div>
-        ) : null}
-      </WidgetWrapper>
-    );
-  }
-
-  // List view
-  return (
-    <WidgetWrapper
-      title="Jira Issues"
-      widgetType="jira"
-      icon={jiraIcon}
-      expandRequested={expandRequested}
-      onExpandHandled={onExpandHandled}
-      headerAction={
-        <div className="flex items-center gap-2">
-          {!loading && !error && !authRequired && (
-            <span className="text-xs text-muted-foreground">
-              {issues.length} open
-            </span>
-          )}
-          <button
-            onClick={() => { setShowFilter((v) => !v); if (showFilter) setFilterQuery(""); }}
-            className={cn(
-              "text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted",
-              showFilter && "text-primary bg-primary/10"
-            )}
-          >
-            <Search className="h-3.5 w-3.5" />
-          </button>
-          <button
-            onClick={fetchIssues}
-            disabled={loading}
-            className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted disabled:opacity-50"
-          >
-            <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
-          </button>
-        </div>
-      }
-    >
-      {loading && issues.length === 0 ? (
+        ) : null
+      ) : loading && issues.length === 0 ? (
         <div className="flex items-center justify-center h-full">
           <div className="flex flex-col items-center gap-2 text-muted-foreground">
             <Loader2 className="h-5 w-5 animate-spin" />

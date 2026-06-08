@@ -5,9 +5,7 @@ import {
   colorThemes,
   fontFamilies,
   fontSizes,
-  type ColorTheme,
-  type FontFamily,
-  type FontSize,
+  densityOptions,
 } from "@/components/appearance-context";
 import {
   DropdownMenu,
@@ -15,11 +13,11 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Separator } from "@/components/ui/separator";
-import { Paintbrush, Check, Minus, Plus } from "lucide-react";
+import { Paintbrush, Check, Minus, Plus, LayoutGrid } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export function AppearancePicker() {
-  const { appearance, setColorTheme, setFontFamily, setFontSize, increaseFontSize, decreaseFontSize } = useAppearance();
+  const { appearance, setColorTheme, setFontFamily, setFontSize, setDensity, increaseFontSize, decreaseFontSize } = useAppearance();
 
   const currentSizeIdx = fontSizes.findIndex((s) => s.id === appearance.fontSize);
   const currentSizeLabel = fontSizes[currentSizeIdx]?.label ?? "Default";
@@ -146,6 +144,35 @@ export function AppearancePicker() {
               )}
               title={size.label}
             />
+          ))}
+        </div>
+
+        <Separator className="my-3" />
+
+        {/* Density */}
+        <div className="mb-2">
+          <h3 className="text-sm font-semibold">Density</h3>
+          <p className="text-xs text-muted-foreground">Widget spacing & size</p>
+        </div>
+        <div className="grid grid-cols-3 gap-1.5">
+          {densityOptions.map((opt) => (
+            <button
+              key={opt.id}
+              onClick={() => setDensity(opt.id)}
+              className={cn(
+                "flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-md text-xs transition-colors border",
+                appearance.density === opt.id
+                  ? "border-primary bg-primary/10 text-foreground"
+                  : "border-transparent hover:bg-muted text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <LayoutGrid className={cn(
+                "h-3.5 w-3.5",
+                opt.id === "compact" && "scale-75",
+                opt.id === "spacious" && "scale-110",
+              )} />
+              <span>{opt.label}</span>
+            </button>
           ))}
         </div>
       </DropdownMenuContent>

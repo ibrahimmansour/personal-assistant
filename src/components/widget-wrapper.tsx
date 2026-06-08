@@ -99,7 +99,7 @@ export function WidgetWrapper({
   const [showSplitPicker, setShowSplitPicker] = useState(false);
   const splitPickerRef = useRef<HTMLDivElement>(null);
   const fullscreenRef = useRef<HTMLDivElement>(null);
-  const { setExpandedWidget } = useCommandPalette();
+  const { setExpandedWidget, collapseSeq } = useCommandPalette();
   const { pinnedWidgetIds, togglePinWidget, activeWorkspace } = useWorkspace();
   const { widgets } = useDashboard();
   const isPinned = widgetType ? pinnedWidgetIds.includes(widgetType) : false;
@@ -132,6 +132,21 @@ export function WidgetWrapper({
       return () => setExpandedWidget(null);
     }
   }, [isExpanded, widgetType, setExpandedWidget]);
+
+  // Collapse when a global collapseAll signal fires (e.g. navigating to another widget)
+  const collapseSeqRef = useRef(collapseSeq);
+  useEffect(() => {
+    if (collapseSeq !== collapseSeqRef.current) {
+      collapseSeqRef.current = collapseSeq;
+      if (isExpanded) {
+        if (document.fullscreenElement) {
+          document.exitFullscreen().catch(() => {});
+        }
+        setIsExpanded(false);
+        onExpandChange?.(false);
+      }
+    }
+  }, [collapseSeq, isExpanded, onExpandChange]);
 
   // Handle controlled expand requests
   useEffect(() => {

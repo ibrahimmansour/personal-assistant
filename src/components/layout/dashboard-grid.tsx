@@ -16,6 +16,9 @@ import { useWidgetNav } from "@/components/widget-nav-context";
 import {
   useWorkspace,
 } from "@/components/workspace-context";
+import { useProfile } from "@/components/profile-context";
+import { useAppearance } from "@/components/appearance-context";
+import { getDefaultResponsiveLayouts, widgetSections, sectionMeta, type WidgetSection } from "@/lib/dashboard-config";
 
 import { ClockWidget } from "@/components/widgets/clock-widget";
 import { TasksWidget } from "@/components/widgets/tasks-widget";
@@ -56,6 +59,8 @@ export function DashboardGrid() {
   const { width, containerRef } = useContainerWidth({ initialWidth: 1200 });
   const { widgets, layouts, layoutLocked, updateLayouts } = useDashboard();
   const { navigateTo } = useWidgetNav();
+  const { activeProfile } = useProfile();
+  const { appearance } = useAppearance();
   const {
     activeWorkspace,
     pinnedWidgetIds,
@@ -226,6 +231,20 @@ export function DashboardGrid() {
     return items as Layout;
   }, [isDashboard, layouts, visibleWidgets, visibleIds, pinnedWidgetIds]);
 
+  // Derive responsive (md/sm) layouts from the effective lg layout
+  const responsiveLayoutSet = useMemo(() => {
+    if (!isDashboard) {
+      // Non-dashboard workspaces: same layout for all breakpoints (auto-generated above)
+      return { lg: effectiveLayouts, md: effectiveLayouts, sm: effectiveLayouts };
+    }
+    // For dashboard: derive proper md/sm layouts from the lg layout
+    const defaults = getDefaultResponsiveLayouts(activeProfile);
+    // Filter each breakpoint layout to only include visible widgets
+    const filteredMd = defaults.md.filter((item) => visibleIds.has(item.i));
+    const filteredSm = defaults.sm.filter((item) => visibleIds.has(item.i));
+    return { lg: effectiveLayouts, md: filteredMd, sm: filteredSm };
+  }, [isDashboard, effectiveLayouts, activeProfile, visibleIds]);
+
   const handleBreakpointChange = useCallback(
     (newBreakpoint: string, _newCols: number) => {
       currentBreakpointRef.current = newBreakpoint;
@@ -291,24 +310,79 @@ export function DashboardGrid() {
     return items as Layout;
   }, [visibleWidgets]);
 
+  // ─── Section labels: compute pixel positions from layout ─────────────
+  // Density affects row height and margins
+  const densityConfig = useMemo(() => {
+    if (isMobile) return { rowHeight: 70, margin: 12 };
+    switch (appearance.density) {
+      case "compact":    return { rowHeight: 64, margin: 10 };
+      case "spacious":   return { rowHeight: 96, margin: 20 };
+      case "comfortable":
+      default:           return { rowHeight: 80, margin: 16 };
+    }
+  }, [isMobile, appearance.density]);
+
+  const rowHeight = densityConfig.rowHeight;
+  const marginY = densityConfig.margin;
+
+  const sectionLabels = useMemo(() => {
+    if (!isDashboard || isMobile) return [];
+
+    // Group visible widgets by section, find the min-y for each section
+    const sectionMinY: Partial<Record<WidgetSection, number>> = {};
+    const lgLayout = responsiveLayoutSet.lg;
+
+    for (const item of lgLayout) {
+      const section = widgetSections[item.i];
+      if (!section) continue;
+      if (sectionMinY[section] === undefined || item.y < sectionMinY[section]!) {
+        sectionMinY[section] = item.y;
+      }
+    }
+
+    // Convert to sorted array with pixel positions
+    return Object.entries(sectionMinY)
+      .map(([section, y]) => ({
+        section: section as WidgetSection,
+        label: sectionMeta[section as WidgetSection].label,
+        order: sectionMeta[section as WidgetSection].order,
+        pixelY: y! * (rowHeight + marginY),
+      }))
+      .sort((a, b) => a.order - b.order);
+  }, [isDashboard, isMobile, responsiveLayoutSet.lg, rowHeight, marginY]);
+
   return (
     <div className="flex flex-col h-full">
       {/* ─── Grid ─────────────────────────────────────────────── */}
       <div className="flex-1 overflow-auto p-2 md:p-4" ref={containerRef}>
         {width > 0 && visibleWidgets.length > 0 && (
-          <ResponsiveGridLayout
-            className="layout"
-            width={width}
-            layouts={{
-              lg: effectiveLayouts,
-              md: effectiveLayouts,
-              sm: effectiveLayouts,
-              xs: mobileLayouts,
-            }}
+          <div className="relative">
+            {/* Section divider labels (between widget groups, skip the first section) */}
+            {sectionLabels.slice(1).map((section) => (
+              <div
+                key={section.section}
+                className="absolute left-0 right-0 z-10 pointer-events-none flex items-center gap-2"
+                style={{ top: section.pixelY - 20 }}
+              >
+                <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/50 shrink-0">
+                  {section.label}
+                </span>
+                <div className="flex-1 h-px bg-border/40" />
+              </div>
+            ))}
+            <ResponsiveGridLayout
+              className="layout"
+              width={width}
+              layouts={{
+                lg: responsiveLayoutSet.lg,
+                md: responsiveLayoutSet.md,
+                sm: responsiveLayoutSet.sm,
+                xs: mobileLayouts,
+              }}
             breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 0 }}
             cols={{ lg: 12, md: 8, sm: 4, xs: 1 }}
-            rowHeight={isMobile ? 70 : 80}
-            margin={isMobile ? [12, 12] : [16, 16]}
+            rowHeight={rowHeight}
+            margin={[densityConfig.margin, densityConfig.margin] as [number, number]}
             containerPadding={[0, 0]}
             compactor={activeCompactor}
             dragConfig={{
@@ -334,6 +408,7 @@ export function DashboardGrid() {
               );
             })}
           </ResponsiveGridLayout>
+          </div>
         )}
         {visibleWidgets.length === 0 && (
           <div className="flex items-center justify-center h-64 text-muted-foreground">
