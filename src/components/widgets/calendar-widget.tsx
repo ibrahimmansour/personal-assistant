@@ -23,6 +23,7 @@ import { cn } from "@/lib/utils";
 import { useEffect, useState, useCallback } from "react";
 import { useProfile } from "@/components/profile-context";
 import { useWidgetNavFor } from "@/components/widget-nav-context";
+import { useRefreshOnVisible } from "@/hooks/use-refresh-on-visible";
 
 interface Attendee {
   name: string;
@@ -131,6 +132,9 @@ export function CalendarWidget() {
     const interval = setInterval(fetchEvents, 5 * 60 * 1000);
     return () => clearInterval(interval);
   }, [fetchEvents]);
+
+  // Refresh events when tab becomes visible after being hidden 30s+
+  useRefreshOnVisible(fetchEvents);
 
   const todayEvents = events.filter((e) => e.isToday);
   const selectedEvent = selectedId ? events.find((e) => e.id === selectedId) : null;

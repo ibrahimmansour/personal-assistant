@@ -30,6 +30,7 @@ import { cn } from "@/lib/utils";
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { useProfile } from "@/components/profile-context";
 import { useWidgetNavFor } from "@/components/widget-nav-context";
+import { useRefreshOnVisible } from "@/hooks/use-refresh-on-visible";
 
 // ─── Types ─────────────────────────────────────────────────────────────
 
@@ -857,6 +858,9 @@ export function EmailWidget() {
     const interval = setInterval(fetchEmails, 3 * 60 * 1000);
     return () => clearInterval(interval);
   }, [fetchEmails, fetchRules]);
+
+  // Refresh emails when tab becomes visible after being hidden 30s+
+  useRefreshOnVisible(fetchEmails);
 
   const unreadCount = emails.filter((e) => !e.read).length;
   const selectedEmail = selectedId

@@ -17,9 +17,11 @@ import { CommandPaletteProvider } from "@/components/command-palette-context";
 import { CommandPalette } from "@/components/command-palette";
 import { AIChatProvider } from "@/components/ai-chat-context";
 import { AIChatPanel } from "@/components/ai-chat-panel";
+import { useKeepAlive } from "@/hooks/use-keep-alive";
 
 function MainContent() {
   const { activeFocusId, activeWorkspace } = useWorkspace();
+  useKeepAlive();
 
   let content: React.ReactNode;
   if (activeFocusId) {

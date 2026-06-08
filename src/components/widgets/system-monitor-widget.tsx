@@ -36,6 +36,7 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
+import { useRefreshOnVisible } from "@/hooks/use-refresh-on-visible";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -434,6 +435,9 @@ export function SystemMonitorWidget() {
     const interval = setInterval(fetchMetrics, refreshInterval);
     return () => clearInterval(interval);
   }, [fetchMetrics, refreshInterval]);
+
+  // Refresh metrics when tab becomes visible after being hidden 30s+
+  useRefreshOnVisible(fetchMetrics);
 
   // Process search
   const handleProcessSearch = useCallback(async (query: string) => {

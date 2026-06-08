@@ -49,6 +49,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useRefreshOnVisible } from "@/hooks/use-refresh-on-visible";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -155,6 +156,9 @@ interface SessionState {
   terminalRecentText: string;
   /** Timer handle for the idle-detection callback. */
   terminalIdleTimer: ReturnType<typeof setTimeout> | null;
+  /** True when the WebSocket disconnected but the tmux session is likely still
+   *  running on the server. Allows spawnTerminal to reconnect (reattach). */
+  tmuxDisconnected: boolean;
   /** Subscribers that re-render when this session updates. */
   subscribers: Set<() => void>;
 }
@@ -600,6 +604,7 @@ function openSession(opts: OpenSessionOpts): SessionState {
     terminalAwaitingHint: "",
     terminalRecentText: "",
     terminalIdleTimer: null,
+    tmuxDisconnected: false,
     subscribers: new Set(),
   };
 
@@ -615,12 +620,22 @@ function openSession(opts: OpenSessionOpts): SessionState {
  * Lazily create the PTY terminal for a session. If already alive or being
  * spawned, this is a no-op. After the PTY is open, any queued
  * `pendingPrompts` are flushed to the terminal in order.
+ *
+ * When tmux is enabled (always for Claude sessions), the PTY server wraps the
+ * session in tmux. If the WebSocket disconnects (tab backgrounded, network
+ * blip), Claude keeps running inside tmux on the server. Calling spawnTerminal
+ * again will reattach to the running tmux session.
  */
 async function spawnTerminal(state: SessionState): Promise<boolean> {
   if (state.alive || state.spawningTerminal) return state.alive;
-  if (state.ws) return false; // there's already an exited terminal — ignore
+
+  // Allow re-spawning for tmux sessions (reconnect). For non-tmux, the old
+  // guard prevents re-running an exited terminal.
+  const tmuxKey = `claude-${state.key}`;
+  if (state.ws && !state.tmuxDisconnected) return false;
 
   state.spawningTerminal = true;
+  state.tmuxDisconnected = false;
   notifySubscribers(state);
 
   try {
@@ -676,6 +691,7 @@ async function spawnTerminal(state: SessionState): Promise<boolean> {
     const wsUrl = new URL(PTY_WS_URL);
     if (cwd) wsUrl.searchParams.set("cwd", cwd);
     wsUrl.searchParams.set("cmd", cmd);
+    wsUrl.searchParams.set("tmux", tmuxKey);
 
     const ws = new WebSocket(wsUrl.toString());
 
@@ -720,6 +736,7 @@ async function spawnTerminal(state: SessionState): Promise<boolean> {
         } else if (msg.type === "exit") {
           terminal.writeln("\r\n\x1b[90m[Process exited]\x1b[0m");
           state.alive = false;
+          state.tmuxDisconnected = false; // real exit, don't allow auto-reconnect
           state.terminalAwaitingInput = false;
           if (state.terminalIdleTimer) clearTimeout(state.terminalIdleTimer);
           notifySubscribers(state);
@@ -730,11 +747,20 @@ async function spawnTerminal(state: SessionState): Promise<boolean> {
     };
 
     ws.onclose = () => {
+      if (state.alive) {
+        // WebSocket closed while session was alive — this is a disconnect,
+        // not a process exit. The tmux session is still running on the server.
+        state.tmuxDisconnected = true;
+        terminal.writeln("\r\n\x1b[33m[Disconnected — session still running in tmux. Will reconnect automatically.]\x1b[0m");
+      }
       state.alive = false;
       notifySubscribers(state);
     };
 
     ws.onerror = () => {
+      if (state.alive) {
+        state.tmuxDisconnected = true;
+      }
       state.alive = false;
       notifySubscribers(state);
     };
@@ -1577,6 +1603,30 @@ export function ClaudeCodeWidget() {
     const id = setInterval(fetchSessions, 8000);
     return () => clearInterval(id);
   }, [sidebarOpen, fetchSessions]);
+
+  // Refresh sessions when tab becomes visible after being hidden 30s+
+  useRefreshOnVisible(fetchSessions);
+
+  // ── Auto-reconnect tmux sessions when tab becomes visible ──────────────
+  // If the active session was disconnected (tmuxDisconnected), automatically
+  // reattach when the user returns to the tab.
+  useEffect(() => {
+    function handleTabVisible() {
+      const state = activeKey ? sessionStore.get(activeKey) : null;
+      if (state && state.tmuxDisconnected && !state.alive && !state.spawningTerminal) {
+        // Clear the old terminal so spawnTerminal creates a fresh xterm instance
+        if (state.terminal) {
+          state.terminal.dispose();
+          state.terminal = null;
+          state.fitAddon = null;
+        }
+        state.ws = null;
+        spawnTerminal(state);
+      }
+    }
+    window.addEventListener("app:tab-visible", handleTabVisible);
+    return () => window.removeEventListener("app:tab-visible", handleTabVisible);
+  }, [activeKey]);
 
   // ── Fetch scheduled prompts ────────────────────────────────────────────
   const fetchSchedules = useCallback(async () => {

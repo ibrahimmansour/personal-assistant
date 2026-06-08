@@ -37,6 +37,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useWidgetNavFor } from "@/components/widget-nav-context";
+import { useRefreshOnVisible } from "@/hooks/use-refresh-on-visible";
 
 interface JiraIssue {
   key: string;
@@ -285,6 +286,9 @@ export function JiraWidget() {
     const interval = setInterval(fetchIssues, 3 * 60 * 1000);
     return () => clearInterval(interval);
   }, [fetchIssues]);
+
+  // Refresh issues when tab becomes visible after being hidden 30s+
+  useRefreshOnVisible(fetchIssues);
 
   // Handle navigation from command palette
   useEffect(() => {

@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useEffect, useState, useCallback } from "react";
+import { useRefreshOnVisible } from "@/hooks/use-refresh-on-visible";
 
 interface ForecastDay {
   day: string;
@@ -88,6 +89,9 @@ export function WeatherWidget() {
     const interval = setInterval(fetchWeather, 10 * 60 * 1000);
     return () => clearInterval(interval);
   }, [fetchWeather]);
+
+  // Refresh weather when tab becomes visible after being hidden 30s+
+  useRefreshOnVisible(fetchWeather);
 
   const cfg = weather ? (conditionConfig[weather.condition] || fallback) : fallback;
 

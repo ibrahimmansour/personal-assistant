@@ -22,6 +22,7 @@ import { cn } from "@/lib/utils";
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useProfile } from "@/components/profile-context";
 import { useWidgetNavFor } from "@/components/widget-nav-context";
+import { useRefreshOnVisible } from "@/hooks/use-refresh-on-visible";
 
 interface GitHubPRData {
   id: string;
@@ -164,6 +165,9 @@ export function GitHubPRsWidget() {
     const interval = setInterval(fetchPRs, 2 * 60 * 1000);
     return () => clearInterval(interval);
   }, [fetchPRs]);
+
+  // Refresh PRs when tab becomes visible after being hidden 30s+
+  useRefreshOnVisible(fetchPRs);
 
   const openCount = prs.filter((pr) => pr.status === "open" || pr.status === "draft").length;
 
