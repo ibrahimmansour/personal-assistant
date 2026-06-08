@@ -20,6 +20,8 @@ interface DashboardContextType {
   resetLayout: () => void;
   autoArrange: () => void;
   toggleLayoutLock: () => void;
+  /** Move a widget up or down in the visible order (used by mobile reorder mode). */
+  moveWidget: (id: string, direction: "up" | "down") => void;
 }
 
 const DashboardContext = createContext<DashboardContextType | null>(null);
@@ -407,6 +409,34 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  /**
+   * Move a visible widget up or down by one slot in the array order.
+   * Used by the mobile "reorder mode" (since react-grid-layout drag is
+   * disabled on touch devices). Hidden widgets are skipped during traversal
+   * so the perceived motion always advances by one visible slot.
+   */
+  const moveWidget = useCallback(
+    (id: string, direction: "up" | "down") => {
+      setWidgets((prev) => {
+        const idx = prev.findIndex((w) => w.id === id);
+        if (idx === -1) return prev;
+        // Find the index of the next/previous *visible* widget
+        const step = direction === "up" ? -1 : 1;
+        let target = idx + step;
+        while (target >= 0 && target < prev.length && !prev[target].visible) {
+          target += step;
+        }
+        if (target < 0 || target >= prev.length) return prev;
+        const next = [...prev];
+        const [removed] = next.splice(idx, 1);
+        next.splice(target, 0, removed);
+        persistBoth(next, layouts);
+        return next;
+      });
+    },
+    [layouts, persistBoth]
+  );
+
   // Cmd+Shift+A → auto-arrange (only when layout is not locked)
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
@@ -423,7 +453,7 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <DashboardContext.Provider
-      value={{ widgets, layouts, layoutLocked, toggleWidget, ensureWidgetVisible, updateLayouts, resetLayout, autoArrange, toggleLayoutLock }}
+      value={{ widgets, layouts, layoutLocked, toggleWidget, ensureWidgetVisible, updateLayouts, resetLayout, autoArrange, toggleLayoutLock, moveWidget }}
     >
       {children}
     </DashboardContext.Provider>

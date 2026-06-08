@@ -28,6 +28,7 @@ import {
 import { useWidgetNav } from "@/components/widget-nav-context";
 import { useWorkspace } from "@/components/workspace-context";
 import { useTheme } from "next-themes";
+import { useEdgeSwipe, useSwipe } from "@/hooks/use-swipe";
 
 export function AIChatPanel() {
   const {
@@ -35,6 +36,7 @@ export function AIChatPanel() {
     isOpen,
     isStreaming,
     aiAvailable,
+    open,
     close,
     sendMessage,
     clearSession,
@@ -185,18 +187,83 @@ export function AIChatPanel() {
     ]
   );
 
-  if (!isOpen) return null;
+  // ─── Mobile gestures: edge-swipe-to-open + swipe-right-to-close ───
+  const PANEL_WIDTH = 420;
+  const [dragX, setDragX] = useState<number | null>(null);
+  const [backdropOpacity, setBackdropOpacity] = useState<number | null>(null);
+
+  // Right-edge swipe to OPEN (when closed)
+  useEdgeSwipe({
+    edge: "right",
+    edgeWidth: 24,
+    threshold: 60,
+    enabled: !isOpen,
+    onProgress: (p) => {
+      if (p === 0) {
+        setDragX(null);
+        setBackdropOpacity(null);
+      } else {
+        // Translate from +PANEL_WIDTH (off-screen right) toward 0
+        setDragX(PANEL_WIDTH - p * PANEL_WIDTH);
+        setBackdropOpacity(p);
+      }
+    },
+    onOpen: () => {
+      setDragX(null);
+      setBackdropOpacity(null);
+      open();
+    },
+  });
+
+  // While open, swipe-right-to-close — drags the panel off the right edge
+  const panelSwipeRef = useSwipe<HTMLDivElement>({
+    disabled: !isOpen,
+    axis: "horizontal",
+    threshold: 50,
+    velocityThreshold: 0.4,
+    ignoreOnScrollers: true,
+    onProgress: ({ dx, axis }) => {
+      if (axis !== "horizontal" || dx <= 0) {
+        setDragX(null);
+        setBackdropOpacity(null);
+        return;
+      }
+      const clamped = Math.min(PANEL_WIDTH, dx);
+      setDragX(clamped);
+      setBackdropOpacity(1 - clamped / PANEL_WIDTH);
+    },
+    onSwipeRight: () => {
+      setDragX(null);
+      setBackdropOpacity(null);
+      close();
+    },
+  });
+
+  if (!isOpen && dragX === null) return null;
 
   return (
     <div className="fixed right-0 top-0 bottom-0 z-[100] flex">
       {/* Backdrop */}
       <div
         className="fixed inset-0 bg-background/40 backdrop-blur-sm"
+        style={
+          backdropOpacity !== null
+            ? { opacity: Math.max(0, Math.min(1, backdropOpacity)), transitionDuration: "0ms" }
+            : undefined
+        }
         onClick={close}
       />
 
       {/* Panel */}
-      <div className="relative ml-auto w-[420px] max-w-[90vw] h-full bg-card border-l border-border shadow-2xl flex flex-col animate-in slide-in-from-right duration-200">
+      <div
+        ref={panelSwipeRef}
+        style={
+          dragX !== null
+            ? { transform: `translateX(${dragX}px)`, transitionDuration: "0ms" }
+            : undefined
+        }
+        className="relative ml-auto w-[420px] max-w-[90vw] h-full bg-card border-l border-border shadow-2xl flex flex-col animate-in slide-in-from-right duration-200 touch-pan-y"
+      >
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
           <div className="flex items-center gap-2">

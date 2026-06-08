@@ -25,6 +25,7 @@ export const widgetSections: Record<string, WidgetSection> = {
   "github-prs": "devtools",
   terminal: "devtools",
   "claude-code": "devtools",
+  news: "more",
   bookmarks: "more",
   files: "more",
   "system-monitor": "more",
@@ -47,6 +48,7 @@ const workWidgets: WidgetConfig[] = [
   { id: "bookmarks", type: "bookmarks", title: "Bookmarks", visible: false },
   { id: "files", type: "files", title: "Files", visible: false },
   { id: "system-monitor", type: "system-monitor", title: "System Monitor", visible: false },
+  { id: "news", type: "news", title: "News", visible: true },
 ];
 
 // lg layout: 12 columns — clean 3-column grid with uniform row heights
@@ -66,10 +68,11 @@ const workLayouts: Layout = [
   // ─── Bottom row ───────────────────────────────────────
   { i: "reminders",  x: 0, y: 11, w: 4, h: 4, minW: 3, minH: 2 },
   { i: "claude-code",x: 4, y: 11, w: 8, h: 5, minW: 4, minH: 4 },
-  // ─── Hidden by default (More section) ─────────────────
-  { i: "bookmarks",  x: 0, y: 16, w: 4, h: 4, minW: 3, minH: 3 },
-  { i: "files",      x: 4, y: 16, w: 4, h: 4, minW: 3, minH: 3 },
-  { i: "system-monitor", x: 8, y: 16, w: 4, h: 4, minW: 3, minH: 3 },
+  // ─── More section ────────────────────────────────────
+  { i: "news",       x: 0, y: 16, w: 4, h: 4, minW: 3, minH: 3 },
+  { i: "bookmarks",  x: 4, y: 16, w: 4, h: 4, minW: 3, minH: 3 },
+  { i: "files",      x: 8, y: 16, w: 4, h: 4, minW: 3, minH: 3 },
+  { i: "system-monitor", x: 0, y: 20, w: 4, h: 4, minW: 3, minH: 3 },
 ];
 
 // md layout: 8 columns — 2-column grid
@@ -89,9 +92,10 @@ const workLayoutsMd: Layout = [
   { i: "terminal",   x: 4, y: 14, w: 4, h: 4, minW: 3, minH: 3 },
   { i: "claude-code",x: 0, y: 18, w: 8, h: 5, minW: 4, minH: 4 },
   // ─── More ─────────────────────────────────────────────
-  { i: "bookmarks",  x: 0, y: 23, w: 4, h: 4, minW: 3, minH: 3 },
-  { i: "files",      x: 4, y: 23, w: 4, h: 4, minW: 3, minH: 3 },
-  { i: "system-monitor", x: 0, y: 27, w: 4, h: 4, minW: 3, minH: 3 },
+  { i: "news",       x: 0, y: 23, w: 4, h: 4, minW: 3, minH: 3 },
+  { i: "bookmarks",  x: 4, y: 23, w: 4, h: 4, minW: 3, minH: 3 },
+  { i: "files",      x: 0, y: 27, w: 4, h: 4, minW: 3, minH: 3 },
+  { i: "system-monitor", x: 4, y: 27, w: 4, h: 4, minW: 3, minH: 3 },
 ];
 
 // sm layout: 4 columns — single column, stacked
@@ -107,9 +111,10 @@ const workLayoutsSm: Layout = [
   { i: "notes",      x: 0, y: 29, w: 4, h: 4, minW: 3, minH: 3 },
   { i: "terminal",   x: 0, y: 33, w: 4, h: 4, minW: 3, minH: 3 },
   { i: "claude-code",x: 0, y: 37, w: 4, h: 5, minW: 3, minH: 4 },
-  { i: "bookmarks",  x: 0, y: 42, w: 4, h: 4, minW: 3, minH: 3 },
-  { i: "files",      x: 0, y: 46, w: 4, h: 4, minW: 3, minH: 3 },
-  { i: "system-monitor", x: 0, y: 50, w: 4, h: 4, minW: 3, minH: 3 },
+  { i: "news",       x: 0, y: 42, w: 4, h: 4, minW: 3, minH: 3 },
+  { i: "bookmarks",  x: 0, y: 46, w: 4, h: 4, minW: 3, minH: 3 },
+  { i: "files",      x: 0, y: 50, w: 4, h: 4, minW: 3, minH: 3 },
+  { i: "system-monitor", x: 0, y: 54, w: 4, h: 4, minW: 3, minH: 3 },
 ];
 
 // ─── Private profile: no Jira, has GitHub.com, Gmail, Google Calendar ────────
@@ -128,6 +133,7 @@ const privateWidgets: WidgetConfig[] = [
   { id: "bookmarks", type: "bookmarks", title: "Bookmarks", visible: false },
   { id: "files", type: "files", title: "Files", visible: false },
   { id: "system-monitor", type: "system-monitor", title: "System Monitor", visible: false },
+  { id: "news", type: "news", title: "News", visible: true },
 ];
 
 // lg layout: 12 columns
@@ -146,10 +152,11 @@ const privateLayouts: Layout = [
   { i: "terminal",   x: 8, y: 7,  w: 4, h: 4, minW: 3, minH: 3 },
   // ─── Bottom ───────────────────────────────────────────
   { i: "claude-code",x: 0, y: 11, w: 8, h: 5, minW: 4, minH: 4 },
-  // ─── Hidden by default ────────────────────────────────
-  { i: "bookmarks",  x: 0, y: 16, w: 4, h: 4, minW: 3, minH: 3 },
-  { i: "files",      x: 4, y: 16, w: 4, h: 4, minW: 3, minH: 3 },
-  { i: "system-monitor", x: 8, y: 16, w: 4, h: 4, minW: 3, minH: 3 },
+  // ─── More section ────────────────────────────────────
+  { i: "news",       x: 0, y: 16, w: 4, h: 4, minW: 3, minH: 3 },
+  { i: "bookmarks",  x: 4, y: 16, w: 4, h: 4, minW: 3, minH: 3 },
+  { i: "files",      x: 8, y: 16, w: 4, h: 4, minW: 3, minH: 3 },
+  { i: "system-monitor", x: 0, y: 20, w: 4, h: 4, minW: 3, minH: 3 },
 ];
 
 // md layout: 8 columns
@@ -164,9 +171,10 @@ const privateLayoutsMd: Layout = [
   { i: "notes",      x: 4, y: 10, w: 4, h: 4, minW: 3, minH: 3 },
   { i: "terminal",   x: 0, y: 14, w: 4, h: 4, minW: 3, minH: 3 },
   { i: "claude-code",x: 4, y: 14, w: 4, h: 5, minW: 4, minH: 4 },
-  { i: "bookmarks",  x: 0, y: 19, w: 4, h: 4, minW: 3, minH: 3 },
-  { i: "files",      x: 4, y: 19, w: 4, h: 4, minW: 3, minH: 3 },
-  { i: "system-monitor", x: 0, y: 23, w: 4, h: 4, minW: 3, minH: 3 },
+  { i: "news",       x: 0, y: 19, w: 4, h: 4, minW: 3, minH: 3 },
+  { i: "bookmarks",  x: 4, y: 19, w: 4, h: 4, minW: 3, minH: 3 },
+  { i: "files",      x: 0, y: 23, w: 4, h: 4, minW: 3, minH: 3 },
+  { i: "system-monitor", x: 4, y: 23, w: 4, h: 4, minW: 3, minH: 3 },
 ];
 
 // sm layout: 4 columns — stacked
@@ -181,9 +189,10 @@ const privateLayoutsSm: Layout = [
   { i: "notes",      x: 0, y: 25, w: 4, h: 4, minW: 3, minH: 3 },
   { i: "terminal",   x: 0, y: 29, w: 4, h: 4, minW: 3, minH: 3 },
   { i: "claude-code",x: 0, y: 33, w: 4, h: 5, minW: 3, minH: 4 },
-  { i: "bookmarks",  x: 0, y: 38, w: 4, h: 4, minW: 3, minH: 3 },
-  { i: "files",      x: 0, y: 42, w: 4, h: 4, minW: 3, minH: 3 },
-  { i: "system-monitor", x: 0, y: 46, w: 4, h: 4, minW: 3, minH: 3 },
+  { i: "news",       x: 0, y: 38, w: 4, h: 4, minW: 3, minH: 3 },
+  { i: "bookmarks",  x: 0, y: 42, w: 4, h: 4, minW: 3, minH: 3 },
+  { i: "files",      x: 0, y: 46, w: 4, h: 4, minW: 3, minH: 3 },
+  { i: "system-monitor", x: 0, y: 50, w: 4, h: 4, minW: 3, minH: 3 },
 ];
 
 // ─── Responsive layout helper ────────────────────────────────────────────────

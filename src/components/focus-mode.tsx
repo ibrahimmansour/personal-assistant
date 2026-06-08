@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { X, GripVertical } from "lucide-react";
 import { useWorkspace } from "@/components/workspace-context";
 import { useDashboard } from "@/components/dashboard-context";
+import { useIsMobile } from "@/hooks/use-swipe";
 import type { WidgetType } from "@/types/widget";
 
 import { ClockWidget } from "@/components/widgets/clock-widget";
@@ -21,6 +22,7 @@ import { BookmarksWidget } from "@/components/widgets/bookmarks-widget";
 import { FilesWidget } from "@/components/widgets/files-widget";
 import { ClaudeCodeWidget } from "@/components/widgets/claude-code-widget";
 import { SystemMonitorWidget } from "@/components/widgets/system-monitor-widget";
+import { NewsWidget } from "@/components/widgets/news-widget";
 
 const widgetComponents: Record<WidgetType, React.ComponentType> = {
   clock: ClockWidget,
@@ -37,11 +39,13 @@ const widgetComponents: Record<WidgetType, React.ComponentType> = {
   files: FilesWidget,
   "claude-code": ClaudeCodeWidget,
   "system-monitor": SystemMonitorWidget,
+  news: NewsWidget,
 };
 
 export function FocusMode() {
   const { focusCombos, activeFocusId, exitFocusMode, updateFocusRatios } = useWorkspace();
   const { widgets } = useDashboard();
+  const isMobile = useIsMobile();
 
   const combo = focusCombos.find((c) => c.id === activeFocusId);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -57,49 +61,63 @@ export function FocusMode() {
     return () => document.removeEventListener("keydown", handleKey);
   }, [exitFocusMode]);
 
-  const handleSplitterMouseDown = useCallback(
-    (e: React.MouseEvent, index: number) => {
+  // Splitter drag handler — uses Pointer Events so it works for both
+  // mouse (desktop) and touch (mobile/tablet).
+  const handleSplitterPointerDown = useCallback(
+    (e: React.PointerEvent, index: number) => {
       e.preventDefault();
       if (!combo || !containerRef.current) return;
 
-      const isHorizontal = combo.direction === "horizontal";
-      const startPos = isHorizontal ? e.clientX : e.clientY;
+      // Capture pointer so move/up events fire even if the finger leaves the splitter.
+      const target = e.currentTarget as HTMLElement;
+      target.setPointerCapture(e.pointerId);
+
+      // On mobile, horizontal combos auto-stack vertically (see effectiveDirection
+      // below), so the splitter operates on the Y axis there.
+      const dir: "horizontal" | "vertical" = isMobile ? "vertical" : combo.direction;
+      const isHoriz = dir === "horizontal";
+      const startPos = isHoriz ? e.clientX : e.clientY;
       const containerRect = containerRef.current.getBoundingClientRect();
-      const containerSize = isHorizontal ? containerRect.width : containerRect.height;
+      const containerSize = isHoriz ? containerRect.width : containerRect.height;
 
       dragStartRef.current = { pos: startPos, ratios: [...combo.ratios] };
       setIsDragging(true);
 
-      function onMouseMove(e: MouseEvent) {
+      function onPointerMove(ev: PointerEvent) {
         if (!dragStartRef.current || !combo) return;
-        const currentPos = isHorizontal ? e.clientX : e.clientY;
+        const currentPos = isHoriz ? ev.clientX : ev.clientY;
         const delta = currentPos - dragStartRef.current.pos;
         const deltaPercent = (delta / containerSize) * 100;
 
         const newRatios = [...dragStartRef.current.ratios];
-        // Move the boundary between panel `index` and `index + 1`
         newRatios[index] = Math.max(15, Math.min(85, newRatios[index] + deltaPercent));
         newRatios[index + 1] = Math.max(15, Math.min(85, newRatios[index + 1] - deltaPercent));
 
         updateFocusRatios(combo.id, newRatios);
       }
 
-      function onMouseUp() {
+      function onPointerUp() {
         setIsDragging(false);
         dragStartRef.current = null;
-        document.removeEventListener("mousemove", onMouseMove);
-        document.removeEventListener("mouseup", onMouseUp);
+        target.removeEventListener("pointermove", onPointerMove);
+        target.removeEventListener("pointerup", onPointerUp);
+        target.removeEventListener("pointercancel", onPointerUp);
       }
 
-      document.addEventListener("mousemove", onMouseMove);
-      document.addEventListener("mouseup", onMouseUp);
+      target.addEventListener("pointermove", onPointerMove);
+      target.addEventListener("pointerup", onPointerUp);
+      target.addEventListener("pointercancel", onPointerUp);
     },
-    [combo, updateFocusRatios]
+    [combo, updateFocusRatios, isMobile]
   );
 
   if (!combo) return null;
 
-  const isHorizontal = combo.direction === "horizontal";
+  // On mobile, force horizontal combos to stack vertically so each panel
+  // gets full width. Splitter direction follows.
+  const effectiveDirection: "horizontal" | "vertical" =
+    isMobile ? "vertical" : combo.direction;
+  const isHorizontal = effectiveDirection === "horizontal";
 
   return (
     <div className="flex flex-col h-full">
@@ -112,10 +130,11 @@ export function FocusMode() {
         </div>
         <button
           onClick={exitFocusMode}
-          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground px-2 py-1 rounded-md hover:bg-muted transition-colors"
+          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground active:text-foreground px-2.5 py-1.5 rounded-md hover:bg-muted transition-colors"
         >
+          <X className="h-3.5 w-3.5 sm:hidden" />
           <span className="hidden sm:inline">Exit</span>
-          <kbd className="text-[9px] font-mono border border-border rounded px-1 py-0.5">Esc</kbd>
+          <kbd className="hidden sm:inline text-[9px] font-mono border border-border rounded px-1 py-0.5">Esc</kbd>
         </button>
       </div>
 
@@ -154,18 +173,18 @@ export function FocusMode() {
               {!isLast && (
                 <div
                   className={cn(
-                    "shrink-0 flex items-center justify-center group transition-colors",
+                    "shrink-0 flex items-center justify-center group transition-colors touch-none",
                     isHorizontal
-                      ? "w-1.5 cursor-col-resize hover:bg-primary/10"
-                      : "h-1.5 cursor-row-resize hover:bg-primary/10",
+                      ? "w-1.5 md:w-1.5 cursor-col-resize hover:bg-primary/10"
+                      : "h-3 md:h-1.5 cursor-row-resize hover:bg-primary/10",
                     isDragging && "bg-primary/20"
                   )}
-                  onMouseDown={(e) => handleSplitterMouseDown(e, i)}
+                  onPointerDown={(e) => handleSplitterPointerDown(e, i)}
                 >
                   <div
                     className={cn(
                       "rounded-full bg-border group-hover:bg-primary/50 transition-colors",
-                      isHorizontal ? "w-0.5 h-8" : "h-0.5 w-8"
+                      isHorizontal ? "w-0.5 h-8" : "h-0.5 w-12 md:w-8"
                     )}
                   />
                 </div>

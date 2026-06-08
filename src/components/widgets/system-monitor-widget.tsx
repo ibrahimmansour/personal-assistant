@@ -37,6 +37,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { useRefreshOnVisible } from "@/hooks/use-refresh-on-visible";
+import { useWidgetNavFor } from "@/components/widget-nav-context";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -382,6 +383,7 @@ export function SystemMonitorWidget() {
   const [netSpeed, setNetSpeed] = useState({ inPerSec: 0, outPerSec: 0 });
   const [paused, setPaused] = useState(false);
   const [refreshInterval, setRefreshInterval] = useState(3000);
+  const { expandRequested, onExpandHandled } = useWidgetNavFor("system-monitor");
 
   // Process controls
   const [processSort, setProcessSort] = useState<ProcessSort>("cpu");
@@ -1305,6 +1307,8 @@ export function SystemMonitorWidget() {
       title="System Monitor"
       icon={<Activity className="h-4 w-4" />}
       widgetType="system-monitor"
+      expandRequested={expandRequested}
+      onExpandHandled={onExpandHandled}
       headerAction={
         <div className="flex items-center gap-1">
           {metrics && (

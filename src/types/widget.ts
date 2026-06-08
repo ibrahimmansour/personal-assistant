@@ -21,7 +21,8 @@ export type WidgetType =
   | "bookmarks"
   | "files"
   | "claude-code"
-  | "system-monitor";
+  | "system-monitor"
+  | "news";
 
 export interface DashboardState {
   widgets: WidgetConfig[];

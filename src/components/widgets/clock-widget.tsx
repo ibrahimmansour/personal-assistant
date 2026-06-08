@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { WidgetWrapper } from "@/components/widget-wrapper";
 import { Clock, MapPin } from "lucide-react";
+import { useWidgetNavFor } from "@/components/widget-nav-context";
 
 function AnalogClock({ time }: { time: Date }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -118,6 +119,7 @@ function AnalogClock({ time }: { time: Date }) {
 
 export function ClockWidget() {
   const [time, setTime] = useState(new Date());
+  const { expandRequested, onExpandHandled } = useWidgetNavFor("clock");
 
   useEffect(() => {
     const timer = setInterval(() => setTime(new Date()), 1000);
@@ -141,6 +143,9 @@ export function ClockWidget() {
     <WidgetWrapper
       title="Clock"
       icon={<Clock className="h-4 w-4" />}
+      widgetType="clock"
+      expandRequested={expandRequested}
+      onExpandHandled={onExpandHandled}
     >
       <div className="flex items-center justify-center h-full gap-5">
         <AnalogClock time={time} />

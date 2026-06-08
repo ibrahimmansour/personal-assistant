@@ -6,6 +6,7 @@ import { HtmlContent } from "@/components/html-content";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
+import { useSwipe } from "@/hooks/use-swipe";
 import {
   Mail,
   MailOpen,
@@ -233,6 +234,17 @@ export function InboxView() {
     counts[item.type] = (counts[item.type] || 0) + 1;
   }
 
+  // ─── Mobile gesture: swipe-right anywhere on detail pane returns to list ───
+  // We accept swipes that begin within 60px of the left edge to mimic iOS back.
+  const detailSwipeRef = useSwipe<HTMLDivElement>({
+    disabled: !selectedItem,
+    axis: "horizontal",
+    threshold: 70,
+    velocityThreshold: 0.4,
+    ignoreOnScrollers: true,
+    onSwipeRight: () => setSelectedItem(null),
+  });
+
   return (
     <div className="flex h-full overflow-hidden">
       {/* ─── Left: List ─────────────────────────────────────── */}
@@ -322,7 +334,11 @@ export function InboxView() {
 
       {/* ─── Right: Detail Pane ──────────────────────────────── */}
       {selectedItem && (
-        <div className="flex-1 flex flex-col overflow-hidden min-h-0">
+        <div
+          ref={detailSwipeRef}
+          data-swipe-stop
+          className="flex-1 flex flex-col overflow-hidden min-h-0 touch-pan-y"
+        >
           {/* Detail header */}
           <div className="shrink-0 flex items-center gap-2 px-4 py-2.5 border-b border-border/50">
             <button

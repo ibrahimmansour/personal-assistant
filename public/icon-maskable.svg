@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Maskable variant: keep critical content within the inner 80% safe zone
+       so home-screen masks (circle, squircle, etc.) don't crop the monogram. -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1f2937" />
+      <stop offset="100%" stop-color="#0f172a" />
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#a5b4fc" />
+      <stop offset="100%" stop-color="#6366f1" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#bg)" />
+  <g fill="url(#accent)" font-family="system-ui, -apple-system, 'Helvetica Neue', sans-serif" font-weight="700" font-size="220" text-anchor="middle">
+    <text x="256" y="332">PA</text>
+  </g>
+</svg>

@@ -50,6 +50,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useRefreshOnVisible } from "@/hooks/use-refresh-on-visible";
+import { useWidgetNavFor } from "@/components/widget-nav-context";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -1487,6 +1488,7 @@ export function ClaudeCodeWidget() {
     const v = localStorage.getItem("claude-code-show-tool-calls");
     return v === null ? true : v === "true";
   });
+  const { expandRequested, onExpandHandled } = useWidgetNavFor("claude-code");
 
   // Selected model. The CLI persists its own default via `/model <name>`,
   // but we also remember it locally so the picker shows the user's last
@@ -1844,7 +1846,7 @@ export function ClaudeCodeWidget() {
   });
 
   return (
-    <WidgetWrapper title="Claude Code" icon={<ClaudeIcon className="h-4 w-4" />} widgetType="claude-code">
+    <WidgetWrapper title="Claude Code" icon={<ClaudeIcon className="h-4 w-4" />} widgetType="claude-code" expandRequested={expandRequested} onExpandHandled={onExpandHandled}>
       <div className="flex h-full">
         {/* Sidebar */}
         {sidebarOpen && (

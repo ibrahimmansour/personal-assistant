@@ -2,6 +2,7 @@
 
 import { useCallback, useState, useRef, useEffect } from "react";
 import { cn } from "@/lib/utils";
+import { useEdgeSwipe, useSwipe } from "@/hooks/use-swipe";
 import {
   LayoutDashboard,
   Code,
@@ -34,6 +35,7 @@ import {
   Layers,
   Monitor,
   Bot,
+  Newspaper,
 } from "lucide-react";
 import {
   useWorkspace,
@@ -73,6 +75,7 @@ const widgetIcons: Record<WidgetType, React.ComponentType<{ className?: string }
   files: FolderOpen,
   "claude-code": Bot,
   "system-monitor": Activity,
+  news: Newspaper,
 };
 
 const workspaceIcons: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -122,6 +125,7 @@ const widgetTitles: Record<WidgetType, string> = {
   files: "Files",
   "claude-code": "Claude Code",
   "system-monitor": "System Monitor",
+  news: "News",
 };
 
 // ─── Component ──────────────────────────────────────────────────────────────
@@ -272,6 +276,63 @@ export function Sidebar() {
     return () => window.removeEventListener("toggle-mobile-sidebar", handler);
   }, []);
 
+  // ─── Mobile gestures: edge-swipe-to-open + swipe-left-to-close ───
+  // While the user drags, we set `dragX` (a negative pixel offset for the
+  // closed drawer, or a non-positive offset for the open drawer being dragged
+  // closed). When `dragX === null`, CSS classes drive the position.
+  const DRAWER_WIDTH = 260;
+  const [dragX, setDragX] = useState<number | null>(null);
+  const [backdropOpacity, setBackdropOpacity] = useState<number | null>(null);
+
+  // Edge-swipe from the left to OPEN the drawer (only when closed)
+  useEdgeSwipe({
+    edge: "left",
+    edgeWidth: 24,
+    threshold: 60,
+    enabled: !mobileOpen,
+    onProgress: (p) => {
+      if (p === 0) {
+        setDragX(null);
+        setBackdropOpacity(null);
+      } else {
+        // Translate the drawer from -DRAWER_WIDTH (off-screen) toward 0 (on-screen)
+        setDragX(-DRAWER_WIDTH + p * DRAWER_WIDTH);
+        setBackdropOpacity(p);
+      }
+    },
+    onOpen: () => {
+      setDragX(null);
+      setBackdropOpacity(null);
+      setMobileOpen(true);
+    },
+  });
+
+  // Drag-to-close: bind a swipe handler to the drawer itself.
+  // While open, dragging left progressively translates the drawer off-screen.
+  const drawerSwipeRef = useSwipe<HTMLElement>({
+    disabled: !mobileOpen,
+    axis: "horizontal",
+    threshold: 50,
+    velocityThreshold: 0.4,
+    ignoreOnScrollers: true,
+    onProgress: ({ dx, axis }) => {
+      if (axis !== "horizontal" || dx >= 0) {
+        setDragX(null);
+        setBackdropOpacity(null);
+        return;
+      }
+      // dx is negative — translate drawer left
+      const clamped = Math.max(-DRAWER_WIDTH, dx);
+      setDragX(clamped);
+      setBackdropOpacity(1 + clamped / DRAWER_WIDTH);
+    },
+    onSwipeLeft: () => {
+      setDragX(null);
+      setBackdropOpacity(null);
+      setMobileOpen(false);
+    },
+  });
+
   // Close mobile sidebar on workspace selection
   const handleWorkspaceClick = (wsId: string) => {
     setActiveWorkspace(wsId);
@@ -287,23 +348,38 @@ export function Sidebar() {
     setMobileOpen(false);
   };
 
+  // Show full-width labels whenever the desktop sidebar is expanded, the mobile
+  // drawer is open, or a swipe-in gesture is currently revealing the drawer.
+  const showLabels = sidebarExpanded || mobileOpen || dragX !== null;
+
   return (
     <>
       {/* Mobile backdrop */}
-      {mobileOpen && (
+      {(mobileOpen || dragX !== null) && (
         <div
-          className="fixed inset-0 z-40 bg-background/60 backdrop-blur-sm md:hidden"
+          className="fixed inset-0 z-40 bg-background/60 backdrop-blur-sm md:hidden transition-opacity"
+          style={
+            backdropOpacity !== null
+              ? { opacity: Math.max(0, Math.min(1, backdropOpacity)), transitionDuration: "0ms" }
+              : undefined
+          }
           onClick={() => setMobileOpen(false)}
         />
       )}
       <aside
+        ref={drawerSwipeRef}
+        style={
+          dragX !== null
+            ? { transform: `translateX(${dragX}px)`, transitionDuration: "0ms" }
+            : undefined
+        }
         className={cn(
           "h-full flex flex-col border-r border-border/50 bg-background/95 backdrop-blur-sm transition-all duration-200 shrink-0 overflow-hidden",
           // Desktop: normal sidebar behavior
           "hidden md:flex",
           sidebarExpanded ? "md:w-[200px]" : "md:w-[48px]",
-          // Mobile: overlay drawer
-          mobileOpen && "!flex fixed inset-y-0 left-0 z-50 w-[260px] shadow-2xl"
+          // Mobile: overlay drawer (visible when open OR while a finger-drag is in progress)
+          (mobileOpen || dragX !== null) && "!flex fixed inset-y-0 left-0 z-50 w-[260px] shadow-2xl touch-pan-y"
         )}
       >
         {/* ─── Workspace tabs ──────────────────────────────────── */}
@@ -321,15 +397,15 @@ export function Sidebar() {
                   onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleWorkspaceClick(ws.id); } }}
                   className={cn(
                     "flex items-center gap-2 w-full rounded-md transition-colors cursor-pointer",
-                    (sidebarExpanded || mobileOpen) ? "px-2.5 py-1.5" : "px-0 py-1.5 justify-center",
+                    showLabels ? "px-2.5 py-1.5" : "px-0 py-1.5 justify-center",
                     isActive
                       ? "bg-primary/10 text-primary"
                       : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
                   )}
-                  title={(sidebarExpanded || mobileOpen) ? undefined : `${ws.name}${ws.shortcut ? ` (⌘${ws.shortcut})` : ""}`}
+                  title={showLabels ? undefined : `${ws.name}${ws.shortcut ? ` (⌘${ws.shortcut})` : ""}`}
                 >
                   <Icon className="h-4 w-4 shrink-0" />
-                  {(sidebarExpanded || mobileOpen) && (
+                  {showLabels && (
                     <>
                       <span className="text-xs font-medium truncate flex-1 text-left">
                         {ws.name}
@@ -387,18 +463,18 @@ export function Sidebar() {
             onClick={openCreateWorkspace}
             className={cn(
               "flex items-center gap-2 w-full rounded-md text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted/30 transition-colors",
-              (sidebarExpanded || mobileOpen) ? "px-2.5 py-1.5" : "px-0 py-1.5 justify-center"
+              showLabels ? "px-2.5 py-1.5" : "px-0 py-1.5 justify-center"
             )}
-            title={(sidebarExpanded || mobileOpen) ? undefined : "New workspace"}
+            title={showLabels ? undefined : "New workspace"}
           >
             <Plus className="h-3.5 w-3.5 shrink-0" />
-            {(sidebarExpanded || mobileOpen) && <span className="text-xs">New workspace</span>}
+            {showLabels && <span className="text-xs">New workspace</span>}
           </button>
         </div>
 
         {/* ─── Focus combos ────────────────────────────────────── */}
         <div className="shrink-0 border-b border-border/50 p-1.5 space-y-0.5">
-          {(sidebarExpanded || mobileOpen) && (
+          {showLabels && (
             <div className="text-[9px] uppercase tracking-wider text-muted-foreground/50 px-2.5 py-0.5">
               Focus
             </div>
@@ -414,15 +490,15 @@ export function Sidebar() {
                   onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleFocusClick(combo.id, isActive); } }}
                   className={cn(
                     "flex items-center gap-2 w-full rounded-md transition-colors cursor-pointer",
-                    (sidebarExpanded || mobileOpen) ? "px-2.5 py-1.5" : "px-0 py-1.5 justify-center",
+                    showLabels ? "px-2.5 py-1.5" : "px-0 py-1.5 justify-center",
                     isActive
                       ? "bg-primary/10 text-primary"
                       : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
                   )}
-                  title={(sidebarExpanded || mobileOpen) ? undefined : combo.name}
+                  title={showLabels ? undefined : combo.name}
                 >
                   <Focus className="h-3.5 w-3.5 shrink-0" />
-                  {(sidebarExpanded || mobileOpen) && (
+                  {showLabels && (
                     <>
                       <span className="text-xs truncate flex-1 text-left">
                         {combo.name}
@@ -465,12 +541,12 @@ export function Sidebar() {
             onClick={openCreateFocus}
             className={cn(
               "flex items-center gap-2 w-full rounded-md text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted/30 transition-colors",
-              (sidebarExpanded || mobileOpen) ? "px-2.5 py-1.5" : "px-0 py-1.5 justify-center"
+              showLabels ? "px-2.5 py-1.5" : "px-0 py-1.5 justify-center"
             )}
-            title={(sidebarExpanded || mobileOpen) ? undefined : "New focus combo"}
+            title={showLabels ? undefined : "New focus combo"}
           >
             <Plus className="h-3.5 w-3.5 shrink-0" />
-            {(sidebarExpanded || mobileOpen) && <span className="text-xs">New combo</span>}
+            {showLabels && <span className="text-xs">New combo</span>}
           </button>
         </div>
 
@@ -480,7 +556,7 @@ export function Sidebar() {
             const categoryWidgets = widgetsByCategory.get(cat)!;
             return (
               <div key={cat}>
-                {(sidebarExpanded || mobileOpen) && (
+                {showLabels && (
                   <div className="text-[9px] uppercase tracking-wider text-muted-foreground/50 px-2.5 py-0.5 mb-0.5">
                     {widgetCategories[cat].label}
                   </div>
@@ -494,12 +570,12 @@ export function Sidebar() {
                         onClick={() => { scrollToWidget(widgetType); setMobileOpen(false); }}
                         className={cn(
                           "flex items-center gap-2 w-full rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors",
-                          (sidebarExpanded || mobileOpen) ? "px-2.5 py-1" : "px-0 py-1 justify-center"
+                          showLabels ? "px-2.5 py-1" : "px-0 py-1 justify-center"
                         )}
-                        title={(sidebarExpanded || mobileOpen) ? undefined : widgetTitles[widgetType]}
+                        title={showLabels ? undefined : widgetTitles[widgetType]}
                       >
                         <Icon className="h-3.5 w-3.5 shrink-0" />
-                        {(sidebarExpanded || mobileOpen) && (
+                        {showLabels && (
                           <span className="text-[11px] truncate">
                             {widgetTitles[widgetType]}
                           </span>
