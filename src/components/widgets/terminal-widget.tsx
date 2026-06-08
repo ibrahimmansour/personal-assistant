@@ -277,7 +277,7 @@ export function TerminalWidget() {
         try {
           tab.fitAddon.fit();
           const dims = tab.fitAddon.proposeDimensions();
-          if (dims && tab.ws.readyState === WebSocket.OPEN) {
+          if (dims && dims.cols >= 2 && dims.rows >= 2 && tab.ws.readyState === WebSocket.OPEN) {
             tab.ws.send(JSON.stringify({ type: "resize", cols: dims.cols, rows: dims.rows }));
           }
         } catch {}
@@ -341,7 +341,7 @@ export function TerminalWidget() {
         try {
           fitAddon.fit();
           const dims = fitAddon.proposeDimensions();
-          if (dims) ws.send(JSON.stringify({ type: "resize", cols: dims.cols, rows: dims.rows }));
+          if (dims && dims.cols >= 2 && dims.rows >= 2) ws.send(JSON.stringify({ type: "resize", cols: dims.cols, rows: dims.rows }));
         } catch {}
       };
 
@@ -530,7 +530,7 @@ export function TerminalWidget() {
         try {
           tab.fitAddon.fit();
           const dims = tab.fitAddon.proposeDimensions();
-          if (dims && tab.ws.readyState === WebSocket.OPEN) {
+          if (dims && dims.cols >= 2 && dims.rows >= 2 && tab.ws.readyState === WebSocket.OPEN) {
             tab.ws.send(JSON.stringify({ type: "resize", cols: dims.cols, rows: dims.rows }));
           }
         } catch {}

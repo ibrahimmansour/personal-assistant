@@ -1,6 +1,6 @@
 {
   "name": "personal-assistant-dashboard",
-  "version": "0.4.24",
+  "version": "0.4.25",
   "private": false,
   "description": "A widget-based personal dashboard with email, calendar, tasks, GitHub PRs, Jira, terminal, and more",
   "bin": {

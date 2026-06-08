@@ -228,7 +228,7 @@ wss.on("connection", (ws, req) => {
           ptyProcess.write(msg.data);
           break;
         case "resize":
-          if (msg.cols && msg.rows) {
+          if (msg.cols && msg.rows && msg.cols >= 2 && msg.rows >= 2) {
             ptyProcess.resize(msg.cols, msg.rows);
           }
           break;

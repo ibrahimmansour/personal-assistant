@@ -704,7 +704,9 @@ async function spawnTerminal(state: SessionState): Promise<boolean> {
       try {
         fitAddon.fit();
         const dims = fitAddon.proposeDimensions();
-        if (dims) ws.send(JSON.stringify({ type: "resize", cols: dims.cols, rows: dims.rows }));
+        if (dims && dims.cols >= 2 && dims.rows >= 2) {
+          ws.send(JSON.stringify({ type: "resize", cols: dims.cols, rows: dims.rows }));
+        }
       } catch {}
 
       // Flush queued prompts after the CLI has had a moment to start its TUI.
@@ -3748,26 +3750,31 @@ function TerminalView({ state }: { state: SessionState }) {
     const xtermEl = state.terminal.element as HTMLElement | undefined;
     if (xtermEl) container.appendChild(xtermEl);
 
-    requestAnimationFrame(() => {
+    // Helper: fit the terminal and send a valid resize to the PTY.
+    // Guards against 0x0 or tiny dimensions that crash Claude's TUI.
+    const fitAndResize = () => {
       try {
         state.fitAddon?.fit();
         const dims = state.fitAddon?.proposeDimensions();
-        if (dims && state.ws && state.ws.readyState === WebSocket.OPEN) {
+        if (dims && dims.cols >= 2 && dims.rows >= 2 && state.ws && state.ws.readyState === WebSocket.OPEN) {
           state.ws.send(JSON.stringify({ type: "resize", cols: dims.cols, rows: dims.rows }));
         }
       } catch {}
-      try { state.terminal?.focus(); } catch {}
+    };
+
+    // Use double-rAF to ensure the container has settled its CSS layout
+    // before measuring dimensions. A single rAF can fire before the browser
+    // has completed layout in some cases (e.g. grid re-flow).
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        fitAndResize();
+        try { state.terminal?.focus(); } catch {}
+      });
     });
 
     const ro = new ResizeObserver(() => {
       requestAnimationFrame(() => {
-        try {
-          state.fitAddon?.fit();
-          const dims = state.fitAddon?.proposeDimensions();
-          if (dims && state.ws && state.ws.readyState === WebSocket.OPEN) {
-            state.ws.send(JSON.stringify({ type: "resize", cols: dims.cols, rows: dims.rows }));
-          }
-        } catch {}
+        fitAndResize();
       });
     });
     ro.observe(container);
