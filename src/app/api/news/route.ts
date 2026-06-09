@@ -51,6 +51,8 @@ export interface NewsSource {
   genres: Genre[];
   /** Locale hint for sorting/display */
   locale?: string;
+  /** Text direction: "rtl" for Arabic/Hebrew sources */
+  dir?: "ltr" | "rtl";
 }
 
 const AVAILABLE_SOURCES: NewsSource[] = [
@@ -62,6 +64,37 @@ const AVAILABLE_SOURCES: NewsSource[] = [
     },
     genres: ["world", "politics", "opinion"],
     locale: "en",
+  },
+  {
+    id: "aljazeera-ar",
+    name: "الجزيرة",
+    feeds: {
+      all: "https://www.aljazeera.net/aljazeerarss/a7c186be-1baa-4bd4-9d80-a84db769f779/73d0e1b4-532f-45ef-b135-bfdff8b8cab9",
+    },
+    genres: ["world", "politics", "opinion", "sports"],
+    locale: "ar",
+    dir: "rtl",
+  },
+  {
+    id: "kooora",
+    name: "كووورة",
+    feeds: {
+      sports: "https://feeds.footballco.com/kooora/feed/6p5bsxot7te8yick",
+    },
+    genres: ["sports"],
+    locale: "ar",
+    dir: "rtl",
+  },
+  {
+    id: "filgoal",
+    name: "فيلجول",
+    feeds: {
+      // Filgoal has no native RSS — use Google News as a proxy
+      sports: "https://news.google.com/rss/search?q=site:filgoal.com&hl=ar&gl=EG&ceid=EG:ar",
+    },
+    genres: ["sports"],
+    locale: "ar",
+    dir: "rtl",
   },
   {
     id: "bbc",
@@ -274,6 +307,10 @@ interface NewsArticle {
   description: string;
   thumbnail?: string;
   author?: string;
+  /** Text direction inherited from the source */
+  dir?: "ltr" | "rtl";
+  /** Locale (e.g. "ar", "en") inherited from the source */
+  locale?: string;
 }
 
 function decodeEntities(s: string): string {
@@ -336,16 +373,38 @@ function parseFeed(xml: string, source: NewsSource, genre: Genre): NewsArticle[]
       || extractText(item, "dc:creator")
       || "";
 
-    // Try to extract a thumbnail from media:thumbnail, media:content, or enclosure
+    // Try to extract a thumbnail from media:thumbnail, media:content, enclosure,
+    // or any <img> in the item body (description/content:encoded)
     let thumbnail =
       extractAttr(item, "media:thumbnail", "url") ||
       extractAttr(item, "media:content", "url") ||
-      extractAttr(item, "enclosure", "url");
+      extractAttr(item, "media:group media:thumbnail", "url") ||
+      extractAttr(item, "enclosure", "url") ||
+      extractAttr(item, "itunes:image", "href");
 
-    // Or from an <img> in the description
     if (!thumbnail) {
-      const imgMatch = item.match(/<img[^>]*\bsrc=["']([^"']+)["']/i);
-      if (imgMatch) thumbnail = imgMatch[1];
+      // Search every <img> in the item — including those inside content:encoded
+      // and description CDATA. Prefer images that look like real photos
+      // (dimensions hint, not tracking pixels or 1x1 spacers).
+      const imgMatches = Array.from(item.matchAll(/<img\b[^>]*\bsrc=["']([^"']+)["'][^>]*>/gi));
+      for (const m of imgMatches) {
+        const tag = m[0];
+        const src = m[1];
+        // Skip obvious tracking pixels and tiny icons
+        if (/1x1|spacer|pixel|tracking|beacon|stat\?/i.test(src)) continue;
+        if (/width=["']?[12]["']?/i.test(tag) && /height=["']?[12]["']?/i.test(tag)) continue;
+        thumbnail = src;
+        break;
+      }
+    }
+
+    // Resolve relative thumbnail URLs against the article link
+    if (thumbnail && link) {
+      try {
+        thumbnail = new URL(thumbnail, link).toString();
+      } catch {
+        // leave as-is
+      }
     }
 
     if (title && link) {
@@ -360,6 +419,8 @@ function parseFeed(xml: string, source: NewsSource, genre: Genre): NewsArticle[]
         description: description.slice(0, 400),
         thumbnail: thumbnail || undefined,
         author: author || undefined,
+        dir: source.dir,
+        locale: source.locale,
       });
     }
   }
@@ -678,6 +739,103 @@ async function fetchArticle(url: string): Promise<CachedArticle | { error: strin
   }
 }
 
+// ─── Lazy thumbnail (og:image) fetch + cache ─────────────────────────────────
+
+const THUMB_CACHE_DIR = join(DATA_DIR, "news-thumb-cache");
+const THUMB_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+interface CachedThumb {
+  fetchedAt: number;
+  url: string;
+  thumbnail: string | null;
+}
+
+async function readThumbCache(url: string): Promise<CachedThumb | null> {
+  try {
+    const file = join(THUMB_CACHE_DIR, `${cacheKey(url)}.json`);
+    const data = await readFile(file, "utf-8");
+    const parsed = JSON.parse(data) as CachedThumb;
+    if (Date.now() - parsed.fetchedAt > THUMB_TTL_MS) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+async function writeThumbCache(url: string, thumbnail: string | null): Promise<void> {
+  try {
+    await mkdir(THUMB_CACHE_DIR, { recursive: true });
+    const file = join(THUMB_CACHE_DIR, `${cacheKey(url)}.json`);
+    const payload: CachedThumb = { fetchedAt: Date.now(), url, thumbnail };
+    await writeFile(file, JSON.stringify(payload));
+  } catch {
+    // ignore cache write failures
+  }
+}
+
+async function fetchThumbnail(url: string): Promise<string | null> {
+  // First check the article cache — if we already fetched the full article,
+  // its heroImage is exactly what we want, with no extra network call.
+  const article = await readArticleCache(url);
+  if (article && article.heroImage) return article.heroImage;
+
+  const cached = await readThumbCache(url);
+  if (cached) return cached.thumbnail;
+
+  try {
+    const res = await fetch(url, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml",
+        "Accept-Language": "en-US,en;q=0.9",
+      },
+      signal: AbortSignal.timeout(8000),
+      redirect: "follow",
+    });
+    if (!res.ok) {
+      await writeThumbCache(url, null);
+      return null;
+    }
+
+    // Read only the first 256 KB — og:image is always in <head>
+    const reader = res.body?.getReader();
+    let html = "";
+    if (reader) {
+      const decoder = new TextDecoder();
+      let totalBytes = 0;
+      while (totalBytes < 256 * 1024) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        totalBytes += value.byteLength;
+        html += decoder.decode(value, { stream: true });
+        // Stop reading once </head> is seen
+        if (html.includes("</head>") || html.includes("</HEAD>")) break;
+      }
+      try { await reader.cancel(); } catch { /* ignore */ }
+    } else {
+      html = await res.text();
+    }
+
+    const finalUrl = res.url || url;
+    let img =
+      extractAttrFromMeta(html, "og:image") ||
+      extractAttrFromMeta(html, "twitter:image") ||
+      extractAttrFromMeta(html, "og:image:secure_url") ||
+      "";
+
+    if (img) {
+      try { img = new URL(img, finalUrl).toString(); } catch { /* leave as-is */ }
+    }
+
+    const result = img || null;
+    await writeThumbCache(url, result);
+    return result;
+  } catch {
+    await writeThumbCache(url, null);
+    return null;
+  }
+}
+
 // ─── Route handlers ──────────────────────────────────────────────────────────
 
 export async function GET(request: NextRequest) {
@@ -709,6 +867,21 @@ export async function GET(request: NextRequest) {
       return Response.json(result, { status: 502 });
     }
     return Response.json(result);
+  }
+
+  // Fetch a single thumbnail (og:image) for an article URL
+  if (action === "thumbnail") {
+    const url = request.nextUrl.searchParams.get("url");
+    if (!url) {
+      return Response.json({ error: "Missing url parameter" }, { status: 400 });
+    }
+    try {
+      new URL(url);
+    } catch {
+      return Response.json({ error: "Invalid URL" }, { status: 400 });
+    }
+    const thumbnail = await fetchThumbnail(url);
+    return Response.json({ url, thumbnail });
   }
 
   // Default: list articles from selected sources & genres
@@ -788,6 +961,31 @@ export async function POST(request: NextRequest) {
 
     await saveSettings(filtered);
     return Response.json({ success: true, settings: filtered });
+  }
+
+  // Batch fetch thumbnails (og:image) for many articles at once.
+  // Body: { action: "thumbnails", urls: string[] }
+  // Returns: { results: Record<url, thumbnail | null> }
+  if (action === "thumbnails") {
+    const urls = (body.urls as string[] | undefined) ?? [];
+    // Validate + dedupe + cap to a reasonable batch size
+    const validUrls: string[] = [];
+    const seen = new Set<string>();
+    for (const u of urls) {
+      if (typeof u !== "string" || seen.has(u)) continue;
+      try { new URL(u); } catch { continue; }
+      seen.add(u);
+      validUrls.push(u);
+      if (validUrls.length >= 30) break;
+    }
+
+    const entries = await Promise.all(
+      validUrls.map(async (u) => [u, await fetchThumbnail(u)] as const)
+    );
+
+    const results: Record<string, string | null> = {};
+    for (const [u, t] of entries) results[u] = t;
+    return Response.json({ results });
   }
 
   return Response.json({ error: "Unknown action" }, { status: 400 });

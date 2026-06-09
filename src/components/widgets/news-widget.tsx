@@ -12,7 +12,6 @@ import {
   X,
   ArrowLeft,
   Filter,
-  ImageOff,
   Calendar as CalendarIcon,
   User as UserIcon,
 } from "lucide-react";
@@ -49,6 +48,8 @@ interface NewsArticle {
   description: string;
   thumbnail?: string;
   author?: string;
+  dir?: "ltr" | "rtl";
+  locale?: string;
 }
 
 interface NewsSource {
@@ -57,6 +58,7 @@ interface NewsSource {
   feeds: Partial<Record<Genre | "all", string>>;
   genres: Genre[];
   locale?: string;
+  dir?: "ltr" | "rtl";
 }
 
 interface GenreOption {
@@ -203,8 +205,11 @@ function ReaderPane({ article, onClose }: ReaderPaneProps) {
       </div>
 
       {/* Reader body */}
-      <ScrollArea className="flex-1" ref={scrollRef}>
-        <div className="px-6 py-5 max-w-3xl mx-auto">
+      <ScrollArea className="flex-1 min-h-0" ref={scrollRef}>
+        <div
+          className="px-6 py-5 max-w-3xl mx-auto"
+          dir={article.dir || "ltr"}
+        >
           {loading ? (
             <div className="flex flex-col items-center justify-center py-16 gap-3 text-muted-foreground">
               <Loader2 className="h-6 w-6 animate-spin" />
@@ -276,12 +281,12 @@ function ReaderPane({ article, onClose }: ReaderPaneProps) {
                   "[&_h4]:text-base [&_h4]:font-semibold [&_h4]:mt-5 [&_h4]:mb-2",
                   // Links
                   "[&_a]:text-primary [&_a]:underline [&_a]:underline-offset-2 hover:[&_a]:opacity-80",
-                  // Lists
-                  "[&_ul]:list-disc [&_ul]:pl-6 [&_ul]:my-4",
-                  "[&_ol]:list-decimal [&_ol]:pl-6 [&_ol]:my-4",
+                  // Lists — use logical properties so RTL flips correctly
+                  "[&_ul]:list-disc [&_ul]:ps-6 [&_ul]:my-4",
+                  "[&_ol]:list-decimal [&_ol]:ps-6 [&_ol]:my-4",
                   "[&_li]:my-1.5",
-                  // Blockquotes
-                  "[&_blockquote]:border-l-4 [&_blockquote]:border-primary/40 [&_blockquote]:pl-4 [&_blockquote]:my-4 [&_blockquote]:italic [&_blockquote]:text-muted-foreground",
+                  // Blockquotes — logical inline-start border
+                  "[&_blockquote]:border-s-4 [&_blockquote]:border-primary/40 [&_blockquote]:ps-4 [&_blockquote]:my-4 [&_blockquote]:italic [&_blockquote]:text-muted-foreground",
                   // Inline code & pre
                   "[&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_code]:bg-muted [&_code]:text-[13px] [&_code]:font-mono",
                   "[&_pre]:p-3 [&_pre]:rounded-lg [&_pre]:bg-muted [&_pre]:overflow-x-auto [&_pre]:my-4 [&_pre]:text-[13px]",
@@ -291,9 +296,9 @@ function ReaderPane({ article, onClose }: ReaderPaneProps) {
                   // Figures
                   "[&_figure]:my-4",
                   "[&_figcaption]:text-xs [&_figcaption]:text-muted-foreground [&_figcaption]:text-center [&_figcaption]:mt-2",
-                  // Tables
+                  // Tables — logical text-start
                   "[&_table]:w-full [&_table]:my-4 [&_table]:text-sm [&_table]:border-collapse",
-                  "[&_th]:text-left [&_th]:font-semibold [&_th]:border [&_th]:border-border [&_th]:px-3 [&_th]:py-2 [&_th]:bg-muted/50",
+                  "[&_th]:text-start [&_th]:font-semibold [&_th]:border [&_th]:border-border [&_th]:px-3 [&_th]:py-2 [&_th]:bg-muted/50",
                   "[&_td]:border [&_td]:border-border [&_td]:px-3 [&_td]:py-2",
                   // HR
                   "[&_hr]:my-6 [&_hr]:border-border",
@@ -352,7 +357,7 @@ function SettingsPanel({
 }: SettingsPanelProps) {
   return (
     <div className="flex flex-col h-full gap-3">
-      <ScrollArea className="flex-1 -mx-1">
+      <ScrollArea className="flex-1 min-h-0 -mx-1">
         <div className="px-1 space-y-5">
           {/* Genres */}
           <section>
@@ -508,6 +513,58 @@ export function NewsWidget() {
   }, [fetchNews, fetchSettingsMeta]);
 
   useRefreshOnVisible(fetchNews);
+
+  // ─── Lazy thumbnail backfill ──────────────────────────────────────────────
+  // Some sources (Al Jazeera Arabic, Filgoal via Google News, sparse RSS feeds)
+  // ship articles without thumbnails. We fetch og:image for those in batches
+  // after the list loads. Server caches results for 7 days.
+  const thumbnailFetchedRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    const missing = articles
+      .filter((a) => !a.thumbnail && !thumbnailFetchedRef.current.has(a.link))
+      .map((a) => a.link);
+
+    if (missing.length === 0) return;
+
+    // Mark as in-flight so we don't refetch on re-render
+    for (const link of missing) thumbnailFetchedRef.current.add(link);
+
+    let cancelled = false;
+
+    async function fetchInBatches() {
+      // Fetch in chunks of 8 to keep server work bounded
+      const CHUNK_SIZE = 8;
+      for (let i = 0; i < missing.length; i += CHUNK_SIZE) {
+        if (cancelled) return;
+        const chunk = missing.slice(i, i + CHUNK_SIZE);
+        try {
+          const res = await fetch("/api/news", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "thumbnails", urls: chunk }),
+          });
+          if (!res.ok) continue;
+          const data = (await res.json()) as { results: Record<string, string | null> };
+          if (cancelled) return;
+          setArticles((prev) =>
+            prev.map((a) => {
+              if (a.thumbnail) return a;
+              const t = data.results?.[a.link];
+              return t ? { ...a, thumbnail: t } : a;
+            })
+          );
+        } catch {
+          // ignore — try next chunk
+        }
+      }
+    }
+
+    fetchInBatches();
+    return () => {
+      cancelled = true;
+    };
+  }, [articles]);
 
   // ─── Settings handlers ────────────────────────────────────────────────────
 
@@ -720,7 +777,7 @@ export function NewsWidget() {
             </Button>
           </div>
         ) : (
-          <ScrollArea className="flex-1 -mx-1">
+          <ScrollArea className="flex-1 min-h-0 -mx-1">
             <div className="space-y-0.5 px-1">
               {filteredArticles.map((article) => (
                 <ArticleListItem
@@ -750,19 +807,21 @@ function ArticleListItem({
   onClick: () => void;
 }) {
   const [imgFailed, setImgFailed] = useState(false);
+  const showImage = article.thumbnail && !imgFailed;
 
   return (
     <button
       onClick={onClick}
+      dir={article.dir || "ltr"}
       className={cn(
-        "w-full text-left flex gap-2.5 p-2 rounded-lg transition-colors group",
+        "w-full text-start flex gap-2.5 p-2 rounded-lg transition-colors group",
         active
           ? "bg-primary/10 ring-1 ring-primary/30"
           : "hover:bg-muted/60"
       )}
     >
       {/* Thumbnail */}
-      {article.thumbnail && !imgFailed ? (
+      {showImage ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={article.thumbnail}
@@ -772,9 +831,7 @@ function ArticleListItem({
           onError={() => setImgFailed(true)}
         />
       ) : (
-        <div className="w-14 h-14 rounded-md bg-muted/50 flex items-center justify-center shrink-0">
-          <ImageOff className="h-4 w-4 text-muted-foreground/50" />
-        </div>
+        <SourcePlaceholder article={article} />
       )}
 
       {/* Body */}
@@ -787,14 +844,14 @@ function ArticleListItem({
         >
           {article.title}
         </h4>
-        <div className="flex items-center gap-1.5 flex-wrap">
+        <div className="flex items-center gap-1.5 flex-wrap" dir="ltr">
           <Badge
             variant="outline"
             className={cn("text-[9px] px-1 py-0 h-3.5 font-normal", genreColors[article.genre])}
           >
             {article.genre}
           </Badge>
-          <span className="text-[10px] text-muted-foreground truncate">
+          <span className="text-[10px] text-muted-foreground truncate" dir={article.dir || "ltr"}>
             {article.source}
           </span>
           <span className="text-[10px] text-muted-foreground/60">·</span>
@@ -804,5 +861,43 @@ function ArticleListItem({
         </div>
       </div>
     </button>
+  );
+}
+
+// ─── Source placeholder tile ─────────────────────────────────────────────────
+// Shown while the real thumbnail is being lazy-fetched, or as a permanent
+// fallback when no og:image can be retrieved. Uses a deterministic color
+// derived from the source id so the same source always looks consistent.
+
+const PLACEHOLDER_GRADIENTS = [
+  "from-rose-500 to-pink-600",
+  "from-amber-500 to-orange-600",
+  "from-emerald-500 to-teal-600",
+  "from-blue-500 to-cyan-600",
+  "from-violet-500 to-purple-600",
+  "from-fuchsia-500 to-pink-600",
+  "from-sky-500 to-indigo-600",
+  "from-orange-500 to-red-600",
+];
+
+function gradientForSource(sourceId: string): string {
+  let hash = 0;
+  for (let i = 0; i < sourceId.length; i++) hash = (hash * 31 + sourceId.charCodeAt(i)) | 0;
+  return PLACEHOLDER_GRADIENTS[Math.abs(hash) % PLACEHOLDER_GRADIENTS.length];
+}
+
+function SourcePlaceholder({ article }: { article: NewsArticle }) {
+  const initial = (article.source || "?").trim().charAt(0).toUpperCase();
+  const gradient = gradientForSource(article.sourceId);
+  return (
+    <div
+      className={cn(
+        "w-14 h-14 rounded-md shrink-0 flex items-center justify-center bg-gradient-to-br text-white shadow-sm",
+        gradient
+      )}
+      aria-hidden
+    >
+      <span className="text-lg font-bold drop-shadow-sm">{initial}</span>
+    </div>
   );
 }
