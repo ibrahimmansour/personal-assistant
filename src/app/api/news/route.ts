@@ -62,7 +62,7 @@ const AVAILABLE_SOURCES: NewsSource[] = [
     feeds: {
       all: "https://www.aljazeera.com/xml/rss/all.xml",
     },
-    genres: ["world", "politics", "opinion"],
+    genres: ["world", "politics", "opinion", "business", "sports"],
     locale: "en",
   },
   {
@@ -250,7 +250,7 @@ const AVAILABLE_SOURCES: NewsSource[] = [
     feeds: {
       all: "https://www.spiegel.de/schlagzeilen/tops/index.rss",
     },
-    genres: ["world", "politics", "business"],
+    genres: ["world", "politics", "business", "sports", "science", "entertainment"],
     locale: "de",
   },
   {
@@ -259,7 +259,7 @@ const AVAILABLE_SOURCES: NewsSource[] = [
     feeds: {
       all: "https://www.tagesschau.de/index~rss2.xml",
     },
-    genres: ["world", "politics"],
+    genres: ["world", "politics", "business", "sports"],
     locale: "de",
   },
 ];
@@ -343,12 +343,90 @@ function extractAttr(xml: string, tag: string, attr: string): string {
   return m ? m[1] : "";
 }
 
+// ─── Per-article genre detection ─────────────────────────────────────────────
+// For sources with a single mixed-content feed (e.g. Al Jazeera, Spiegel),
+// we need to figure out each article's genre from its <category> tags,
+// URL path, or title. Keywords cover Arabic, German, French, English.
+
+const GENRE_KEYWORDS: Record<Genre, RegExp> = {
+  sports: /\b(sport|sports|sportsworld|football|soccer|tennis|cricket|nba|fifa|olympics?|wrestling|boxing|formula1|f1|premier|champions[- ]?league|world[- ]?cup|player|match|kick[- ]?off|playoff)\b|رياض(ة|ي)|كرة|فريق|مباراة|لاعب|ملعب|بطولة|كأس|دوري|هدف|لاعبين|أهداف|spielmann|wettkampf|fußball|liga|stade|équipe|sportlich|joueur|match/i,
+  politics: /\b(politic|political|election|government|minister|parliament|senate|congress|president|prime[- ]?minister|policy|diplomatic|treaty|coup|protest|gaza|israel|palestin|ukrain|russia|geopolit)\b|سياس(ة|ي|ية)|انتخاب|حكومة|وزير|برلمان|رئيس|مفاوضات|اتفاقية|سلطة|احتلال|politik|wahl|regierung|minister|parlament|politique|gouvernement/i,
+  business: /\b(business|economy|economic|finance|financial|market|stock|trade|trading|investor|invest|earnings|profit|loss|company|corporat|startup|merger|acquisition|crypto|bitcoin|wall[- ]?street|nasdaq|dow[- ]?jones|inflation|recession)\b|اقتصاد|سوق|بورصة|تجارة|استثمار|شركة|مال(ي|ية)|مصرف|أعمال|أرباح|wirtschaft|finanz|markt|économie|finance|entreprise/i,
+  technology: /\b(tech|technolog|software|hardware|ai|artificial[- ]?intelligence|machine[- ]?learning|gadget|smartphone|iphone|android|google|apple|microsoft|meta|openai|chatgpt|crypto|cyber|silicon|app|developer|coding|computing)\b|تكنولوجيا|تقنية|رقمي|ذكاء[- ]اصطناعي|إنترنت|تطبيق|technologie|technologische|تقني|الذكاء/i,
+  science: /\b(science|scientific|research|study|discover(y|ed)|physics|chemistry|biology|astronomy|nasa|space|astronaut|telescope|climate|environment|nature|species|fossil|genetic|nobel)\b|عل(م|وم|مي)|بحث|اكتشاف|فضاء|ناسا|كوكب|مناخ|بيئة|حيوان|نبات|wissenschaft|forschung|umwelt|klima|recherche|science/i,
+  health: /\b(health|medical|medicine|doctor|hospital|disease|virus|covid|flu|vaccine|cancer|diabetes|mental[- ]?health|surgery|patient|drug|pharmaceutical)\b|صحة|طب|طبيب|مستشفى|مرض|فيروس|لقاح|سرطان|gesundheit|krankheit|santé|médical/i,
+  entertainment: /\b(entertain|movie|film|cinema|hollywood|tv[- ]?show|streaming|netflix|disney|music|album|concert|celebrity|oscar|grammy|emmy|festival)\b|ترفيه|فن(ون|ي)|سينما|أفلام|موسيقى|فنان|نجم|unterhaltung|kino|musik|spectacle|cinéma|musique/i,
+  opinion: /\b(opinion|editorial|commentary|column|op[- ]?ed|analysis)\b|رأي|تحليل|مقال|kommentar|meinung|opinion|tribune/i,
+  lifestyle: /\b(lifestyle|life[- ]?and[- ]?style|food|travel|fashion|beauty|wellness|recipe|cooking|home|garden|relationship)\b|نمط[- ]حياة|سفر|طعام|موضة|أزياء|سياحة|lifestyle|reise|essen|mode/i,
+  world: /\b(world|international|global|foreign|abroad|un[- ]general|united[- ]?nations|nato|asia|africa|europe|middle[- ]?east|americas?)\b|عالم|دولي|عالمي|welt|international|monde|étranger/i,
+};
+
+function detectGenre({
+  categories,
+  link,
+  title,
+  sourceGenres,
+}: {
+  categories: string[];
+  link: string;
+  title: string;
+  sourceGenres: Genre[];
+}): Genre | null {
+  const haystack = [
+    ...categories,
+    link.toLowerCase(),
+    title,
+  ].join(" \n ");
+
+  // Score each genre by counting keyword hits. Sports/politics/business win
+  // over the broad "world" tag when both match.
+  const scores: Partial<Record<Genre, number>> = {};
+  for (const [g, re] of Object.entries(GENRE_KEYWORDS) as [Genre, RegExp][]) {
+    const matches = haystack.match(re);
+    if (matches) scores[g] = matches.length;
+  }
+
+  // Prefer specific genres over "world" when there's a tie or "world" wins
+  // only marginally. The order here matches typical RSS specificity.
+  const priority: Genre[] = [
+    "sports",
+    "technology",
+    "business",
+    "science",
+    "health",
+    "entertainment",
+    "opinion",
+    "lifestyle",
+    "politics",
+    "world",
+  ];
+
+  // Restrict to genres the source actually advertises so we don't tag a
+  // BBC article as "lifestyle" when the source never claimed that.
+  const allowed = new Set(sourceGenres);
+
+  // Walk the priority list and return the first specific genre with any
+  // matches. "world" is only chosen if no specific genre matched. This
+  // means a story tagged ['World news', 'Football'] gets bucketed as
+  // sports rather than world, which matches user intent for filter chips.
+  for (const g of priority) {
+    if (!allowed.has(g)) continue;
+    if ((scores[g] ?? 0) > 0) return g;
+  }
+
+  return null;
+}
+
 function parseFeed(xml: string, source: NewsSource, genre: Genre): NewsArticle[] {
   const articles: NewsArticle[] = [];
   const itemMatches = xml.match(/<item[\s>][\s\S]*?<\/item>/gi) || [];
   const entryMatches = xml.match(/<entry[\s>][\s\S]*?<\/entry>/gi) || [];
   const items = itemMatches.length > 0 ? itemMatches : entryMatches;
   const isAtom = entryMatches.length > 0 && itemMatches.length === 0;
+
+  // For a feed labeled "all" we need to detect the genre per-article.
+  // For per-genre feeds we trust the feed's label.
+  const useDetection = source.feeds.all !== undefined && Object.keys(source.feeds).length === 1;
 
   for (const item of items.slice(0, 12)) {
     const title = extractText(item, "title");
@@ -407,6 +485,23 @@ function parseFeed(xml: string, source: NewsSource, genre: Genre): NewsArticle[]
       }
     }
 
+    // Determine the article's genre. For per-genre feeds (e.g. BBC Sports),
+    // the feed itself dictates the genre. For mixed feeds we look at
+    // <category> tags, URL path, and (as a last resort) the title.
+    let articleGenre = genre;
+    if (useDetection) {
+      const categories = Array.from(item.matchAll(/<category[^>]*>(?:<!\[CDATA\[)?([^<\]]+)/gi))
+        .map((m) => m[1].trim())
+        .filter(Boolean);
+      const detected = detectGenre({
+        categories,
+        link,
+        title,
+        sourceGenres: source.genres,
+      });
+      if (detected) articleGenre = detected;
+    }
+
     if (title && link) {
       articles.push({
         id: `${source.id}-${Buffer.from(link).toString("base64url").slice(0, 20)}`,
@@ -415,7 +510,7 @@ function parseFeed(xml: string, source: NewsSource, genre: Genre): NewsArticle[]
         pubDate: pubDate || new Date().toISOString(),
         source: source.name,
         sourceId: source.id,
-        genre,
+        genre: articleGenre,
         description: description.slice(0, 400),
         thumbnail: thumbnail || undefined,
         author: author || undefined,
@@ -929,15 +1024,23 @@ export async function GET(request: NextRequest) {
     return true;
   });
 
+  // After per-article genre detection, drop articles whose detected genre
+  // is not in the user's selection. This is what makes the genre filter
+  // actually filter when "all" feeds are involved.
+  const genreFiltered =
+    selectedGenreSet.size === 0
+      ? deduped
+      : deduped.filter((a) => selectedGenreSet.has(a.genre));
+
   // Sort by date (newest first)
-  deduped.sort((a, b) => {
+  genreFiltered.sort((a, b) => {
     const dateA = new Date(a.pubDate).getTime() || 0;
     const dateB = new Date(b.pubDate).getTime() || 0;
     return dateB - dateA;
   });
 
   return Response.json({
-    articles: deduped.slice(0, 60),
+    articles: genreFiltered.slice(0, 60),
     settings,
     fetchedAt: new Date().toISOString(),
   });

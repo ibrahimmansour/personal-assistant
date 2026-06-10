@@ -626,6 +626,14 @@ export function NewsWidget() {
     return Array.from(set);
   }, [articles]);
 
+  // If the active chip filter is no longer represented in the results
+  // (e.g. user changed source/genre selection in settings), reset to "all".
+  useEffect(() => {
+    if (activeGenreFilter !== "all" && !genresInResults.includes(activeGenreFilter)) {
+      setActiveGenreFilter("all");
+    }
+  }, [activeGenreFilter, genresInResults]);
+
   const filteredArticles = useMemo(() => {
     if (activeGenreFilter === "all") return articles;
     return articles.filter((a) => a.genre === activeGenreFilter);
