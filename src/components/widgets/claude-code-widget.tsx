@@ -157,6 +157,11 @@ interface SessionState {
   terminalRecentText: string;
   /** Timer handle for the idle-detection callback. */
   terminalIdleTimer: ReturnType<typeof setTimeout> | null;
+  /** Wall-clock timestamp (ms) of the last terminal output or user input on
+   *  this session. Used by the idle reaper to free memory by terminating
+   *  sessions that haven't done anything for a while. Updated whenever
+   *  recordTerminalChunk runs or a prompt is sent. */
+  lastActivityAt: number;
   /** Subscribers that re-render when this session updates. */
   subscribers: Set<() => void>;
 }
@@ -165,6 +170,50 @@ interface SessionState {
 
 const sessionStore = new Map<string, SessionState>();
 let pendingCounter = 1;
+
+// ─── Idle reaper: kill terminals after 10 minutes of inactivity ──────────────
+// Each session tracks lastActivityAt (output, user input, prompt submit).
+// Once a minute, the reaper scans the store and tears down the PTY (xterm,
+// WebSocket, idle timer) for any session that hasn't seen activity in >10 min.
+// The chat / SSE / messages stay intact — only the live terminal is freed.
+// The user can submit another prompt to lazily re-spawn it.
+
+const IDLE_KILL_MS = 10 * 60_000; // 10 minutes
+const IDLE_CHECK_MS = 60_000;     // every minute
+let idleReaperStarted = false;
+
+function ensureIdleReaperStarted() {
+  if (idleReaperStarted) return;
+  if (typeof window === "undefined") return;
+  idleReaperStarted = true;
+  setInterval(() => {
+    const cutoff = Date.now() - IDLE_KILL_MS;
+    // Iterate distinct states (the store may have alias entries pointing to
+    // the same state after a pending session resolves its real id).
+    const seen = new Set<SessionState>();
+    for (const state of sessionStore.values()) {
+      if (seen.has(state)) continue;
+      seen.add(state);
+      if (!state.alive) continue;          // already torn down
+      if (state.waitingForReply) continue; // assistant reply in flight
+      if (state.lastActivityAt > cutoff) continue;
+      // Reap. Keep the chat (SSE, messages) — only the PTY-side state goes.
+      try { state.ws?.close(); } catch {}
+      try { state.terminal?.dispose(); } catch {}
+      if (state.terminalIdleTimer) clearTimeout(state.terminalIdleTimer);
+      state.terminalIdleTimer = null;
+      state.terminal = null;
+      state.fitAddon = null;
+      state.ws = null;
+      state.alive = false;
+      state.terminalAwaitingInput = false;
+      state.terminalAwaitingHint = "";
+      // eslint-disable-next-line no-console
+      console.log(`[claude-code] reaped idle terminal for ${state.key}`);
+      notifySubscribers(state);
+    }
+  }, IDLE_CHECK_MS);
+}
 
 // ─── Per-session metadata: custom name + starred ─────────────────────────────
 // Persisted server-side (~/.personal-assistant/claude-session-meta.json) so
@@ -527,6 +576,10 @@ const TERMINAL_BUFFER_MAX = 4096;
 function recordTerminalChunk(state: SessionState, chunk: string) {
   if (!chunk) return;
 
+  // Track activity so the idle reaper doesn't kill an actively-streaming
+  // session.
+  state.lastActivityAt = Date.now();
+
   // Reset awaiting flag on any fresh activity — Claude is doing something
   // again. The idle timer will set it back to true if we go quiet at a
   // prompt-looking screen.
@@ -602,6 +655,7 @@ function openSession(opts: OpenSessionOpts): SessionState {
     terminalAwaitingHint: "",
     terminalRecentText: "",
     terminalIdleTimer: null,
+    lastActivityAt: Date.now(),
     subscribers: new Set(),
   };
 
@@ -747,6 +801,8 @@ async function spawnTerminal(state: SessionState): Promise<boolean> {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: "input", data }));
       }
+      // Track activity for the idle reaper.
+      state.lastActivityAt = Date.now();
       // The user typed something into the terminal — assume they're responding
       // to whatever Claude was asking. Clear the awaiting flag so the chat's
       // banner doesn't linger.
@@ -919,6 +975,8 @@ async function submitPrompt(state: SessionState, text: string): Promise<boolean>
   // SSE handler when the next assistant message lands. Per-session, so
   // other sessions' chat views don't show the indicator.
   state.waitingForReply = true;
+  // Track activity for the idle reaper.
+  state.lastActivityAt = Date.now();
   // Submitting from chat is itself a response — clear any pending TUI prompt.
   state.terminalAwaitingInput = false;
   state.terminalAwaitingHint = "";
@@ -1622,6 +1680,7 @@ export function ClaudeCodeWidget() {
 
   // ── Theme sync for all open terminals ──────────────────────────────────
   useEffect(() => {
+    ensureIdleReaperStarted();
     const observer = new MutationObserver(() => {
       const theme = getTermTheme();
       for (const s of sessionStore.values()) {
