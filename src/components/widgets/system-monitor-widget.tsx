@@ -28,6 +28,10 @@ import {
   Play,
   Eye,
   Layers,
+  Plus,
+  Trash2,
+  Settings,
+  Scale,
 } from "lucide-react";
 import { WidgetWrapper } from "@/components/widget-wrapper";
 import { Badge } from "@/components/ui/badge";
@@ -396,6 +400,19 @@ export function SystemMonitorWidget() {
   const [killMessage, setKillMessage] = useState<string | null>(null);
   const [processExpanded, setProcessExpanded] = useState<Set<number>>(new Set());
 
+  // Swap management state
+  const [swapInfo, setSwapInfo] = useState<{
+    swapFiles: { filename: string; type: string; size: number; used: number; priority: number }[];
+    swappiness: number;
+  } | null>(null);
+  const [swapAction, setSwapAction] = useState<"none" | "create" | "resize">("none");
+  const [swapSizeMB, setSwapSizeMB] = useState("1024");
+  const [swapPath, setSwapPath] = useState("/swapfile");
+  const [swapResizeTarget, setSwapResizeTarget] = useState("");
+  const [swapMessage, setSwapMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [swapLoading, setSwapLoading] = useState(false);
+  const [swappinessValue, setSwappinessValue] = useState("60");
+
   const MAX_HISTORY = 60;
 
   const fetchMetrics = useCallback(async () => {
@@ -497,6 +514,116 @@ export function SystemMonitorWidget() {
       setTimeout(() => setKillMessage(null), 3000);
     }
   }, []);
+
+  // Swap management
+  const fetchSwapInfo = useCallback(async () => {
+    try {
+      const res = await fetch("/api/system", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "swap-info" }),
+      });
+      const data = await res.json();
+      if (!data.error) {
+        setSwapInfo(data);
+        setSwappinessValue(String(data.swappiness));
+      }
+    } catch { /* ignore */ }
+  }, []);
+
+  const handleSwapCreate = useCallback(async () => {
+    setSwapLoading(true);
+    setSwapMessage(null);
+    try {
+      const res = await fetch("/api/system", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "swap-create", sizeMB: parseInt(swapSizeMB, 10), path: swapPath }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSwapMessage({ type: "success", text: data.message });
+        setSwapAction("none");
+        fetchSwapInfo();
+      } else {
+        setSwapMessage({ type: "error", text: data.error });
+      }
+    } catch (err) {
+      setSwapMessage({ type: "error", text: err instanceof Error ? err.message : "Failed" });
+    } finally {
+      setSwapLoading(false);
+    }
+  }, [swapSizeMB, swapPath, fetchSwapInfo]);
+
+  const handleSwapResize = useCallback(async () => {
+    setSwapLoading(true);
+    setSwapMessage(null);
+    try {
+      const res = await fetch("/api/system", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "swap-resize", sizeMB: parseInt(swapSizeMB, 10), path: swapResizeTarget }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSwapMessage({ type: "success", text: data.message });
+        setSwapAction("none");
+        fetchSwapInfo();
+      } else {
+        setSwapMessage({ type: "error", text: data.error });
+      }
+    } catch (err) {
+      setSwapMessage({ type: "error", text: err instanceof Error ? err.message : "Failed" });
+    } finally {
+      setSwapLoading(false);
+    }
+  }, [swapSizeMB, swapResizeTarget, fetchSwapInfo]);
+
+  const handleSwapRemove = useCallback(async (path: string) => {
+    setSwapLoading(true);
+    setSwapMessage(null);
+    try {
+      const res = await fetch("/api/system", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "swap-remove", path }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSwapMessage({ type: "success", text: data.message });
+        fetchSwapInfo();
+      } else {
+        setSwapMessage({ type: "error", text: data.error });
+      }
+    } catch (err) {
+      setSwapMessage({ type: "error", text: err instanceof Error ? err.message : "Failed" });
+    } finally {
+      setSwapLoading(false);
+    }
+  }, [fetchSwapInfo]);
+
+  const handleSwappinessChange = useCallback(async () => {
+    setSwapLoading(true);
+    setSwapMessage(null);
+    try {
+      const res = await fetch("/api/system", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "swap-swappiness", value: parseInt(swappinessValue, 10) }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSwapMessage({ type: "success", text: data.message });
+        fetchSwapInfo();
+      } else {
+        setSwapMessage({ type: "error", text: data.error });
+      }
+    } catch (err) {
+      setSwapMessage({ type: "error", text: err instanceof Error ? err.message : "Failed" });
+    } finally {
+      setSwapLoading(false);
+    }
+  }, [swappinessValue, fetchSwapInfo]);
 
   // Sorted + filtered processes
   const sortedProcesses = useMemo(() => {
@@ -793,17 +920,259 @@ export function SystemMonitorWidget() {
             <Sparkline data={memHistory} width={280} height={32} color="var(--chart-2)" className="w-full" />
           </div>
 
-          {/* Swap */}
-          {memory.swap.total > 0 && (
-            <div className="rounded-md border p-3 space-y-2">
-              <span className="text-xs font-medium">Swap</span>
+          {/* Swap Management */}
+          <div className="rounded-md border p-3 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <Scale className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="text-xs font-medium">Swap</span>
+              </div>
+              {metrics.system.platform === "linux" && (
+                <div className="flex gap-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-5 px-1.5 text-[9px]"
+                    onClick={() => { setSwapAction("create"); fetchSwapInfo(); }}
+                  >
+                    <Plus className="h-3 w-3 mr-0.5" />
+                    Add
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-5 px-1.5 text-[9px]"
+                    onClick={() => fetchSwapInfo()}
+                  >
+                    <Settings className="h-3 w-3" />
+                  </Button>
+                </div>
+              )}
+            </div>
+
+            {/* Current swap usage bar */}
+            {memory.swap.total > 0 && (
               <ProgressBar
                 value={Math.round((memory.swap.used / memory.swap.total) * 100)}
                 label=""
                 detail={`${formatBytes(memory.swap.used)} / ${formatBytes(memory.swap.total)}`}
               />
-            </div>
-          )}
+            )}
+            {memory.swap.total === 0 && (
+              <div className="text-[10px] text-muted-foreground italic">
+                No swap configured
+              </div>
+            )}
+
+            {/* Swap message */}
+            {swapMessage && (
+              <div className={cn(
+                "text-[10px] px-2 py-1.5 rounded border",
+                swapMessage.type === "error"
+                  ? "text-destructive border-destructive/30 bg-destructive/5"
+                  : "text-green-600 border-green-500/30 bg-green-500/5"
+              )}>
+                {swapMessage.text}
+              </div>
+            )}
+
+            {/* Swap files list (Linux) */}
+            {swapInfo && swapInfo.swapFiles.length > 0 && (
+              <div className="space-y-1.5">
+                <span className="text-[10px] text-muted-foreground font-medium">Active Swap Files</span>
+                {swapInfo.swapFiles.map((sf) => (
+                  <div key={sf.filename} className="flex items-center justify-between text-[10px] p-1.5 rounded border bg-muted/20">
+                    <div className="flex-1 min-w-0">
+                      <div className="font-mono truncate" title={sf.filename}>{sf.filename}</div>
+                      <div className="text-muted-foreground">
+                        {formatBytes(sf.used)} / {formatBytes(sf.size)} ({sf.type}, priority: {sf.priority})
+                      </div>
+                    </div>
+                    <div className="flex gap-1 ml-2 shrink-0">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-5 px-1.5 text-[9px]"
+                        onClick={() => {
+                          setSwapAction("resize");
+                          setSwapResizeTarget(sf.filename);
+                          setSwapSizeMB(String(Math.round(sf.size / (1024 * 1024))));
+                        }}
+                      >
+                        <Scale className="h-3 w-3" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-5 px-1.5 text-[9px] text-destructive hover:text-destructive"
+                        onClick={() => handleSwapRemove(sf.filename)}
+                        disabled={swapLoading}
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Swappiness control */}
+            {swapInfo && metrics.system.platform === "linux" && (
+              <div className="space-y-1.5">
+                <span className="text-[10px] text-muted-foreground font-medium">Swappiness (vm.swappiness)</span>
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={swappinessValue}
+                    onChange={(e) => setSwappinessValue(e.target.value)}
+                    className="h-6 w-16 text-[10px] font-mono"
+                  />
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    value={swappinessValue}
+                    onChange={(e) => setSwappinessValue(e.target.value)}
+                    className="flex-1 h-1.5 accent-primary"
+                  />
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className="h-5 px-2 text-[9px]"
+                    onClick={handleSwappinessChange}
+                    disabled={swapLoading || parseInt(swappinessValue, 10) === swapInfo.swappiness}
+                  >
+                    Apply
+                  </Button>
+                </div>
+                <div className="text-[9px] text-muted-foreground">
+                  0 = avoid swap, 100 = swap aggressively (current: {swapInfo.swappiness})
+                </div>
+              </div>
+            )}
+
+            {/* Create swap form */}
+            {swapAction === "create" && (
+              <div className="space-y-2 p-2 rounded border bg-muted/20">
+                <span className="text-[10px] font-medium">Create New Swap</span>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-0.5">
+                    <label className="text-[9px] text-muted-foreground">Size (MB)</label>
+                    <Input
+                      type="number"
+                      min={64}
+                      max={65536}
+                      value={swapSizeMB}
+                      onChange={(e) => setSwapSizeMB(e.target.value)}
+                      className="h-6 text-[10px] font-mono"
+                    />
+                  </div>
+                  <div className="space-y-0.5">
+                    <label className="text-[9px] text-muted-foreground">Path</label>
+                    <Input
+                      value={swapPath}
+                      onChange={(e) => setSwapPath(e.target.value)}
+                      className="h-6 text-[10px] font-mono"
+                    />
+                  </div>
+                </div>
+                {/* Quick size presets */}
+                <div className="flex gap-1 flex-wrap">
+                  {[256, 512, 1024, 2048, 4096, 8192].map((size) => (
+                    <button
+                      key={size}
+                      onClick={() => setSwapSizeMB(String(size))}
+                      className={cn(
+                        "px-1.5 py-0.5 rounded text-[9px] border",
+                        parseInt(swapSizeMB, 10) === size
+                          ? "bg-primary/10 text-primary border-primary/30"
+                          : "hover:bg-muted/50 border-transparent"
+                      )}
+                    >
+                      {size >= 1024 ? `${size / 1024}G` : `${size}M`}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex gap-1">
+                  <Button
+                    size="sm"
+                    className="h-6 text-[10px] px-3"
+                    onClick={handleSwapCreate}
+                    disabled={swapLoading || !swapSizeMB || !swapPath}
+                  >
+                    {swapLoading ? "Creating..." : "Create & Activate"}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 text-[10px] px-2"
+                    onClick={() => setSwapAction("none")}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* Resize swap form */}
+            {swapAction === "resize" && (
+              <div className="space-y-2 p-2 rounded border bg-muted/20">
+                <span className="text-[10px] font-medium">
+                  Resize Swap: <span className="font-mono">{swapResizeTarget}</span>
+                </span>
+                <div className="space-y-0.5">
+                  <label className="text-[9px] text-muted-foreground">New Size (MB)</label>
+                  <Input
+                    type="number"
+                    min={64}
+                    max={65536}
+                    value={swapSizeMB}
+                    onChange={(e) => setSwapSizeMB(e.target.value)}
+                    className="h-6 text-[10px] font-mono"
+                  />
+                </div>
+                <div className="flex gap-1 flex-wrap">
+                  {[256, 512, 1024, 2048, 4096, 8192].map((size) => (
+                    <button
+                      key={size}
+                      onClick={() => setSwapSizeMB(String(size))}
+                      className={cn(
+                        "px-1.5 py-0.5 rounded text-[9px] border",
+                        parseInt(swapSizeMB, 10) === size
+                          ? "bg-primary/10 text-primary border-primary/30"
+                          : "hover:bg-muted/50 border-transparent"
+                      )}
+                    >
+                      {size >= 1024 ? `${size / 1024}G` : `${size}M`}
+                    </button>
+                  ))}
+                </div>
+                <div className="text-[9px] text-amber-500">
+                  Warning: This will temporarily disable swap during resize.
+                </div>
+                <div className="flex gap-1">
+                  <Button
+                    size="sm"
+                    className="h-6 text-[10px] px-3"
+                    onClick={handleSwapResize}
+                    disabled={swapLoading || !swapSizeMB}
+                  >
+                    {swapLoading ? "Resizing..." : "Resize Swap"}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 text-[10px] px-2"
+                    onClick={() => setSwapAction("none")}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </ScrollArea>
     );

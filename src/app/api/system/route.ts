@@ -576,6 +576,182 @@ export async function POST(request: NextRequest) {
         return Response.json({ processes });
       }
 
+      // ─── Swap management (Linux only) ────────────────────────────────────
+
+      case "swap-info": {
+        if (!IS_LINUX) {
+          return Response.json({ error: "Swap management is only available on Linux" }, { status: 400 });
+        }
+        // Get current swap files/partitions
+        const swaps = exec("cat /proc/swaps 2>/dev/null", 2000);
+        const swapFiles: { filename: string; type: string; size: number; used: number; priority: number }[] = [];
+        if (swaps) {
+          const lines = swaps.split("\n").slice(1); // skip header
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            const parts = line.split(/\s+/);
+            swapFiles.push({
+              filename: parts[0],
+              type: parts[1],
+              size: (parseInt(parts[2], 10) || 0) * 1024,
+              used: (parseInt(parts[3], 10) || 0) * 1024,
+              priority: parseInt(parts[4], 10) || 0,
+            });
+          }
+        }
+        // Check swappiness
+        const swappiness = parseInt(exec("cat /proc/sys/vm/swappiness 2>/dev/null", 2000), 10) || 60;
+        return Response.json({ swapFiles, swappiness });
+      }
+
+      case "swap-create": {
+        if (!IS_LINUX) {
+          return Response.json({ error: "Swap management is only available on Linux" }, { status: 400 });
+        }
+        const { sizeMB, path: swapPath } = body;
+        if (!sizeMB || sizeMB < 64 || sizeMB > 65536) {
+          return Response.json({ error: "Size must be between 64 MB and 64 GB" }, { status: 400 });
+        }
+        const filePath = swapPath || "/swapfile";
+
+        // Check if file already exists as swap
+        const existingSwaps = exec("cat /proc/swaps 2>/dev/null", 2000);
+        if (existingSwaps && existingSwaps.includes(filePath)) {
+          return Response.json({ error: `${filePath} is already an active swap` }, { status: 400 });
+        }
+
+        try {
+          // Create swap file: allocate, set permissions, mkswap, swapon
+          const commands = [
+            `fallocate -l ${sizeMB}M ${filePath} 2>/dev/null || dd if=/dev/zero of=${filePath} bs=1M count=${sizeMB} 2>/dev/null`,
+            `chmod 600 ${filePath}`,
+            `mkswap ${filePath}`,
+            `swapon ${filePath}`,
+          ];
+          for (const cmd of commands) {
+            const result = exec(cmd, 30000);
+            if (result === "" && cmd.includes("mkswap")) {
+              // mkswap outputs to stderr on success, check if file exists
+              const check = exec(`file ${filePath} 2>/dev/null`, 2000);
+              if (!check.includes("swap")) {
+                return Response.json({ error: `Failed at: ${cmd}` }, { status: 500 });
+              }
+            }
+          }
+
+          // Make permanent by adding to /etc/fstab if not already there
+          const fstab = exec("cat /etc/fstab 2>/dev/null", 2000);
+          if (!fstab.includes(filePath)) {
+            exec(`echo '${filePath} none swap sw 0 0' >> /etc/fstab`, 3000);
+          }
+
+          return Response.json({
+            success: true,
+            message: `Created ${sizeMB} MB swap at ${filePath} and activated`,
+          });
+        } catch (err) {
+          return Response.json(
+            { error: `Failed to create swap: ${err instanceof Error ? err.message : "Unknown"}` },
+            { status: 500 }
+          );
+        }
+      }
+
+      case "swap-resize": {
+        if (!IS_LINUX) {
+          return Response.json({ error: "Swap management is only available on Linux" }, { status: 400 });
+        }
+        const { sizeMB: newSizeMB, path: resizePath } = body;
+        if (!newSizeMB || newSizeMB < 64 || newSizeMB > 65536) {
+          return Response.json({ error: "Size must be between 64 MB and 64 GB" }, { status: 400 });
+        }
+        const targetPath = resizePath || "/swapfile";
+
+        try {
+          // Turn off swap on the file
+          exec(`swapoff ${targetPath} 2>/dev/null`, 10000);
+
+          // Recreate with new size
+          const allocResult = exec(
+            `fallocate -l ${newSizeMB}M ${targetPath} 2>/dev/null || dd if=/dev/zero of=${targetPath} bs=1M count=${newSizeMB} 2>/dev/null`,
+            60000
+          );
+
+          // Set permissions and format
+          exec(`chmod 600 ${targetPath}`, 3000);
+          exec(`mkswap ${targetPath}`, 10000);
+          exec(`swapon ${targetPath}`, 5000);
+
+          return Response.json({
+            success: true,
+            message: `Resized swap at ${targetPath} to ${newSizeMB} MB`,
+          });
+        } catch (err) {
+          // Try to re-enable old swap if resize failed
+          exec(`swapon ${targetPath} 2>/dev/null`, 5000);
+          return Response.json(
+            { error: `Failed to resize swap: ${err instanceof Error ? err.message : "Unknown"}` },
+            { status: 500 }
+          );
+        }
+      }
+
+      case "swap-remove": {
+        if (!IS_LINUX) {
+          return Response.json({ error: "Swap management is only available on Linux" }, { status: 400 });
+        }
+        const { path: removePath } = body;
+        if (!removePath) {
+          return Response.json({ error: "Path is required" }, { status: 400 });
+        }
+
+        try {
+          exec(`swapoff ${removePath}`, 10000);
+          exec(`rm -f ${removePath}`, 5000);
+
+          // Remove from /etc/fstab
+          exec(`sed -i '\\|${removePath}|d' /etc/fstab 2>/dev/null`, 3000);
+
+          return Response.json({
+            success: true,
+            message: `Removed swap at ${removePath}`,
+          });
+        } catch (err) {
+          return Response.json(
+            { error: `Failed to remove swap: ${err instanceof Error ? err.message : "Unknown"}` },
+            { status: 500 }
+          );
+        }
+      }
+
+      case "swap-swappiness": {
+        if (!IS_LINUX) {
+          return Response.json({ error: "Swap management is only available on Linux" }, { status: 400 });
+        }
+        const { value } = body;
+        if (value === undefined || value < 0 || value > 100) {
+          return Response.json({ error: "Swappiness must be between 0 and 100" }, { status: 400 });
+        }
+
+        try {
+          // Set immediately
+          exec(`sysctl vm.swappiness=${value}`, 3000);
+          // Make permanent
+          const sysctl = exec("cat /etc/sysctl.conf 2>/dev/null", 2000);
+          if (sysctl.includes("vm.swappiness")) {
+            exec(`sed -i 's/vm.swappiness=.*/vm.swappiness=${value}/' /etc/sysctl.conf`, 3000);
+          } else {
+            exec(`echo 'vm.swappiness=${value}' >> /etc/sysctl.conf`, 3000);
+          }
+          return Response.json({ success: true, message: `Swappiness set to ${value}` });
+        } catch (err) {
+          return Response.json(
+            { error: `Failed to set swappiness: ${err instanceof Error ? err.message : "Unknown"}` },
+            { status: 500 }
+          );
+        }
+      }
+
       default:
         return Response.json({ error: `Unknown action: ${action}` }, { status: 400 });
     }
