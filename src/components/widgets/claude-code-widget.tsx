@@ -1207,19 +1207,6 @@ function ToolUseBlock({
   );
 }
 
-/** Legacy inline pill for the compact/terminal themes where space is limited. */
-function ToolUsePill({ name, input }: { name: string; input?: unknown }) {
-  const meta = getToolMeta(name);
-  const summary = summarizeToolInput(name, input);
-  return (
-    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded bg-muted/60 text-muted-foreground border border-border/60 mr-1 mt-1">
-      <span className={meta.color}>{meta.icon}</span>
-      <span className="font-medium">{meta.label}</span>
-      {summary && <span className="font-mono text-[10px] opacity-80 truncate max-w-[200px]">{summary}</span>}
-    </span>
-  );
-}
-
 // ─── Chat themes ─────────────────────────────────────────────────────────────
 
 type ChatTheme = "default" | "bubbles" | "compact" | "terminal" | "document";
@@ -3231,14 +3218,22 @@ function estimateCost(usage: { inputTokens: number; outputTokens: number; cacheR
 function SessionUsageBar({ messages }: { messages: ChatMessage[] }) {
   const [expanded, setExpanded] = useState(false);
 
-  // Aggregate usage from all assistant messages.
+  // Aggregate usage and activity from all messages.
   const totals = useMemo(() => {
     let inputTokens = 0;
     let outputTokens = 0;
     let cacheReadInputTokens = 0;
     let cacheCreationInputTokens = 0;
     let turns = 0;
+    let edits = 0;
+    let writes = 0;
+    let firstTimestamp = "";
+    let lastTimestamp = "";
     for (const m of messages) {
+      if (m.timestamp) {
+        if (!firstTimestamp) firstTimestamp = m.timestamp;
+        lastTimestamp = m.timestamp;
+      }
       if (m.usage) {
         inputTokens += m.usage.inputTokens;
         outputTokens += m.usage.outputTokens;
@@ -3246,8 +3241,18 @@ function SessionUsageBar({ messages }: { messages: ChatMessage[] }) {
         cacheCreationInputTokens += m.usage.cacheCreationInputTokens;
         turns++;
       }
+      if (m.toolUses) {
+        for (const t of m.toolUses) {
+          const lower = t.name.toLowerCase();
+          if (lower === "edit" || lower === "multiedit") edits++;
+          else if (lower === "write") writes++;
+        }
+      }
     }
-    return { inputTokens, outputTokens, cacheReadInputTokens, cacheCreationInputTokens, turns };
+    return {
+      inputTokens, outputTokens, cacheReadInputTokens, cacheCreationInputTokens,
+      turns, edits, writes, firstTimestamp, lastTimestamp,
+    };
   }, [messages]);
 
   // Don't show if no usage data available yet.
@@ -3255,6 +3260,21 @@ function SessionUsageBar({ messages }: { messages: ChatMessage[] }) {
 
   const totalTokens = totals.inputTokens + totals.outputTokens + totals.cacheReadInputTokens + totals.cacheCreationInputTokens;
   const cost = estimateCost(totals);
+
+  // Wall-clock duration between first and last message timestamp.
+  const wallMs = totals.firstTimestamp && totals.lastTimestamp
+    ? Math.max(0, new Date(totals.lastTimestamp).getTime() - new Date(totals.firstTimestamp).getTime())
+    : 0;
+  const formatDuration = (ms: number) => {
+    if (ms < 1000) return "0s";
+    const s = Math.floor(ms / 1000);
+    if (s < 60) return `${s}s`;
+    const m = Math.floor(s / 60);
+    const rem = s % 60;
+    if (m < 60) return rem ? `${m}m ${rem}s` : `${m}m`;
+    const h = Math.floor(m / 60);
+    return `${h}h ${m % 60}m`;
+  };
 
   return (
     <div className="shrink-0 border-t border-border/60">
@@ -3264,38 +3284,53 @@ function SessionUsageBar({ messages }: { messages: ChatMessage[] }) {
         className="w-full flex items-center gap-2 px-3 py-1 text-[10px] text-muted-foreground hover:bg-muted/40 transition-colors"
       >
         <Zap className="h-3 w-3 shrink-0" />
-        <span className="font-medium">
-          {formatTokenCount(totalTokens)} tokens
-        </span>
+        <span className="font-medium">${cost.toFixed(4)}</span>
         <span className="opacity-60">·</span>
-        <span>{formatTokenCount(totals.outputTokens)} out</span>
+        <span>{formatTokenCount(totalTokens)} tokens</span>
         <span className="opacity-60">·</span>
-        <span>${cost.toFixed(4)}</span>
+        <span>{formatDuration(wallMs)}</span>
+        {(totals.edits + totals.writes) > 0 && (
+          <>
+            <span className="opacity-60">·</span>
+            <span>{totals.edits + totals.writes} {totals.edits + totals.writes === 1 ? "edit" : "edits"}</span>
+          </>
+        )}
         <span className="ml-auto">
           {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
         </span>
       </button>
       {expanded && (
-        <div className="px-3 pb-1.5 grid grid-cols-2 gap-x-4 gap-y-0.5 text-[10px] text-muted-foreground">
-          <div className="flex justify-between">
-            <span>Input</span>
-            <span className="font-mono">{formatTokenCount(totals.inputTokens)}</span>
+        <div className="px-3 pb-2 pt-0.5 space-y-1.5 text-[11px]">
+          {/* Session summary — mirrors `/usage` output */}
+          <div>
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 mb-1">
+              Session
+            </div>
+            <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-muted-foreground">
+              <span>Total cost:</span>
+              <span className="font-mono text-foreground/90">${cost.toFixed(4)}</span>
+              <span>Total duration (wall):</span>
+              <span className="font-mono text-foreground/90">{formatDuration(wallMs)}</span>
+              <span>Total turns:</span>
+              <span className="font-mono text-foreground/90">{totals.turns}</span>
+              <span>Code changes:</span>
+              <span className="font-mono text-foreground/90">
+                {totals.edits} edit{totals.edits === 1 ? "" : "s"}, {totals.writes} write{totals.writes === 1 ? "" : "s"}
+              </span>
+              <span>Usage:</span>
+              <span className="font-mono text-foreground/90">
+                {formatTokenCount(totals.inputTokens)} input, {formatTokenCount(totals.outputTokens)} output,
+                {" "}{formatTokenCount(totals.cacheReadInputTokens)} cache read,
+                {" "}{formatTokenCount(totals.cacheCreationInputTokens)} cache write
+              </span>
+            </div>
           </div>
-          <div className="flex justify-between">
-            <span>Output</span>
-            <span className="font-mono">{formatTokenCount(totals.outputTokens)}</span>
-          </div>
-          <div className="flex justify-between">
-            <span>Cache read</span>
-            <span className="font-mono">{formatTokenCount(totals.cacheReadInputTokens)}</span>
-          </div>
-          <div className="flex justify-between">
-            <span>Cache write</span>
-            <span className="font-mono">{formatTokenCount(totals.cacheCreationInputTokens)}</span>
-          </div>
-          <div className="flex justify-between col-span-2 pt-0.5 border-t border-border/40 mt-0.5">
-            <span className="font-medium">Total ({totals.turns} turns)</span>
-            <span className="font-mono font-medium">{formatTokenCount(totalTokens)} · ${cost.toFixed(4)}</span>
+
+          {/* Quota windows — only available via the live CLI's `/usage` */}
+          <div className="text-[10px] text-muted-foreground/70 italic border-t border-border/40 pt-1">
+            Quota windows (5h / weekly) are only visible via{" "}
+            <code className="font-mono bg-muted/40 px-1 rounded">/usage</code> in the terminal view —
+            they require a live API call that the dashboard can&apos;t make.
           </div>
         </div>
       )}
@@ -3431,9 +3466,8 @@ function ChatBubble({
     </button>
   );
 
-  // Use the richer ToolUseBlock for default/document/bubbles themes, and
-  // compact inline pills for compact/terminal themes.
-  const useRichToolView = theme === "default" || theme === "bubbles" || theme === "document";
+  // Use the rich ToolUseBlock for all themes — clicking expands to show
+  // the tool output / input details.
 
   const body = isUser ? (
     <div className="whitespace-pre-wrap break-words">{message.text}</div>
@@ -3441,23 +3475,17 @@ function ChatBubble({
     <div className="space-y-1">
       {message.text && <div>{renderText(message.text)}</div>}
       {showToolCalls && message.toolUses && message.toolUses.length > 0 && (
-        useRichToolView ? (
-          <div className="space-y-0.5 mt-1.5">
-            {message.toolUses.map((t, i) => (
-              <ToolUseBlock
-                key={i}
-                name={t.name}
-                id={t.id}
-                input={t.input}
-                result={t.id && toolResultMap ? toolResultMap.get(t.id) || null : null}
-              />
-            ))}
-          </div>
-        ) : (
-          <div className="flex flex-wrap items-stretch gap-0">
-            {message.toolUses.map((t, i) => <ToolUsePill key={i} name={t.name} input={t.input} />)}
-          </div>
-        )
+        <div className="space-y-0.5 mt-1.5">
+          {message.toolUses.map((t, i) => (
+            <ToolUseBlock
+              key={i}
+              name={t.name}
+              id={t.id}
+              input={t.input}
+              result={t.id && toolResultMap ? toolResultMap.get(t.id) || null : null}
+            />
+          ))}
+        </div>
       )}
     </div>
   );
