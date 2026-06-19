@@ -43,9 +43,15 @@ import {
   Calendar as CalendarIcon,
   RotateCw,
   HelpCircle,
+  FileText,
+  Globe,
+  ListTodo,
+  AlertCircle,
+  CheckCircle2,
+  Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -58,7 +64,17 @@ interface ChatMessage {
   id: string;
   role: "user" | "assistant";
   text: string;
-  toolUses?: { name: string; input?: unknown }[];
+  toolUses?: { name: string; id?: string; input?: unknown }[];
+  /** Tool results from the user turn that follows a tool_use turn.
+   *  Keyed by tool_use_id so we can match them to the preceding tool_use. */
+  toolResults?: { toolUseId: string; content: string; isError?: boolean }[];
+  /** Token usage for this assistant turn. */
+  usage?: {
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadInputTokens: number;
+    cacheCreationInputTokens: number;
+  };
   /** end_turn | tool_use | max_tokens | stop_sequence | null */
   stopReason?: string | null;
   timestamp: string;
@@ -1062,7 +1078,31 @@ function useSessionSubscription(key: string | null): SessionState | null {
   return key ? sessionStore.get(key) || null : null;
 }
 
-// ─── Tool-use pill ───────────────────────────────────────────────────────────
+// ─── Tool-use display (CLI-style) ────────────────────────────────────────────
+
+/** Get a short icon + color for a tool name (similar to the CLI UI). */
+function getToolMeta(name: string): { icon: React.ReactNode; color: string; label: string } {
+  const lower = name.toLowerCase();
+  if (lower === "bash" || lower === "execute" || lower === "shell")
+    return { icon: <TerminalIcon className="h-3 w-3" />, color: "text-green-600 dark:text-green-400", label: name };
+  if (lower === "read")
+    return { icon: <FileText className="h-3 w-3" />, color: "text-blue-600 dark:text-blue-400", label: "Read" };
+  if (lower === "edit")
+    return { icon: <Pencil className="h-3 w-3" />, color: "text-amber-600 dark:text-amber-400", label: "Edit" };
+  if (lower === "write")
+    return { icon: <FileText className="h-3 w-3" />, color: "text-amber-600 dark:text-amber-400", label: "Write" };
+  if (lower === "glob")
+    return { icon: <Search className="h-3 w-3" />, color: "text-purple-600 dark:text-purple-400", label: "Glob" };
+  if (lower === "grep")
+    return { icon: <Search className="h-3 w-3" />, color: "text-purple-600 dark:text-purple-400", label: "Grep" };
+  if (lower === "webfetch" || lower === "web_fetch")
+    return { icon: <Globe className="h-3 w-3" />, color: "text-cyan-600 dark:text-cyan-400", label: "WebFetch" };
+  if (lower === "task" || lower === "agent" || lower === "dispatch_agent")
+    return { icon: <Sparkles className="h-3 w-3" />, color: "text-violet-600 dark:text-violet-400", label: "Task" };
+  if (lower === "todowrite" || lower === "todo_write")
+    return { icon: <ListTodo className="h-3 w-3" />, color: "text-emerald-600 dark:text-emerald-400", label: "TodoWrite" };
+  return { icon: <Wrench className="h-3 w-3" />, color: "text-muted-foreground", label: name };
+}
 
 /** Build a one-line summary of a tool_use input for the chat view. */
 function summarizeToolInput(name: string, input: unknown): string {
@@ -1070,17 +1110,20 @@ function summarizeToolInput(name: string, input: unknown): string {
   const i = input as Record<string, unknown>;
   const lower = name.toLowerCase();
   if (lower === "bash" && typeof i.command === "string") return i.command;
-  if ((lower === "read" || lower === "edit" || lower === "write") && typeof i.file_path === "string") return i.file_path;
-  if (lower === "glob" && typeof i.pattern === "string") return i.pattern;
+  if ((lower === "read" || lower === "edit" || lower === "write") && typeof i.file_path === "string") return i.file_path as string;
+  if (lower === "glob" && typeof i.pattern === "string") return i.pattern as string;
   if (lower === "grep" && typeof i.pattern === "string") {
     const path = typeof i.path === "string" ? ` in ${i.path}` : "";
     return `${i.pattern}${path}`;
   }
-  if (lower === "webfetch" && typeof i.url === "string") return i.url;
-  if ((lower === "task" || lower === "agent") && typeof i.description === "string") return i.description;
+  if (lower === "webfetch" && typeof i.url === "string") return i.url as string;
+  if ((lower === "task" || lower === "agent") && typeof i.description === "string") return i.description as string;
   if (lower === "todowrite") {
     const todos = Array.isArray(i.todos) ? i.todos.length : 0;
     return `${todos} item${todos === 1 ? "" : "s"}`;
+  }
+  if (lower === "edit") {
+    if (typeof i.file_path === "string") return i.file_path as string;
   }
   // Fallback: first string value of any field
   for (const key of ["query", "description", "path", "url", "filename", "name"]) {
@@ -1089,47 +1132,90 @@ function summarizeToolInput(name: string, input: unknown): string {
   return "";
 }
 
-function ToolUsePill({ name, input }: { name: string; input?: unknown }) {
-  const [open, setOpen] = useState(false);
-  const summary = summarizeToolInput(name, input);
-  const hasDetails = input !== undefined && input !== null;
+/** Format tool result output for display (truncate long output). */
+function formatToolOutput(content: string, maxLines: number = 12): string {
+  if (!content) return "";
+  const lines = content.split("\n");
+  if (lines.length <= maxLines) return content;
+  return lines.slice(0, maxLines).join("\n") + `\n… (${lines.length - maxLines} more lines)`;
+}
 
-  let pretty = "";
-  if (hasDetails) {
-    try {
-      pretty = JSON.stringify(input, null, 2);
-    } catch {
-      pretty = String(input);
-    }
-  }
+function ToolUseBlock({
+  name,
+  input,
+  result,
+}: {
+  name: string;
+  id?: string;
+  input?: unknown;
+  result?: { content: string; isError?: boolean } | null;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const meta = getToolMeta(name);
+  const summary = summarizeToolInput(name, input);
+  const hasResult = result && result.content;
+  const hasInput = input !== undefined && input !== null;
 
   return (
-    <span className="inline-flex flex-col items-stretch mr-1 mt-1 max-w-full">
+    <div className="rounded-md border border-border/60 bg-card/40 overflow-hidden text-xs my-1">
+      {/* Header row */}
       <button
         type="button"
-        onClick={() => hasDetails && setOpen((v) => !v)}
-        className={cn(
-          "inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded bg-muted/60 text-muted-foreground border border-border/60",
-          hasDetails && "hover:bg-muted cursor-pointer",
-          !hasDetails && "cursor-default",
-        )}
-        title={summary || name}
+        onClick={() => setExpanded((v) => !v)}
+        className="w-full flex items-center gap-1.5 px-2 py-1.5 hover:bg-muted/50 transition-colors text-left"
       >
-        {hasDetails ? (
-          open ? <ChevronDown className="h-2.5 w-2.5 shrink-0" /> : <ChevronRight className="h-2.5 w-2.5 shrink-0" />
-        ) : (
-          <Wrench className="h-2.5 w-2.5 shrink-0" />
-        )}
-        <span className="font-medium">{name}</span>
+        <span className={cn("shrink-0", meta.color)}>{meta.icon}</span>
+        <span className="font-semibold text-foreground/90">{meta.label}</span>
         {summary && (
-          <span className={cn("font-mono text-[10px] opacity-80", open ? "" : "truncate max-w-[260px]")}>{summary}</span>
+          <span className={cn(
+            "font-mono text-[11px] text-muted-foreground min-w-0",
+            expanded ? "break-all" : "truncate",
+          )}>
+            {summary}
+          </span>
         )}
+        <span className="ml-auto shrink-0 flex items-center gap-1">
+          {result?.isError && <AlertCircle className="h-3 w-3 text-destructive" />}
+          {result && !result.isError && <CheckCircle2 className="h-3 w-3 text-emerald-500" />}
+          {expanded ? <ChevronDown className="h-3 w-3 text-muted-foreground" /> : <ChevronRight className="h-3 w-3 text-muted-foreground" />}
+        </span>
       </button>
-      {open && hasDetails && (
-        <pre className="mt-1 px-2 py-1.5 rounded bg-background/60 border border-border/60 text-[10px] font-mono overflow-x-auto whitespace-pre-wrap break-words">
-          {pretty}
-        </pre>
+
+      {/* Expanded details */}
+      {expanded && (
+        <div className="border-t border-border/40">
+          {/* Show the output/result */}
+          {hasResult && (
+            <div className={cn(
+              "px-2 py-1.5 font-mono text-[11px] leading-relaxed overflow-x-auto whitespace-pre-wrap break-words max-h-64 overflow-y-auto",
+              result.isError ? "bg-destructive/5 text-destructive" : "bg-muted/30 text-foreground/80",
+            )}>
+              {formatToolOutput(result.content)}
+            </div>
+          )}
+          {/* If no result yet but tool has input details, show input */}
+          {!hasResult && hasInput && (
+            <div className="px-2 py-1.5 font-mono text-[11px] leading-relaxed overflow-x-auto whitespace-pre-wrap break-words max-h-48 overflow-y-auto bg-muted/20 text-muted-foreground">
+              {(() => {
+                try { return JSON.stringify(input, null, 2); } catch { return String(input); }
+              })()}
+            </div>
+          )}
+        </div>
       )}
+    </div>
+  );
+}
+
+/** Legacy inline pill for the compact/terminal themes where space is limited. */
+function ToolUsePill({ name, input }: { name: string; input?: unknown }) {
+  const meta = getToolMeta(name);
+  const summary = summarizeToolInput(name, input);
+  return (
+    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded bg-muted/60 text-muted-foreground border border-border/60 mr-1 mt-1">
+      <span className={meta.color}>{meta.icon}</span>
+      <span className="font-medium">{meta.label}</span>
+      {summary && <span className="font-mono text-[10px] opacity-80 truncate max-w-[200px]">{summary}</span>}
     </span>
   );
 }
@@ -2873,9 +2959,29 @@ function ChatView({
     : "space-y-3";
 
   // Visible (non-empty) messages — used to drive avatar-grouping.
+  // User messages that only carry tool_results (no text) are hidden from the
+  // chat since we display tool results inline on the preceding assistant bubble.
   const visibleMessages = state.messages.filter((m) => {
+    if (m.role === "user" && m.toolResults && m.toolResults.length > 0 && (!m.text || !m.text.trim())) {
+      return false; // pure tool-result turn — shown inline on the assistant bubble
+    }
     return (m.text && m.text.trim().length > 0) || (showToolCalls && m.toolUses && m.toolUses.length > 0);
   });
+
+  // Build a map of tool_use_id → tool_result from all messages. This lets
+  // us pair tool uses in assistant messages with their results from the next
+  // user turn regardless of message ordering.
+  const toolResultMap = useMemo(() => {
+    const map = new Map<string, { content: string; isError?: boolean }>();
+    for (const m of state.messages) {
+      if (m.toolResults) {
+        for (const r of m.toolResults) {
+          map.set(r.toolUseId, { content: r.content, isError: r.isError });
+        }
+      }
+    }
+    return map;
+  }, [state.messages]);
 
   return (
     <div className="relative h-full flex flex-col">
@@ -2907,6 +3013,7 @@ function ChatView({
                   showToolCalls={showToolCalls}
                   theme={theme}
                   showAvatar={showAvatar}
+                  toolResultMap={toolResultMap}
                 />
               );
             })}
@@ -2921,6 +3028,9 @@ function ChatView({
           </div>
         )}
       </div>
+
+      {/* Session usage bar */}
+      <SessionUsageBar messages={state.messages} />
 
       <div className="shrink-0 border-t border-border p-2 space-y-1.5">
         {/* Attachment thumbnails */}
@@ -3098,6 +3208,102 @@ function ChatView({
   );
 }
 
+// ─── Session usage bar ───────────────────────────────────────────────────────
+
+/** Format a token count for compact display. */
+function formatTokenCount(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return String(n);
+}
+
+/** Estimate cost in USD based on Claude Sonnet/Opus pricing (rough average). */
+function estimateCost(usage: { inputTokens: number; outputTokens: number; cacheReadInputTokens: number; cacheCreationInputTokens: number }): number {
+  // Pricing approximation (Claude Sonnet 4 pricing as baseline):
+  // Input: $3/MTok, Output: $15/MTok, Cache read: $0.30/MTok, Cache write: $3.75/MTok
+  const inputCost = usage.inputTokens * 3 / 1_000_000;
+  const outputCost = usage.outputTokens * 15 / 1_000_000;
+  const cacheReadCost = usage.cacheReadInputTokens * 0.3 / 1_000_000;
+  const cacheWriteCost = usage.cacheCreationInputTokens * 3.75 / 1_000_000;
+  return inputCost + outputCost + cacheReadCost + cacheWriteCost;
+}
+
+function SessionUsageBar({ messages }: { messages: ChatMessage[] }) {
+  const [expanded, setExpanded] = useState(false);
+
+  // Aggregate usage from all assistant messages.
+  const totals = useMemo(() => {
+    let inputTokens = 0;
+    let outputTokens = 0;
+    let cacheReadInputTokens = 0;
+    let cacheCreationInputTokens = 0;
+    let turns = 0;
+    for (const m of messages) {
+      if (m.usage) {
+        inputTokens += m.usage.inputTokens;
+        outputTokens += m.usage.outputTokens;
+        cacheReadInputTokens += m.usage.cacheReadInputTokens;
+        cacheCreationInputTokens += m.usage.cacheCreationInputTokens;
+        turns++;
+      }
+    }
+    return { inputTokens, outputTokens, cacheReadInputTokens, cacheCreationInputTokens, turns };
+  }, [messages]);
+
+  // Don't show if no usage data available yet.
+  if (totals.turns === 0) return null;
+
+  const totalTokens = totals.inputTokens + totals.outputTokens + totals.cacheReadInputTokens + totals.cacheCreationInputTokens;
+  const cost = estimateCost(totals);
+
+  return (
+    <div className="shrink-0 border-t border-border/60">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="w-full flex items-center gap-2 px-3 py-1 text-[10px] text-muted-foreground hover:bg-muted/40 transition-colors"
+      >
+        <Zap className="h-3 w-3 shrink-0" />
+        <span className="font-medium">
+          {formatTokenCount(totalTokens)} tokens
+        </span>
+        <span className="opacity-60">·</span>
+        <span>{formatTokenCount(totals.outputTokens)} out</span>
+        <span className="opacity-60">·</span>
+        <span>${cost.toFixed(4)}</span>
+        <span className="ml-auto">
+          {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+        </span>
+      </button>
+      {expanded && (
+        <div className="px-3 pb-1.5 grid grid-cols-2 gap-x-4 gap-y-0.5 text-[10px] text-muted-foreground">
+          <div className="flex justify-between">
+            <span>Input</span>
+            <span className="font-mono">{formatTokenCount(totals.inputTokens)}</span>
+          </div>
+          <div className="flex justify-between">
+            <span>Output</span>
+            <span className="font-mono">{formatTokenCount(totals.outputTokens)}</span>
+          </div>
+          <div className="flex justify-between">
+            <span>Cache read</span>
+            <span className="font-mono">{formatTokenCount(totals.cacheReadInputTokens)}</span>
+          </div>
+          <div className="flex justify-between">
+            <span>Cache write</span>
+            <span className="font-mono">{formatTokenCount(totals.cacheCreationInputTokens)}</span>
+          </div>
+          <div className="flex justify-between col-span-2 pt-0.5 border-t border-border/40 mt-0.5">
+            <span className="font-medium">Total ({totals.turns} turns)</span>
+            <span className="font-mono font-medium">{formatTokenCount(totalTokens)} · ${cost.toFixed(4)}</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 function ResizeHandle({
   height,
   onChange,
@@ -3190,12 +3396,15 @@ function ChatBubble({
   showToolCalls,
   theme,
   showAvatar,
+  toolResultMap,
 }: {
   message: ChatMessage;
   showToolCalls: boolean;
   theme: ChatTheme;
   /** When false, avatar is hidden (used by themes that group consecutive same-role messages). */
   showAvatar: boolean;
+  /** Map of tool_use_id → result for pairing tool uses with their outputs. */
+  toolResultMap?: Map<string, { content: string; isError?: boolean }>;
 }) {
   const [copied, setCopied] = useState(false);
   const isUser = message.role === "user";
@@ -3222,15 +3431,33 @@ function ChatBubble({
     </button>
   );
 
+  // Use the richer ToolUseBlock for default/document/bubbles themes, and
+  // compact inline pills for compact/terminal themes.
+  const useRichToolView = theme === "default" || theme === "bubbles" || theme === "document";
+
   const body = isUser ? (
     <div className="whitespace-pre-wrap break-words">{message.text}</div>
   ) : (
     <div className="space-y-1">
       {message.text && <div>{renderText(message.text)}</div>}
       {showToolCalls && message.toolUses && message.toolUses.length > 0 && (
-        <div className="flex flex-wrap items-stretch gap-0">
-          {message.toolUses.map((t, i) => <ToolUsePill key={i} name={t.name} input={t.input} />)}
-        </div>
+        useRichToolView ? (
+          <div className="space-y-0.5 mt-1.5">
+            {message.toolUses.map((t, i) => (
+              <ToolUseBlock
+                key={i}
+                name={t.name}
+                id={t.id}
+                input={t.input}
+                result={t.id && toolResultMap ? toolResultMap.get(t.id) || null : null}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-stretch gap-0">
+            {message.toolUses.map((t, i) => <ToolUsePill key={i} name={t.name} input={t.input} />)}
+          </div>
+        )
       )}
     </div>
   );

@@ -13,7 +13,17 @@ export interface ChatMessage {
   id: string;                // uuid from the JSONL line
   role: "user" | "assistant";
   text: string;              // already-flattened text content (assistant text blocks joined; user content as-is)
-  toolUses?: { name: string; input?: unknown }[]; // optional, for "tool calls happened in this turn" indicator
+  toolUses?: { name: string; id?: string; input?: unknown }[]; // optional, for "tool calls happened in this turn" indicator
+  /** Tool results from the user turn that follows a tool_use assistant turn.
+   *  Keyed by tool_use_id so the client can match them to the preceding tool_use. */
+  toolResults?: { toolUseId: string; content: string; isError?: boolean }[];
+  /** Token usage for this assistant turn (from Claude API response). */
+  usage?: {
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadInputTokens: number;
+    cacheCreationInputTokens: number;
+  };
   /** Assistant `stop_reason`: end_turn | tool_use | max_tokens | stop_sequence | null. Used by the
    *  client to decide whether the session is still working ("thinking" indicator). */
   stopReason?: string | null;
@@ -39,15 +49,19 @@ function parseLine(raw: string): ChatMessage | null {
     const msg = parsed.message;
     if (!msg) return null;
     const text = extractTextFromContent(msg.content, /*forUser*/ true);
-    if (!text) return null;
+    const toolResults = extractToolResults(msg.content);
+    // If this turn is entirely tool_results with no user text, still emit it
+    // so the client can pair results with the preceding tool_use.
+    if (!text && toolResults.length === 0) return null;
     // Skip CLI meta-messages. Claude wraps internal command bookkeeping in
     // tags like <command-name>, <local-command-stdout>, <local-command-caveat>,
     // etc. None of these are user-typed and they shouldn't appear in chat.
-    if (isCliMetaText(text)) return null;
+    if (text && isCliMetaText(text) && toolResults.length === 0) return null;
     return {
       id: parsed.uuid || `u-${parsed.timestamp || ""}-${Math.random().toString(36).slice(2, 8)}`,
       role: "user",
-      text,
+      text: text && !isCliMetaText(text) ? text : "",
+      toolResults: toolResults.length > 0 ? toolResults : undefined,
       timestamp: parsed.timestamp || "",
     };
   }
@@ -58,11 +72,25 @@ function parseLine(raw: string): ChatMessage | null {
     const text = extractTextFromContent(msg.content, /*forUser*/ false);
     const toolUses = extractToolUses(msg.content);
     if (!text && toolUses.length === 0) return null;
+
+    // Extract usage data from the API response.
+    let usage: ChatMessage["usage"] | undefined;
+    const rawUsage = msg.usage;
+    if (rawUsage && typeof rawUsage === "object") {
+      usage = {
+        inputTokens: rawUsage.input_tokens || 0,
+        outputTokens: rawUsage.output_tokens || 0,
+        cacheReadInputTokens: rawUsage.cache_read_input_tokens || 0,
+        cacheCreationInputTokens: rawUsage.cache_creation_input_tokens || 0,
+      };
+    }
+
     return {
       id: parsed.uuid || msg.id || `a-${parsed.timestamp || ""}-${Math.random().toString(36).slice(2, 8)}`,
       role: "assistant",
       text,
       toolUses: toolUses.length > 0 ? toolUses : undefined,
+      usage,
       stopReason: typeof msg.stop_reason === "string" ? msg.stop_reason : null,
       timestamp: parsed.timestamp || "",
     };
@@ -122,13 +150,41 @@ function extractTextFromContent(content: unknown, forUser: boolean): string {
   return "";
 }
 
-function extractToolUses(content: unknown): { name: string; input?: unknown }[] {
-  const result: { name: string; input?: unknown }[] = [];
+function extractToolUses(content: unknown): { name: string; id?: string; input?: unknown }[] {
+  const result: { name: string; id?: string; input?: unknown }[] = [];
   if (!Array.isArray(content)) return result;
   for (const block of content) {
     if (block && typeof block === "object" && (block as { type?: string }).type === "tool_use") {
-      const b = block as { name?: string; input?: unknown };
-      result.push({ name: b.name || "tool", input: b.input });
+      const b = block as { name?: string; id?: string; input?: unknown };
+      result.push({ name: b.name || "tool", id: b.id, input: b.input });
+    }
+  }
+  return result;
+}
+
+/** Extract tool_result blocks from a user turn (the turn that follows a tool_use). */
+function extractToolResults(content: unknown): { toolUseId: string; content: string; isError?: boolean }[] {
+  const result: { toolUseId: string; content: string; isError?: boolean }[] = [];
+  if (!Array.isArray(content)) return result;
+  for (const block of content) {
+    if (block && typeof block === "object" && (block as { type?: string }).type === "tool_result") {
+      const b = block as { tool_use_id?: string; content?: unknown; is_error?: boolean };
+      let text = "";
+      if (typeof b.content === "string") {
+        text = b.content;
+      } else if (Array.isArray(b.content)) {
+        text = b.content
+          .filter((c: unknown) => c && typeof c === "object" && (c as { type?: string }).type === "text")
+          .map((c: unknown) => (c as { text?: string }).text || "")
+          .join("\n");
+      }
+      // Truncate very large outputs to keep the SSE payload reasonable.
+      if (text.length > 3000) {
+        text = text.slice(0, 3000) + "\n… (truncated)";
+      }
+      if (b.tool_use_id) {
+        result.push({ toolUseId: b.tool_use_id, content: text, isError: b.is_error || undefined });
+      }
     }
   }
   return result;
