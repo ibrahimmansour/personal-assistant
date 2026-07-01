@@ -424,6 +424,36 @@ function shellQuote(s: string): string {
   return `'${s.replace(/'/g, `'\\''`)}'`;
 }
 
+/**
+ * Generate an RFC4122 v4 UUID for use as a Claude `--session-id`. Prefers
+ * `crypto.randomUUID()`, but that only exists in secure contexts (HTTPS or
+ * localhost). When the dashboard is served over plain HTTP (e.g. a VPS
+ * accessed by IP/domain), we fall back to `crypto.getRandomValues` — which is
+ * available in insecure contexts — and finally to `Math.random`. The result
+ * is always a valid UUID so `claude -p --session-id` accepts it.
+ */
+function generateSessionId(): string {
+  try {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return crypto.randomUUID();
+    }
+  } catch {}
+  const bytes = new Uint8Array(16);
+  try {
+    if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") {
+      crypto.getRandomValues(bytes);
+    } else {
+      for (let i = 0; i < 16; i++) bytes[i] = Math.floor(Math.random() * 256);
+    }
+  } catch {
+    for (let i = 0; i < 16; i++) bytes[i] = Math.floor(Math.random() * 256);
+  }
+  bytes[6] = (bytes[6] & 0x0f) | 0x40; // version 4
+  bytes[8] = (bytes[8] & 0x3f) | 0x80; // variant 10xx
+  const h = Array.from(bytes, (b) => b.toString(16).padStart(2, "0"));
+  return `${h[0]}${h[1]}${h[2]}${h[3]}-${h[4]}${h[5]}-${h[6]}${h[7]}-${h[8]}${h[9]}-${h[10]}${h[11]}${h[12]}${h[13]}${h[14]}${h[15]}`;
+}
+
 // Escape a string for safe use inside a RegExp literal pattern.
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -1967,10 +1997,7 @@ export function ClaudeCodeWidget() {
         // Headless session — no PTY. Pre-generate the session UUID so the SSE
         // tail can attach immediately and `claude -p --session-id` can create
         // the log. The first submitted prompt kicks off the actual run.
-        const presetSessionId =
-          typeof crypto !== "undefined" && crypto.randomUUID
-            ? crypto.randomUUID()
-            : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        const presetSessionId = generateSessionId();
         const state = openSession({
           cwd,
           label: "New session",
@@ -2090,10 +2117,7 @@ export function ClaudeCodeWidget() {
     } else {
       // → background
       if (!state.sessionId) {
-        state.sessionId =
-          typeof crypto !== "undefined" && crypto.randomUUID
-            ? crypto.randomUUID()
-            : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        state.sessionId = generateSessionId();
         state.exists = false;
       }
       state.mode = "background";
