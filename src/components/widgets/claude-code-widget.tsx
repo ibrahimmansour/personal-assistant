@@ -156,6 +156,14 @@ interface SessionState {
   spawningTerminal: boolean;
   /** Model alias to pass via `--model` when spawning a fresh CLI (ignored for resumes). */
   model: string | null;
+  /** How this session runs:
+   *  - "interactive": a persistent `claude` PTY the chat pastes into (Terminal view available).
+   *  - "background": headless `claude -p` runs per prompt via /api/claude-sessions/run
+   *    (no live PTY; Terminal view disabled). Fixed at session creation. */
+  mode: "background" | "interactive";
+  /** Background mode only: true once the first `claude -p` run has been kicked
+   *  off (so subsequent prompts use `--resume` instead of `--session-id`). */
+  backgroundStarted: boolean;
   /** True while we're waiting for an assistant response after the user submitted. */
   waitingForReply: boolean;
   /** ID of the most recent assistant message we've seen — used to detect "new reply arrived". */
@@ -632,6 +640,11 @@ interface OpenSessionOpts {
   label?: string;
   /** Model alias for the new session (`opus`, `sonnet`, `haiku`, ...). Ignored for resumes. */
   model?: string;
+  /** How the session runs. Defaults to "background". */
+  mode?: "background" | "interactive";
+  /** Background NEW sessions pre-generate their session UUID so the SSE tail
+   *  can attach immediately and `claude -p --session-id <id>` can create it. */
+  presetSessionId?: string;
   /** Whether the JSONL log for this session exists on disk. False when the
    *  session is being created from an index-only entry. */
   hasLog?: boolean;
@@ -644,11 +657,12 @@ interface OpenSessionOpts {
  * the JSONL file appears on disk (because there is no session ID yet).
  */
 function openSession(opts: OpenSessionOpts): SessionState {
-  const key = opts.resumeId || `pending-${pendingCounter++}`;
+  const key = opts.resumeId || opts.presetSessionId || `pending-${pendingCounter++}`;
+  const mode: "background" | "interactive" = opts.mode || "background";
 
   const state: SessionState = {
     key,
-    sessionId: opts.resumeId || null,
+    sessionId: opts.resumeId || opts.presetSessionId || null,
     terminal: null,
     fitAddon: null,
     ws: null,
@@ -665,6 +679,10 @@ function openSession(opts: OpenSessionOpts): SessionState {
     pendingPrompts: [],
     spawningTerminal: false,
     model: opts.model && opts.model !== "default" ? opts.model : null,
+    mode,
+    // Resumed sessions already exist on disk, so background runs always use
+    // --resume. Fresh background sessions start with --session-id.
+    backgroundStarted: !!opts.resumeId,
     waitingForReply: false,
     lastAssistantMessageId: null,
     terminalAwaitingInput: false,
@@ -987,6 +1005,12 @@ async function submitPrompt(state: SessionState, text: string): Promise<boolean>
   // ourselves as a distinct keystroke after the text settles.
   const promptText = text.replace(/\r+$/, "");
 
+  // Background sessions never touch a live PTY — they run headless via
+  // `claude -p` per prompt.
+  if (state.mode === "background") {
+    return submitBackgroundPrompt(state, promptText);
+  }
+
   // Mark this session as waiting for an assistant reply. Cleared by the
   // SSE handler when the next assistant message lands. Per-session, so
   // other sessions' chat views don't show the indicator.
@@ -1008,6 +1032,54 @@ async function submitPrompt(state: SessionState, text: string): Promise<boolean>
   notifySubscribers(state);
   if (!state.spawningTerminal && !state.alive) {
     spawnTerminal(state);
+  }
+  return true;
+}
+
+/**
+ * Background-mode prompt: run `claude -p` headlessly on the server via
+ * /api/claude-sessions/run. No PTY is spawned. The first prompt creates the
+ * session (`--session-id <uuid>`); later prompts continue it (`--resume`).
+ * Output lands in the JSONL log, which the chat view is already tailing.
+ */
+async function submitBackgroundPrompt(state: SessionState, promptText: string): Promise<boolean> {
+  if (!state.sessionId) {
+    // Should never happen — background sessions always have a pre-set id.
+    console.error("[claude-code] background session has no sessionId");
+    return false;
+  }
+
+  state.waitingForReply = true;
+  state.lastActivityAt = Date.now();
+  state.terminalAwaitingInput = false;
+  state.terminalAwaitingHint = "";
+  notifySubscribers(state);
+
+  const isNew = !state.backgroundStarted;
+  try {
+    const res = await fetch("/api/claude-sessions/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        cwd: state.cwd,
+        prompt: promptText,
+        sessionId: state.sessionId,
+        isNew,
+        model: state.model,
+      }),
+    });
+    // Once a run has been dispatched the session exists on disk; future
+    // prompts must resume it rather than re-create it.
+    state.backgroundStarted = true;
+    if (!res.ok) {
+      state.waitingForReply = false;
+      notifySubscribers(state);
+      return false;
+    }
+  } catch {
+    state.waitingForReply = false;
+    notifySubscribers(state);
+    return false;
   }
   return true;
 }
@@ -1343,6 +1415,70 @@ function ModelPicker({
   );
 }
 
+// ─── Mode picker (background vs interactive) ─────────────────────────────────
+
+const MODE_OPTIONS: { value: "background" | "interactive"; label: string; description: string }[] = [
+  { value: "background", label: "Background", description: "Headless — runs claude -p, chat only (no terminal)" },
+  { value: "interactive", label: "Interactive", description: "Live claude session with a usable terminal view" },
+];
+
+function ModePicker({
+  value,
+  onChange,
+}: {
+  value: "background" | "interactive";
+  onChange: (v: "background" | "interactive") => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const onClick = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    if (open) document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, [open]);
+
+  const current = MODE_OPTIONS.find((m) => m.value === value) || MODE_OPTIONS[0];
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1 px-2 h-7 text-xs rounded-md hover:bg-muted text-muted-foreground hover:text-foreground"
+        title={`Mode: ${current.label} — applies on next session start`}
+      >
+        <Zap className="h-3 w-3" />
+        <span>{current.label}</span>
+        <ChevronDown className="h-3 w-3" />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 z-20 w-64 rounded-md border border-border bg-popover shadow-md py-1">
+          {MODE_OPTIONS.map((m) => (
+            <button
+              key={m.value}
+              type="button"
+              onClick={() => { onChange(m.value); setOpen(false); }}
+              className={cn(
+                "w-full text-left px-2 py-1.5 hover:bg-accent flex flex-col gap-0.5",
+                m.value === value && "bg-accent",
+              )}
+            >
+              <span className="text-xs font-medium">{m.label}</span>
+              <span className="text-[10px] text-muted-foreground">{m.description}</span>
+            </button>
+          ))}
+          <div className="px-2 pt-1 mt-1 border-t border-border text-[10px] text-muted-foreground">
+            Applies on next session start
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Markdown-lite renderer ──────────────────────────────────────────────────
 
 function renderInlineFormatting(text: string): React.ReactNode {
@@ -1604,6 +1740,19 @@ export function ClaudeCodeWidget() {
     return localStorage.getItem("claude-code-model") || "default";
   });
 
+  // Session mode for NEW sessions. "background" (headless claude -p, chat only)
+  // is the default; "interactive" spawns a live PTY with a usable terminal.
+  // Fixed per-session at creation; the picker sets the default for the next one.
+  const [selectedMode, setSelectedModeState] = useState<"background" | "interactive">(() => {
+    if (typeof window === "undefined") return "background";
+    const v = localStorage.getItem("claude-code-mode");
+    return v === "interactive" ? "interactive" : "background";
+  });
+  const setSelectedMode = useCallback((mode: "background" | "interactive") => {
+    setSelectedModeState(mode);
+    try { localStorage.setItem("claude-code-mode", mode); } catch {}
+  }, []);
+
   // Chat UI theme. Pure visual preference, persisted locally.
   const [chatTheme, setChatTheme] = useState<ChatTheme>(() => {
     if (typeof window === "undefined") return "default";
@@ -1643,6 +1792,13 @@ export function ClaudeCodeWidget() {
   // Subscribe to active session
   const active = useSessionSubscription(activeKey);
   const sessionMetaMap = useSessionMetaMap();
+
+  // Background sessions have no terminal — force the shared view flag back to
+  // chat when one becomes active (view is widget-level, so it can carry over
+  // "terminal" from a previously-active interactive session).
+  useEffect(() => {
+    if (active?.mode === "background" && view === "terminal") setView("chat");
+  }, [active?.mode, view]);
 
   // ── Manage SSE connections ─────────────────────────────────────────────
   // Browsers cap concurrent EventSource connections at ~6 per origin (over
@@ -1791,17 +1947,37 @@ export function ClaudeCodeWidget() {
       // Make this the active folder for the worktrees panel
       setActiveFolder(cwd);
       try { localStorage.setItem("claude-code-active-folder", cwd); } catch {}
-      const state = openSession({ cwd, label: "New session", model: selectedModel });
-      // For brand-new sessions we spawn the terminal eagerly so the CLI is up
-      // and the JSONL gets created.
-      spawnTerminal(state);
-      setActiveKey(state.key);
-      setView("chat");
-      setShowFolderPicker(false);
+      if (selectedMode === "background") {
+        // Headless session — no PTY. Pre-generate the session UUID so the SSE
+        // tail can attach immediately and `claude -p --session-id` can create
+        // the log. The first submitted prompt kicks off the actual run.
+        const presetSessionId =
+          typeof crypto !== "undefined" && crypto.randomUUID
+            ? crypto.randomUUID()
+            : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        const state = openSession({
+          cwd,
+          label: "New session",
+          model: selectedModel,
+          mode: "background",
+          presetSessionId,
+        });
+        setActiveKey(state.key);
+        setView("chat");
+        setShowFolderPicker(false);
+      } else {
+        const state = openSession({ cwd, label: "New session", model: selectedModel, mode: "interactive" });
+        // For brand-new interactive sessions we spawn the terminal eagerly so
+        // the CLI is up and the JSONL gets created.
+        spawnTerminal(state);
+        setActiveKey(state.key);
+        setView("chat");
+        setShowFolderPicker(false);
+      }
     } finally {
       setCreating(false);
     }
-  }, [persistRecentFolder, selectedModel]);
+  }, [persistRecentFolder, selectedModel, selectedMode]);
 
   // ── Set active folder (persist to localStorage) ────────────────────────
   const selectActiveFolder = useCallback((folder: string | null) => {
@@ -1862,7 +2038,7 @@ export function ClaudeCodeWidget() {
 
     const customName = getSessionMeta(s.sessionId).customName;
     const label = customName || s.summary || s.firstPrompt?.slice(0, 30) || s.sessionId.slice(0, 8);
-    const state = openSession({ cwd, resumeId: s.sessionId, label, hasLog: s.hasLog !== false });
+    const state = openSession({ cwd, resumeId: s.sessionId, label, hasLog: s.hasLog !== false, mode: selectedMode });
     // The API gives us the canonical project dir name; openSession's default
     // (encoded from cwd) may not match if the path or session moved. Set it
     // before SSE attaches.
@@ -1871,7 +2047,7 @@ export function ClaudeCodeWidget() {
     }
     setActiveKey(state.key);
     setView("chat");
-  }, []);
+  }, [selectedMode]);
 
   const closeActiveSession = useCallback(() => {
     if (!activeKey) return;
@@ -2095,6 +2271,10 @@ export function ClaudeCodeWidget() {
                 )}
 
                 {view === "chat" && (
+                  <ModePicker value={selectedMode} onChange={setSelectedMode} />
+                )}
+
+                {view === "chat" && (
                   <Button
                     size="sm"
                     variant="ghost"
@@ -2124,10 +2304,14 @@ export function ClaudeCodeWidget() {
                     Chat
                   </button>
                   <button
-                    onClick={() => setView("terminal")}
+                    onClick={() => { if (active.mode !== "background") setView("terminal"); }}
+                    disabled={active.mode === "background"}
+                    title={active.mode === "background" ? "Terminal is disabled for background sessions" : "Terminal"}
                     className={cn(
                       "px-2 py-0.5 text-xs rounded transition-colors flex items-center gap-1",
-                      view === "terminal" ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground"
+                      active.mode === "background"
+                        ? "text-muted-foreground/40 cursor-not-allowed"
+                        : view === "terminal" ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground"
                     )}
                   >
                     <TerminalIcon className="h-3 w-3" />
@@ -2160,7 +2344,7 @@ export function ClaudeCodeWidget() {
               />
             ) : !active ? (
               <EmptyState onNew={() => setShowFolderPicker(true)} />
-            ) : view === "chat" ? (
+            ) : view === "chat" || active.mode === "background" ? (
               <ChatView
                 state={active}
                 showToolCalls={showToolCalls}
