@@ -2,7 +2,7 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { GripVertical, Maximize2, Minimize2, Pin, Columns2, X, Fullscreen, Shrink, ArrowUp, ArrowDown, Check } from "lucide-react";
+import { GripVertical, Maximize2, Minimize2, Pin, Columns2, X, ArrowUp, ArrowDown, Check } from "lucide-react";
 import { ReactNode, useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useCommandPalette } from "@/components/command-palette-context";
@@ -103,6 +103,7 @@ export function WidgetWrapper({
   const [showSplitPicker, setShowSplitPicker] = useState(false);
   const splitPickerRef = useRef<HTMLDivElement>(null);
   const fullscreenRef = useRef<HTMLDivElement>(null);
+  const isExpandedRef = useRef(false);
   const { setExpandedWidget, collapseSeq } = useCommandPalette();
   const { pinnedWidgetIds, togglePinWidget, activeWorkspace } = useWorkspace();
   const { widgets, moveWidget } = useDashboard();
@@ -195,15 +196,13 @@ export function WidgetWrapper({
     }
   }, [forceExpand, isExpanded, onExpandChange]);
 
-  const toggleExpand = useCallback(() => {
-    setIsExpanded((prev) => {
-      const next = !prev;
-      onExpandChange?.(next);
-      return next;
-    });
-  }, [onExpandChange]);
+  // Keep a ref in sync so async handlers (fullscreenchange) read fresh state
+  useEffect(() => {
+    isExpandedRef.current = isExpanded;
+  }, [isExpanded]);
 
   const collapse = useCallback(() => {
+    isExpandedRef.current = false;
     if (document.fullscreenElement) {
       document.exitFullscreen().catch(() => {});
     }
@@ -211,21 +210,42 @@ export function WidgetWrapper({
     onExpandChange?.(false);
   }, [onExpandChange]);
 
-  const toggleFullscreen = useCallback(() => {
-    if (!fullscreenRef.current) return;
-    if (!document.fullscreenElement) {
-      fullscreenRef.current.requestFullscreen().catch(() => {});
+  const toggleExpand = useCallback(() => {
+    if (isExpandedRef.current) {
+      collapse();
     } else {
-      document.exitFullscreen().catch(() => {});
+      isExpandedRef.current = true;
+      setIsExpanded(true);
+      onExpandChange?.(true);
     }
-  }, []);
+  }, [collapse, onExpandChange]);
 
-  // Sync isFullscreen state with browser fullscreen changes
+  // When the widget expands, jump straight into true browser fullscreen.
+  // Runs after the fullscreen overlay has mounted (portal), still within the
+  // click's transient user activation window. Falls back to the edge-to-edge
+  // overlay if the request is rejected (e.g. mobile Safari).
   useEffect(() => {
-    const handler = () => setIsFullscreen(!!document.fullscreenElement);
+    if (isExpanded && !isMobile && fullscreenRef.current && !document.fullscreenElement) {
+      fullscreenRef.current.requestFullscreen?.().catch(() => {});
+    }
+  }, [isExpanded, isMobile]);
+
+  // Sync isFullscreen state with browser fullscreen changes. Exiting browser
+  // fullscreen (e.g. via Escape) collapses the widget entirely — there is no
+  // intermediate windowed mode.
+  useEffect(() => {
+    const handler = () => {
+      const fs = !!document.fullscreenElement;
+      setIsFullscreen(fs);
+      if (!fs && isExpandedRef.current) {
+        isExpandedRef.current = false;
+        setIsExpanded(false);
+        onExpandChange?.(false);
+      }
+    };
     document.addEventListener("fullscreenchange", handler);
     return () => document.removeEventListener("fullscreenchange", handler);
-  }, []);
+  }, [onExpandChange]);
 
   // Close on Escape (but not when focused inside a terminal)
   useEffect(() => {
@@ -309,20 +329,6 @@ export function WidgetWrapper({
         </div>
       )}
     </div>
-  ) : null;
-
-  const fullscreenButton = isExpanded ? (
-    <button
-      onClick={toggleFullscreen}
-      className="text-muted-foreground hover:text-foreground transition-colors p-2 md:p-1 rounded-md hover:bg-muted"
-      title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
-    >
-      {isFullscreen ? (
-        <Shrink className="h-3.5 w-3.5" />
-      ) : (
-        <Fullscreen className="h-3.5 w-3.5" />
-      )}
-    </button>
   ) : null;
 
   const hasSplit = splitWidget || sidePanel;
@@ -424,7 +430,6 @@ export function WidgetWrapper({
                   <div className="flex items-center gap-1">
                     {headerAction}
                     <span className="hidden md:inline-flex">{splitButton}</span>
-                    <span className="hidden md:inline-flex">{fullscreenButton}</span>
                     {pinButton}
                     {expandButton}
                   </div>
