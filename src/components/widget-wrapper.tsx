@@ -64,6 +64,35 @@ const widgetLabels: Record<WidgetType, string> = {
   news: "News",
 };
 
+// Fullscreen API wrappers that tolerate environments where requestFullscreen /
+// exitFullscreen are patched to return non-Promises or to throw synchronously
+// (e.g. the "Windowed" browser extension). Without this guard, calling
+// `.catch()` on an undefined return value crashes the whole React tree.
+function safeRequestFullscreen(el: HTMLElement | null) {
+  if (!el || typeof el.requestFullscreen !== "function") return;
+  try {
+    const result = el.requestFullscreen();
+    if (result && typeof (result as Promise<void>).catch === "function") {
+      (result as Promise<void>).catch(() => {});
+    }
+  } catch {
+    /* ignore — fall back to the edge-to-edge overlay */
+  }
+}
+
+function safeExitFullscreen() {
+  if (!document.fullscreenElement) return;
+  if (typeof document.exitFullscreen !== "function") return;
+  try {
+    const result = document.exitFullscreen();
+    if (result && typeof (result as Promise<void>).catch === "function") {
+      (result as Promise<void>).catch(() => {});
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
 interface WidgetWrapperProps {
   title: string;
   icon?: ReactNode;
@@ -170,9 +199,7 @@ export function WidgetWrapper({
     if (collapseSeq !== collapseSeqRef.current) {
       collapseSeqRef.current = collapseSeq;
       if (isExpanded) {
-        if (document.fullscreenElement) {
-          document.exitFullscreen().catch(() => {});
-        }
+        safeExitFullscreen();
         setIsExpanded(false);
         onExpandChange?.(false);
       }
@@ -203,9 +230,7 @@ export function WidgetWrapper({
 
   const collapse = useCallback(() => {
     isExpandedRef.current = false;
-    if (document.fullscreenElement) {
-      document.exitFullscreen().catch(() => {});
-    }
+    safeExitFullscreen();
     setIsExpanded(false);
     onExpandChange?.(false);
   }, [onExpandChange]);
@@ -226,7 +251,7 @@ export function WidgetWrapper({
   // overlay if the request is rejected (e.g. mobile Safari).
   useEffect(() => {
     if (isExpanded && !isMobile && fullscreenRef.current && !document.fullscreenElement) {
-      fullscreenRef.current.requestFullscreen?.().catch(() => {});
+      safeRequestFullscreen(fullscreenRef.current);
     }
   }, [isExpanded, isMobile]);
 

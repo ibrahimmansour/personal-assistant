@@ -785,8 +785,13 @@ export function CommandPalette() {
       if ((e.metaKey || e.ctrlKey) && e.key === "p") {
         e.preventDefault();
         // Exit fullscreen first so the portaled dialog is visible
-        if (document.fullscreenElement) {
-          document.exitFullscreen().catch(() => {});
+        if (document.fullscreenElement && typeof document.exitFullscreen === "function") {
+          try {
+            const result = document.exitFullscreen();
+            if (result && typeof result.catch === "function") result.catch(() => {});
+          } catch {
+            /* ignore patched/throwing fullscreen APIs (e.g. Windowed extension) */
+          }
         }
         setOpen(!open);
       }

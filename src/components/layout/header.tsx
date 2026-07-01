@@ -134,10 +134,14 @@ export function Header() {
           <button
             className="hidden md:inline-flex items-center justify-center h-8 w-8 p-0 rounded-md text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
             onClick={() => {
-              if (!document.fullscreenElement) {
-                document.documentElement.requestFullscreen();
-              } else {
-                document.exitFullscreen();
+              try {
+                if (!document.fullscreenElement) {
+                  document.documentElement.requestFullscreen?.();
+                } else {
+                  document.exitFullscreen?.();
+                }
+              } catch {
+                /* ignore patched/throwing fullscreen APIs (e.g. Windowed extension) */
               }
             }}
             title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
