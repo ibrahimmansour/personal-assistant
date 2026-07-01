@@ -1438,6 +1438,41 @@ const MODE_OPTIONS: { value: "background" | "interactive"; label: string; descri
   { value: "interactive", label: "Interactive", description: "Live claude session with a usable terminal view" },
 ];
 
+/** Compact segmented toggle for choosing the mode of the NEXT new session.
+ *  Rendered wherever a session can be started (sidebar + folder picker) and
+ *  bound to the shared `selectedMode` state so all entry points agree. */
+function ModeToggle({
+  value,
+  onChange,
+  className,
+}: {
+  value: "background" | "interactive";
+  onChange: (v: "background" | "interactive") => void;
+  className?: string;
+}) {
+  return (
+    <div className={cn("flex items-center bg-muted rounded-md p-0.5", className)}>
+      {MODE_OPTIONS.map((m) => (
+        <button
+          key={m.value}
+          type="button"
+          onClick={() => onChange(m.value)}
+          title={m.description}
+          className={cn(
+            "flex-1 px-2 py-0.5 text-[11px] rounded transition-colors flex items-center justify-center gap-1",
+            value === m.value
+              ? "bg-background shadow-sm text-foreground"
+              : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          {m.value === "background" ? <Zap className="h-3 w-3" /> : <TerminalIcon className="h-3 w-3" />}
+          {m.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 // ─── Markdown-lite renderer ──────────────────────────────────────────────────
 
 function renderInlineFormatting(text: string): React.ReactNode {
@@ -2094,6 +2129,10 @@ export function ClaudeCodeWidget() {
                 {creating ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> : <Plus className="h-3.5 w-3.5 mr-1.5" />}
                 New Session
               </Button>
+
+              {/* Mode for the next new session. Always visible so both the
+                  quick "New Session" button and the folder picker respect it. */}
+              <ModeToggle value={selectedMode} onChange={setSelectedMode} className="w-full" />
 
               {/* Active folder picker */}
               <FolderSection
@@ -2838,23 +2877,7 @@ function FolderPickerPanel({ value, onChange, recent, onPick, onClose, mode, onM
             session being created. */}
         <div className="flex items-center gap-2">
           <span className="text-[10px] uppercase font-semibold text-muted-foreground">Mode</span>
-          <div className="flex items-center bg-muted rounded-md p-0.5">
-            {MODE_OPTIONS.map((m) => (
-              <button
-                key={m.value}
-                type="button"
-                onClick={() => onModeChange(m.value)}
-                title={m.description}
-                className={cn(
-                  "px-2 py-0.5 text-xs rounded transition-colors flex items-center gap-1",
-                  mode === m.value ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {m.value === "background" ? <Zap className="h-3 w-3" /> : <TerminalIcon className="h-3 w-3" />}
-                {m.label}
-              </button>
-            ))}
-          </div>
+          <ModeToggle value={mode} onChange={onModeChange} />
           <span className="text-[10px] text-muted-foreground truncate">
             {mode === "background" ? "Headless · chat only" : "Live terminal"}
           </span>
