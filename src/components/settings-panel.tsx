@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useEffect, useCallback, FormEvent } from "react";
-import { Settings, Save, Eye, EyeOff, CheckCircle, GitBranch, Mail, Cloud, Brain, MapPin, TicketCheck, Shield, Download, RefreshCw, LayoutGrid, RotateCcw, Lock, LockOpen } from "lucide-react";
+import { Settings, Save, Eye, EyeOff, CheckCircle, GitBranch, Mail, Cloud, Brain, MapPin, TicketCheck, Shield, Download, RefreshCw, LayoutGrid, RotateCcw, Lock, LockOpen, Maximize } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDashboard } from "@/components/dashboard-context";
+import { useAppearance } from "@/components/appearance-context";
 import { Switch } from "@/components/ui/switch";
 
 interface AppConfig {
@@ -171,9 +172,38 @@ export default function SettingsPanel() {
         Settings are stored in ~/.personal-assistant/config.json
       </p>
 
+      <DisplaySection />
+
       <WidgetsSection />
 
       <ChangePasswordSection />
+    </div>
+  );
+}
+
+function DisplaySection() {
+  const { appearance, setAutoFullscreen } = useAppearance();
+
+  return (
+    <div className="space-y-3 pt-4 border-t border-border">
+      <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+        <Maximize className="h-4 w-4" />
+        Display
+      </div>
+      <div className="space-y-2 pl-6">
+        <div className="flex items-center justify-between py-1 gap-4">
+          <div>
+            <div className="text-sm">Fullscreen on launch</div>
+            <div className="text-xs text-muted-foreground">
+              Enter fullscreen automatically on your first interaction after loading
+            </div>
+          </div>
+          <Switch
+            checked={appearance.autoFullscreen}
+            onCheckedChange={setAutoFullscreen}
+          />
+        </div>
+      </div>
     </div>
   );
 }

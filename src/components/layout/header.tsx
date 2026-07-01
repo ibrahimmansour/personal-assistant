@@ -7,7 +7,8 @@ import { AppearancePicker } from "@/components/layout/appearance-picker";
 import { useProfile, profiles, type ProfileId } from "@/components/profile-context";
 import { useCommandPalette } from "@/components/command-palette-context";
 import { useAIChat } from "@/components/ai-chat-context";
-import { useEffect, useState } from "react";
+import { useAppearance } from "@/components/appearance-context";
+import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import SettingsPanel from "@/components/settings-panel";
@@ -22,6 +23,7 @@ export function Header() {
   const { activeProfile, setActiveProfile, profile } = useProfile();
   const { openSearch } = useCommandPalette();
   const { toggle: toggleAI, isOpen: aiOpen } = useAIChat();
+  const { appearance } = useAppearance();
   const [mounted, setMounted] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -33,6 +35,34 @@ export function Header() {
     document.addEventListener("fullscreenchange", onFsChange);
     return () => document.removeEventListener("fullscreenchange", onFsChange);
   }, []);
+
+  // Auto-enter fullscreen on launch. Browsers forbid requestFullscreen without
+  // a user gesture, so we arm a one-shot listener that fires on the very first
+  // interaction (click or keypress) after load. Runs once per page load and
+  // only when the preference is enabled and we're not already fullscreen.
+  const autoFsDone = useRef(false);
+  useEffect(() => {
+    if (!appearance.autoFullscreen) return;
+    if (autoFsDone.current || document.fullscreenElement) return;
+
+    const enter = () => {
+      if (autoFsDone.current) return;
+      autoFsDone.current = true;
+      cleanup();
+      try {
+        document.documentElement.requestFullscreen?.();
+      } catch {
+        /* ignore patched/throwing fullscreen APIs (e.g. Windowed extension) */
+      }
+    };
+    const cleanup = () => {
+      window.removeEventListener("pointerdown", enter, true);
+      window.removeEventListener("keydown", enter, true);
+    };
+    window.addEventListener("pointerdown", enter, true);
+    window.addEventListener("keydown", enter, true);
+    return cleanup;
+  }, [appearance.autoFullscreen]);
 
   useEffect(() => setMounted(true), []);
 

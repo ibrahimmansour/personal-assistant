@@ -24,6 +24,7 @@ export interface AppearanceConfig {
   fontFamily: FontFamily;
   fontSize: FontSize;
   density: Density;
+  autoFullscreen: boolean;
 }
 
 const defaultAppearance: AppearanceConfig = {
@@ -31,6 +32,7 @@ const defaultAppearance: AppearanceConfig = {
   fontFamily: "geist",
   fontSize: "base",
   density: "comfortable",
+  autoFullscreen: true,
 };
 
 interface AppearanceContextType {
@@ -39,6 +41,7 @@ interface AppearanceContextType {
   setFontFamily: (font: FontFamily) => void;
   setFontSize: (size: FontSize) => void;
   setDensity: (density: Density) => void;
+  setAutoFullscreen: (enabled: boolean) => void;
   increaseFontSize: () => void;
   decreaseFontSize: () => void;
 }
@@ -158,6 +161,13 @@ export function AppearanceProvider({ children }: { children: React.ReactNode }) 
     [appearance, persist]
   );
 
+  const setAutoFullscreen = useCallback(
+    (enabled: boolean) => {
+      persist({ ...appearance, autoFullscreen: enabled });
+    },
+    [appearance, persist]
+  );
+
   const increaseFontSize = useCallback(() => {
     const idx = fontSizeOrder.indexOf(appearance.fontSize);
     if (idx < fontSizeOrder.length - 1) {
@@ -173,7 +183,7 @@ export function AppearanceProvider({ children }: { children: React.ReactNode }) 
   }, [appearance, persist]);
 
   return (
-    <AppearanceContext.Provider value={{ appearance, setColorTheme, setFontFamily, setFontSize, setDensity, increaseFontSize, decreaseFontSize }}>
+    <AppearanceContext.Provider value={{ appearance, setColorTheme, setFontFamily, setFontSize, setDensity, setAutoFullscreen, increaseFontSize, decreaseFontSize }}>
       {children}
     </AppearanceContext.Provider>
   );
