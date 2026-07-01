@@ -1072,16 +1072,32 @@ async function submitBackgroundPrompt(state: SessionState, promptText: string): 
     // prompts must resume it rather than re-create it.
     state.backgroundStarted = true;
     if (!res.ok) {
-      state.waitingForReply = false;
-      notifySubscribers(state);
+      let detail = `HTTP ${res.status}`;
+      try {
+        const data = await res.json();
+        if (data?.error) detail = data.error;
+      } catch {}
+      showBackgroundError(state, detail);
       return false;
     }
-  } catch {
-    state.waitingForReply = false;
-    notifySubscribers(state);
+  } catch (err) {
+    showBackgroundError(state, err instanceof Error ? err.message : "request failed");
     return false;
   }
   return true;
+}
+
+/** Surface a background-run failure as an inline assistant error bubble and
+ *  stop the "thinking" indicator. */
+function showBackgroundError(state: SessionState, detail: string) {
+  state.waitingForReply = false;
+  state.messages.push({
+    id: `bg-error-${Date.now()}`,
+    role: "assistant",
+    text: `⚠️ Background run failed: ${detail}`,
+    timestamp: new Date().toISOString(),
+  });
+  notifySubscribers(state);
 }
 
 /**
@@ -1415,69 +1431,12 @@ function ModelPicker({
   );
 }
 
-// ─── Mode picker (background vs interactive) ─────────────────────────────────
+// ─── Session mode (background vs interactive) ────────────────────────────────
 
 const MODE_OPTIONS: { value: "background" | "interactive"; label: string; description: string }[] = [
   { value: "background", label: "Background", description: "Headless — runs claude -p, chat only (no terminal)" },
   { value: "interactive", label: "Interactive", description: "Live claude session with a usable terminal view" },
 ];
-
-function ModePicker({
-  value,
-  onChange,
-}: {
-  value: "background" | "interactive";
-  onChange: (v: "background" | "interactive") => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const onClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    if (open) document.addEventListener("mousedown", onClick);
-    return () => document.removeEventListener("mousedown", onClick);
-  }, [open]);
-
-  const current = MODE_OPTIONS.find((m) => m.value === value) || MODE_OPTIONS[0];
-
-  return (
-    <div className="relative" ref={ref}>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-1 px-2 h-7 text-xs rounded-md hover:bg-muted text-muted-foreground hover:text-foreground"
-        title={`Mode: ${current.label} — applies on next session start`}
-      >
-        <Zap className="h-3 w-3" />
-        <span>{current.label}</span>
-        <ChevronDown className="h-3 w-3" />
-      </button>
-      {open && (
-        <div className="absolute right-0 top-full mt-1 z-20 w-64 rounded-md border border-border bg-popover shadow-md py-1">
-          {MODE_OPTIONS.map((m) => (
-            <button
-              key={m.value}
-              type="button"
-              onClick={() => { onChange(m.value); setOpen(false); }}
-              className={cn(
-                "w-full text-left px-2 py-1.5 hover:bg-accent flex flex-col gap-0.5",
-                m.value === value && "bg-accent",
-              )}
-            >
-              <span className="text-xs font-medium">{m.label}</span>
-              <span className="text-[10px] text-muted-foreground">{m.description}</span>
-            </button>
-          ))}
-          <div className="px-2 pt-1 mt-1 border-t border-border text-[10px] text-muted-foreground">
-            Applies on next session start
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
 
 // ─── Markdown-lite renderer ──────────────────────────────────────────────────
 
@@ -2271,7 +2230,15 @@ export function ClaudeCodeWidget() {
                 )}
 
                 {view === "chat" && (
-                  <ModePicker value={selectedMode} onChange={setSelectedMode} />
+                  <span
+                    className="flex items-center gap-1 px-2 h-7 text-xs rounded-md text-muted-foreground select-none"
+                    title={active.mode === "background"
+                      ? "Background session — runs claude -p, chat only (no terminal)"
+                      : "Interactive session — live terminal available"}
+                  >
+                    <Zap className="h-3 w-3" />
+                    {active.mode === "background" ? "Background" : "Interactive"}
+                  </span>
                 )}
 
                 {view === "chat" && (
@@ -2341,6 +2308,8 @@ export function ClaudeCodeWidget() {
                 recent={recentFolders}
                 onPick={(p) => startNewSession(p)}
                 onClose={() => setShowFolderPicker(false)}
+                mode={selectedMode}
+                onModeChange={setSelectedMode}
               />
             ) : !active ? (
               <EmptyState onNew={() => setShowFolderPicker(true)} />
@@ -2794,9 +2763,11 @@ interface FolderPickerProps {
   recent: string[];
   onPick: (p: string) => void;
   onClose: () => void;
+  mode: "background" | "interactive";
+  onModeChange: (m: "background" | "interactive") => void;
 }
 
-function FolderPickerPanel({ value, onChange, recent, onPick, onClose }: FolderPickerProps) {
+function FolderPickerPanel({ value, onChange, recent, onPick, onClose, mode, onModeChange }: FolderPickerProps) {
   const [browsing, setBrowsing] = useState(false);
   const [browsePath, setBrowsePath] = useState<string>("");
   const [entries, setEntries] = useState<{ name: string; isDir: boolean }[]>([]);
@@ -2860,6 +2831,33 @@ function FolderPickerPanel({ value, onChange, recent, onPick, onClose }: FolderP
           <Button size="sm" disabled={!value.trim()} onClick={() => onPick(value.trim())}>
             Start
           </Button>
+        </div>
+
+        {/* Session mode: background (headless claude -p, chat only) vs
+            interactive (live terminal). Chosen here so it applies to the
+            session being created. */}
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] uppercase font-semibold text-muted-foreground">Mode</span>
+          <div className="flex items-center bg-muted rounded-md p-0.5">
+            {MODE_OPTIONS.map((m) => (
+              <button
+                key={m.value}
+                type="button"
+                onClick={() => onModeChange(m.value)}
+                title={m.description}
+                className={cn(
+                  "px-2 py-0.5 text-xs rounded transition-colors flex items-center gap-1",
+                  mode === m.value ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {m.value === "background" ? <Zap className="h-3 w-3" /> : <TerminalIcon className="h-3 w-3" />}
+                {m.label}
+              </button>
+            ))}
+          </div>
+          <span className="text-[10px] text-muted-foreground truncate">
+            {mode === "background" ? "Headless · chat only" : "Live terminal"}
+          </span>
         </div>
 
         {recent.length > 0 && (

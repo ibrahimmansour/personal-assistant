@@ -1,9 +1,31 @@
 import { NextRequest } from "next/server";
 import { spawn } from "child_process";
 import { homedir } from "os";
-import { join } from "path";
+import { join, delimiter } from "path";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * Build a PATH that includes the common locations where the `claude` CLI is
+ * installed, so `spawn("claude")` resolves even when the Next.js dev server
+ * was launched from an environment with a minimal PATH (e.g. a GUI launcher).
+ * The CLI commonly lives in ~/.local/bin (native installer), or the Homebrew /
+ * system bin dirs, or an npm global prefix.
+ */
+function buildPath(): string {
+  const home = homedir();
+  const extra = [
+    join(home, ".local", "bin"),
+    join(home, ".claude", "local"),
+    "/opt/homebrew/bin",
+    "/usr/local/bin",
+    "/usr/bin",
+    "/bin",
+  ];
+  const current = process.env.PATH ? process.env.PATH.split(delimiter) : [];
+  const merged = [...current, ...extra.filter((p) => !current.includes(p))];
+  return merged.join(delimiter);
+}
 
 /**
  * Headless ("background") prompt runner for the Claude Code widget.
@@ -19,8 +41,10 @@ export const dynamic = "force-dynamic";
  * conversation. The `--model` override is only meaningful when creating the
  * session.
  *
- * Fire-and-forget: the process is spawned and detached; we respond
- * immediately. Progress/results surface through the JSONL tail.
+ * We wait for the child to actually spawn (or fail) before responding, so a
+ * missing binary / bad cwd is reported back to the client instead of silently
+ * leaving the chat waiting forever. We do NOT wait for the run to complete —
+ * progress/results surface through the JSONL tail.
  */
 export async function POST(request: NextRequest) {
   let body: {
@@ -57,42 +81,63 @@ export async function POST(request: NextRequest) {
   else args.push("--resume", sessionId);
   args.push("-p", prompt);
 
+  let child;
   try {
-    const child = spawn("claude", args, {
+    child = spawn("claude", args, {
       cwd: cwd || homedir(),
-      env: { ...process.env, NODE_TLS_REJECT_UNAUTHORIZED: "0" },
+      env: { ...process.env, PATH: buildPath(), NODE_TLS_REJECT_UNAUTHORIZED: "0" },
       stdio: ["ignore", "pipe", "pipe"],
     });
-
-    let stderr = "";
-    child.stderr?.on("data", (d) => {
-      stderr += d.toString();
-    });
-
-    // Hard cap so a stuck background run can't linger forever.
-    const killTimer = setTimeout(() => {
-      try { child.kill("SIGKILL"); } catch {}
-    }, 20 * 60_000);
-
-    child.on("error", (err) => {
-      clearTimeout(killTimer);
-      console.error(`[claude-run] spawn error for ${sessionId}:`, err.message);
-    });
-    child.on("exit", (code) => {
-      clearTimeout(killTimer);
-      if (code !== 0) {
-        console.error(`[claude-run] ${sessionId} exited ${code}: ${stderr.slice(0, 500)}`);
-      }
-    });
-
-    // Detach from the request lifecycle — this outlives the HTTP response.
-    child.unref();
   } catch (err) {
     return Response.json(
       { error: err instanceof Error ? err.message : "spawn failed" },
       { status: 500 },
     );
   }
+
+  let stderr = "";
+  child.stderr?.on("data", (d) => {
+    stderr += d.toString();
+  });
+
+  // Wait for the process to actually start (or immediately fail, e.g. ENOENT
+  // when the binary can't be found, or a bad cwd). This lets us report the
+  // failure to the client instead of responding ok and leaving chat hanging.
+  const startResult = await new Promise<{ ok: boolean; error?: string }>((resolve) => {
+    let settled = false;
+    const done = (r: { ok: boolean; error?: string }) => {
+      if (settled) return;
+      settled = true;
+      resolve(r);
+    };
+    child.once("spawn", () => done({ ok: true }));
+    child.once("error", (err) => done({ ok: false, error: err.message }));
+    // Fallback: if neither event fires promptly, assume it started.
+    setTimeout(() => done({ ok: true }), 3000);
+  });
+
+  if (!startResult.ok) {
+    console.error(`[claude-run] spawn error for ${sessionId}: ${startResult.error}`);
+    return Response.json(
+      { error: `Failed to launch claude: ${startResult.error}` },
+      { status: 500 },
+    );
+  }
+
+  // Hard cap so a stuck background run can't linger forever.
+  const killTimer = setTimeout(() => {
+    try { child.kill("SIGKILL"); } catch {}
+  }, 20 * 60_000);
+
+  child.on("exit", (code) => {
+    clearTimeout(killTimer);
+    if (code !== 0) {
+      console.error(`[claude-run] ${sessionId} exited ${code}: ${stderr.slice(0, 500)}`);
+    }
+  });
+
+  // Detach from the request lifecycle — this outlives the HTTP response.
+  child.unref();
 
   return Response.json({ ok: true, sessionId });
 }
