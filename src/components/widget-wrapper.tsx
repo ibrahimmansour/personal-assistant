@@ -64,35 +64,6 @@ const widgetLabels: Record<WidgetType, string> = {
   news: "News",
 };
 
-// Fullscreen API wrappers that tolerate environments where requestFullscreen /
-// exitFullscreen are patched to return non-Promises or to throw synchronously
-// (e.g. the "Windowed" browser extension). Without this guard, calling
-// `.catch()` on an undefined return value crashes the whole React tree.
-function safeRequestFullscreen(el: HTMLElement | null) {
-  if (!el || typeof el.requestFullscreen !== "function") return;
-  try {
-    const result = el.requestFullscreen();
-    if (result && typeof (result as Promise<void>).catch === "function") {
-      (result as Promise<void>).catch(() => {});
-    }
-  } catch {
-    /* ignore — fall back to the edge-to-edge overlay */
-  }
-}
-
-function safeExitFullscreen() {
-  if (!document.fullscreenElement) return;
-  if (typeof document.exitFullscreen !== "function") return;
-  try {
-    const result = document.exitFullscreen();
-    if (result && typeof (result as Promise<void>).catch === "function") {
-      (result as Promise<void>).catch(() => {});
-    }
-  } catch {
-    /* ignore */
-  }
-}
-
 interface WidgetWrapperProps {
   title: string;
   icon?: ReactNode;
@@ -199,7 +170,6 @@ export function WidgetWrapper({
     if (collapseSeq !== collapseSeqRef.current) {
       collapseSeqRef.current = collapseSeq;
       if (isExpanded) {
-        safeExitFullscreen();
         setIsExpanded(false);
         onExpandChange?.(false);
       }
@@ -230,7 +200,6 @@ export function WidgetWrapper({
 
   const collapse = useCallback(() => {
     isExpandedRef.current = false;
-    safeExitFullscreen();
     setIsExpanded(false);
     onExpandChange?.(false);
   }, [onExpandChange]);
@@ -245,32 +214,15 @@ export function WidgetWrapper({
     }
   }, [collapse, onExpandChange]);
 
-  // When the widget expands, jump straight into true browser fullscreen.
-  // Runs after the fullscreen overlay has mounted (portal), still within the
-  // click's transient user activation window. Falls back to the edge-to-edge
-  // overlay if the request is rejected (e.g. mobile Safari).
+  // Track browser (page-level) fullscreen only so mobile swipe-to-dismiss can
+  // opt out. Expanding a widget does NOT toggle the native Fullscreen API — the
+  // expanded widget is a full-viewport overlay, so collapsing it never drops
+  // the page out of fullscreen.
   useEffect(() => {
-    if (isExpanded && !isMobile && fullscreenRef.current && !document.fullscreenElement) {
-      safeRequestFullscreen(fullscreenRef.current);
-    }
-  }, [isExpanded, isMobile]);
-
-  // Sync isFullscreen state with browser fullscreen changes. Exiting browser
-  // fullscreen (e.g. via Escape) collapses the widget entirely — there is no
-  // intermediate windowed mode.
-  useEffect(() => {
-    const handler = () => {
-      const fs = !!document.fullscreenElement;
-      setIsFullscreen(fs);
-      if (!fs && isExpandedRef.current) {
-        isExpandedRef.current = false;
-        setIsExpanded(false);
-        onExpandChange?.(false);
-      }
-    };
+    const handler = () => setIsFullscreen(!!document.fullscreenElement);
     document.addEventListener("fullscreenchange", handler);
     return () => document.removeEventListener("fullscreenchange", handler);
-  }, [onExpandChange]);
+  }, []);
 
   // Close on Escape (but not when focused inside a terminal)
   useEffect(() => {
@@ -409,28 +361,14 @@ export function WidgetWrapper({
           <CardContent className="flex-1 px-4 pb-3" />
         </Card>
 
-        {/* Fullscreen overlay */}
+        {/* Full-screen overlay — always fills the viewport (no windowed mode) */}
         {createPortal(
           <div
             ref={fullscreenRef}
-            className={cn(
-              "fixed inset-0 z-[200] flex items-center justify-center",
-              isFullscreen ? "p-0 bg-card" : "p-0 md:p-6 lg:p-12"
-            )}
+            className="fixed inset-0 z-[200] flex items-center justify-center p-0 bg-card"
           >
-            {/* Backdrop – click to close (hidden on mobile since it's full screen) */}
-            {!isFullscreen && (
-              <div
-                className="absolute inset-0 bg-background/80 backdrop-blur-sm hidden md:block"
-                onClick={collapse}
-              />
-            )}
-
             {/* Expanded content — split view when sidePanel or splitWidget is active */}
-            <div className={cn(
-              "relative z-10 w-full h-full flex gap-3",
-              isFullscreen ? "max-w-full max-h-full" : cn("md:max-h-[90vh]", hasSplit ? "md:max-w-[95vw]" : "md:max-w-[90vw]")
-            )}>
+            <div className="relative z-10 w-full h-full flex gap-3 max-w-full max-h-full">
               {/* Main card */}
               <Card
                 ref={dismissSwipeRef as React.RefObject<HTMLDivElement>}
@@ -440,10 +378,8 @@ export function WidgetWrapper({
                     : undefined
                 }
                 className={cn(
-                  "h-full flex flex-col overflow-hidden border-border shadow-2xl bg-card touch-pan-y",
+                  "h-full flex flex-col overflow-hidden border-border shadow-2xl bg-card touch-pan-y rounded-none",
                   hasSplit ? "flex-1 min-w-0" : "w-full",
-                  // On mobile, round corners only on desktop
-                  "rounded-none md:rounded-xl",
                   className
                 )}
               >
