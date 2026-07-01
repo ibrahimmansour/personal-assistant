@@ -2207,10 +2207,6 @@ export function ClaudeCodeWidget() {
                 New Session
               </Button>
 
-              {/* Mode for the next new session. Always visible so both the
-                  quick "New Session" button and the folder picker respect it. */}
-              <ModeToggle value={selectedMode} onChange={setSelectedMode} className="w-full" />
-
               {/* Active folder picker */}
               <FolderSection
                 activeFolder={activeFolder}
@@ -2710,6 +2706,18 @@ function WorktreesSection({
   const [newPath, setNewPath] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [collapsed, setCollapsed] = useState<boolean>(() => {
+    if (typeof window === "undefined") return true;
+    // Collapsed by default; remember the user's choice.
+    return localStorage.getItem("claude-code-worktrees-collapsed") !== "false";
+  });
+  const toggleCollapsed = () => {
+    setCollapsed((v) => {
+      const next = !v;
+      try { localStorage.setItem("claude-code-worktrees-collapsed", String(next)); } catch {}
+      return next;
+    });
+  };
 
   const addWorktree = async () => {
     if (!newPath.trim()) return;
@@ -2768,18 +2776,27 @@ function WorktreesSection({
   return (
     <div className="space-y-1">
       <div className="flex items-center justify-between">
-        <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
-          Worktrees
-        </span>
         <button
-          className="text-[10px] text-muted-foreground hover:text-foreground inline-flex items-center gap-0.5"
-          onClick={() => setShowAdd((v) => !v)}
-          title="Add worktree"
+          className="flex items-center gap-0.5 text-[10px] font-semibold text-muted-foreground hover:text-foreground uppercase tracking-wide"
+          onClick={toggleCollapsed}
+          title={collapsed ? "Expand worktrees" : "Collapse worktrees"}
         >
-          <Plus className="h-2.5 w-2.5" />
-          Add
+          {collapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+          Worktrees
+          <span className="text-muted-foreground/60 normal-case tracking-normal">({worktrees.length})</span>
         </button>
+        {!collapsed && (
+          <button
+            className="text-[10px] text-muted-foreground hover:text-foreground inline-flex items-center gap-0.5"
+            onClick={() => setShowAdd((v) => !v)}
+            title="Add worktree"
+          >
+            <Plus className="h-2.5 w-2.5" />
+            Add
+          </button>
+        )}
       </div>
+      {!collapsed && (
       <div className="space-y-0.5 max-h-32 overflow-y-auto">
         {worktrees.map((wt) => {
           const isActive = wt.path === folder;
@@ -2808,8 +2825,9 @@ function WorktreesSection({
           );
         })}
       </div>
+      )}
 
-      {showAdd && (
+      {!collapsed && showAdd && (
         <div className="space-y-1 pt-1.5 mt-1.5 border-t border-border">
           <Input
             value={newBranch}
