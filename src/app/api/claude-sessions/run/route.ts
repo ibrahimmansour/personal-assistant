@@ -33,7 +33,7 @@ function buildPath(): string {
  * Runs a single prompt through `claude -p` (print mode) without an
  * interactive TUI. The CLI writes to the same `~/.claude/projects/.../*.jsonl`
  * session log that the chat view tails via SSE, so output appears in chat
- * without a live PTY.
+ * (incrementally) without a live PTY.
  *
  * Multi-turn continuity: the first prompt of a session is launched with
  * `--session-id <uuid>` (the client pre-generates the UUID) so we know the id
@@ -41,10 +41,10 @@ function buildPath(): string {
  * conversation. The `--model` override is only meaningful when creating the
  * session.
  *
- * We wait for the child to actually spawn (or fail) before responding, so a
- * missing binary / bad cwd is reported back to the client instead of silently
- * leaving the chat waiting forever. We do NOT wait for the run to complete —
- * progress/results surface through the JSONL tail.
+ * We await the run to completion so a failure (bad model, auth error, the CLI
+ * exiting non-zero, etc.) is reported back to the client and surfaced in chat
+ * — otherwise the chat would just sit silently with no reply. Incremental
+ * output still streams via the JSONL tail while this request is in flight.
  */
 export async function POST(request: NextRequest) {
   let body: {
@@ -95,49 +95,42 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  let stdout = "";
   let stderr = "";
-  child.stderr?.on("data", (d) => {
-    stderr += d.toString();
-  });
+  child.stdout?.on("data", (d) => { stdout += d.toString(); });
+  child.stderr?.on("data", (d) => { stderr += d.toString(); });
 
-  // Wait for the process to actually start (or immediately fail, e.g. ENOENT
-  // when the binary can't be found, or a bad cwd). This lets us report the
-  // failure to the client instead of responding ok and leaving chat hanging.
-  const startResult = await new Promise<{ ok: boolean; error?: string }>((resolve) => {
+  const result = await new Promise<{ ok: boolean; error?: string }>((resolve) => {
     let settled = false;
     const done = (r: { ok: boolean; error?: string }) => {
       if (settled) return;
       settled = true;
+      clearTimeout(killTimer);
       resolve(r);
     };
-    child.once("spawn", () => done({ ok: true }));
-    child.once("error", (err) => done({ ok: false, error: err.message }));
-    // Fallback: if neither event fires promptly, assume it started.
-    setTimeout(() => done({ ok: true }), 3000);
+    // Hard cap so a stuck run can't hold the request forever.
+    const killTimer = setTimeout(() => {
+      try { child.kill("SIGKILL"); } catch {}
+      done({ ok: false, error: "claude run timed out after 20 minutes" });
+    }, 20 * 60_000);
+
+    child.on("error", (err) => {
+      done({ ok: false, error: `Failed to launch claude: ${err.message}` });
+    });
+    child.on("exit", (code) => {
+      if (code === 0) {
+        done({ ok: true });
+      } else {
+        const detail = (stderr.trim() || stdout.trim() || `claude exited with code ${code}`).slice(0, 800);
+        done({ ok: false, error: detail });
+      }
+    });
   });
 
-  if (!startResult.ok) {
-    console.error(`[claude-run] spawn error for ${sessionId}: ${startResult.error}`);
-    return Response.json(
-      { error: `Failed to launch claude: ${startResult.error}` },
-      { status: 500 },
-    );
+  if (!result.ok) {
+    console.error(`[claude-run] ${sessionId} failed: ${result.error}`);
+    return Response.json({ error: result.error }, { status: 500 });
   }
-
-  // Hard cap so a stuck background run can't linger forever.
-  const killTimer = setTimeout(() => {
-    try { child.kill("SIGKILL"); } catch {}
-  }, 20 * 60_000);
-
-  child.on("exit", (code) => {
-    clearTimeout(killTimer);
-    if (code !== 0) {
-      console.error(`[claude-run] ${sessionId} exited ${code}: ${stderr.slice(0, 500)}`);
-    }
-  });
-
-  // Detach from the request lifecycle — this outlives the HTTP response.
-  child.unref();
 
   return Response.json({ ok: true, sessionId });
 }

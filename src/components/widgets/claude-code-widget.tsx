@@ -159,11 +159,14 @@ interface SessionState {
   /** How this session runs:
    *  - "interactive": a persistent `claude` PTY the chat pastes into (Terminal view available).
    *  - "background": headless `claude -p` runs per prompt via /api/claude-sessions/run
-   *    (no live PTY; Terminal view disabled). Fixed at session creation. */
+   *    (no live PTY; Terminal view disabled). Can be switched at runtime.
+   *  Mutable so the user can flip a session between modes after it starts. */
   mode: "background" | "interactive";
-  /** Background mode only: true once the first `claude -p` run has been kicked
-   *  off (so subsequent prompts use `--resume` instead of `--session-id`). */
-  backgroundStarted: boolean;
+  /** Whether this session's JSONL log exists on disk yet. Determines how we
+   *  (re)launch the CLI: `--resume <id>` when it exists, `--session-id <id>`
+   *  for a known-but-uncreated preset id, or a fresh session when there's no
+   *  id at all. Set true once the CLI has created/opened the log. */
+  exists: boolean;
   /** True while we're waiting for an assistant response after the user submitted. */
   waitingForReply: boolean;
   /** ID of the most recent assistant message we've seen — used to detect "new reply arrived". */
@@ -680,9 +683,9 @@ function openSession(opts: OpenSessionOpts): SessionState {
     spawningTerminal: false,
     model: opts.model && opts.model !== "default" ? opts.model : null,
     mode,
-    // Resumed sessions already exist on disk, so background runs always use
-    // --resume. Fresh background sessions start with --session-id.
-    backgroundStarted: !!opts.resumeId,
+    // Resumed sessions already exist on disk. Fresh sessions (background
+    // preset or interactive) don't until the CLI creates the log.
+    exists: !!opts.resumeId,
     waitingForReply: false,
     lastAssistantMessageId: null,
     terminalAwaitingInput: false,
@@ -730,10 +733,23 @@ async function spawnTerminal(state: SessionState): Promise<boolean> {
     // override it via --model. For fresh sessions, pass --model only when the
     // user has explicitly selected a non-default option; "default" means
     // "let the CLI use its own saved default".
-    const modelArg = !state.sessionId && state.model ? ` --model ${state.model}` : "";
-    const claudeCmd = state.sessionId
-      ? `claude --dangerously-skip-permissions --resume ${state.sessionId}`
-      : `claude --dangerously-skip-permissions${modelArg}`;
+    // Choose how to (re)launch the CLI:
+    //   - resume an existing on-disk session (`--resume`),
+    //   - open a known-but-uncreated preset id (`--session-id`, e.g. a
+    //     background session switched to interactive before its first run),
+    //   - or start a fresh session (no id yet — interactive new).
+    // The model override only applies when creating a session, not on resume.
+    const modelArg = state.model ? ` --model ${state.model}` : "";
+    let claudeCmd: string;
+    if (state.sessionId && state.exists) {
+      claudeCmd = `claude --dangerously-skip-permissions --resume ${state.sessionId}`;
+    } else if (state.sessionId && !state.exists) {
+      claudeCmd = `claude --dangerously-skip-permissions --session-id ${state.sessionId}${modelArg}`;
+    } else {
+      claudeCmd = `claude --dangerously-skip-permissions${modelArg}`;
+    }
+    // Once we launch with a known id, the CLI creates/opens that log.
+    if (state.sessionId) state.exists = true;
     // Build: cd "<path>" && <claudeCmd>. Skip the cd if cwd is empty.
     const cmd = cwd
       ? `cd ${shellQuote(cwd)} && ${claudeCmd}`
@@ -903,6 +919,8 @@ async function pollForNewSessionId(state: SessionState) {
         clearInterval(interval);
         const oldKey = state.key;
         state.sessionId = found.sessionId;
+        // The log now exists on disk (that's how we found the id).
+        state.exists = true;
         // Re-key the store under the real session ID so future lookups by id
         // find it. Keep the original (pending-N) key as an alias so React
         // refs that captured the old key still resolve to the same state.
@@ -1055,7 +1073,7 @@ async function submitBackgroundPrompt(state: SessionState, promptText: string): 
   state.terminalAwaitingHint = "";
   notifySubscribers(state);
 
-  const isNew = !state.backgroundStarted;
+  const isNew = !state.exists;
   try {
     const res = await fetch("/api/claude-sessions/run", {
       method: "POST",
@@ -1068,9 +1086,6 @@ async function submitBackgroundPrompt(state: SessionState, promptText: string): 
         model: state.model,
       }),
     });
-    // Once a run has been dispatched the session exists on disk; future
-    // prompts must resume it rather than re-create it.
-    state.backgroundStarted = true;
     if (!res.ok) {
       let detail = `HTTP ${res.status}`;
       try {
@@ -1080,6 +1095,13 @@ async function submitBackgroundPrompt(state: SessionState, promptText: string): 
       showBackgroundError(state, detail);
       return false;
     }
+    // The run succeeded and the session now exists on disk; future prompts
+    // must resume it rather than re-create it.
+    state.exists = true;
+    // The reply is already in the JSONL (the SSE tail surfaces it); make sure
+    // the thinking indicator clears even if the SSE hasn't ticked yet.
+    state.waitingForReply = false;
+    notifySubscribers(state);
   } catch (err) {
     showBackgroundError(state, err instanceof Error ? err.message : "request failed");
     return false;
@@ -2049,6 +2071,37 @@ export function ClaudeCodeWidget() {
     setActiveKey(null);
   }, [activeKey]);
 
+  // ── Switch the active session between background and interactive ─────────
+  // Background → Interactive: spawn (resume) the PTY and reveal the terminal.
+  // Interactive → Background: stop the PTY; future prompts run headless via
+  // `claude -p`. A session that never resolved an id gets a preset one so the
+  // headless runner has something to create/continue.
+  const switchActiveSessionMode = useCallback((newMode: "background" | "interactive") => {
+    const state = activeKey ? sessionStore.get(activeKey) : null;
+    if (!state || state.mode === newMode) return;
+
+    if (newMode === "interactive") {
+      state.mode = "interactive";
+      notifySubscribers(state);
+      // Spawn (or resume) the PTY so prompts have a live session and the
+      // Terminal view becomes usable. Stay in chat view so the controls stay
+      // visible — the user can open the Terminal tab when they want it.
+      if (!state.alive && !state.spawningTerminal) spawnTerminal(state);
+    } else {
+      // → background
+      if (!state.sessionId) {
+        state.sessionId =
+          typeof crypto !== "undefined" && crypto.randomUUID
+            ? crypto.randomUUID()
+            : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        state.exists = false;
+      }
+      state.mode = "background";
+      stopTerminal(state); // tears down the PTY, keeps chat/SSE; notifies
+      setView("chat");
+    }
+  }, [activeKey]);
+
   const deleteSessionFromDisk = useCallback(async (sess: ClaudeSessionInfo) => {
     const display = getSessionMeta(sess.sessionId).customName
       || sess.summary
@@ -2269,15 +2322,10 @@ export function ClaudeCodeWidget() {
                 )}
 
                 {view === "chat" && (
-                  <span
-                    className="flex items-center gap-1 px-2 h-7 text-xs rounded-md text-muted-foreground select-none"
-                    title={active.mode === "background"
-                      ? "Background session — runs claude -p, chat only (no terminal)"
-                      : "Interactive session — live terminal available"}
-                  >
-                    <Zap className="h-3 w-3" />
-                    {active.mode === "background" ? "Background" : "Interactive"}
-                  </span>
+                  <ModeToggle
+                    value={active.mode}
+                    onChange={switchActiveSessionMode}
+                  />
                 )}
 
                 {view === "chat" && (
