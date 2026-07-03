@@ -57,6 +57,7 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useRefreshOnVisible } from "@/hooks/use-refresh-on-visible";
 import { useWidgetNavFor } from "@/components/widget-nav-context";
+import { useIsMobile } from "@/hooks/use-swipe";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -3044,9 +3045,17 @@ function ChatView({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Mobile detection for WhatsApp-style compact input.
+  const isMobile = useIsMobile();
+
   // Manually-resizable textarea height. Auto-grows with content up to a
   // soft cap; the user can drag a handle above the textarea to set a
-  // preferred minimum height.
+  // preferred minimum height. On mobile, start with a single-line height
+  // (WhatsApp-style) and cap the max lower.
+  const MOBILE_MIN_HEIGHT = 36;
+  const MOBILE_MAX_HEIGHT = 160;
+  const DESKTOP_MAX_HEIGHT = 600;
+
   const [textareaMinHeight, setTextareaMinHeight] = useState<number>(() => {
     if (typeof window === "undefined") return 56;
     const v = parseInt(localStorage.getItem("claude-code-textarea-height") || "", 10);
@@ -3054,17 +3063,22 @@ function ChatView({
   });
   const persistTextareaHeight = useCallback((h: number) => {
     setTextareaMinHeight(h);
-    try { localStorage.setItem("claude-code-textarea-height", String(Math.round(h))); } catch {}
+    try { localStorage.setItem("claude-code-textarea-height", String(Math.round(h))); } catch {};
   }, []);
 
+  // Effective min/max heights based on mobile state.
+  const effectiveMinHeight = isMobile ? MOBILE_MIN_HEIGHT : textareaMinHeight;
+  const effectiveMaxHeight = isMobile ? MOBILE_MAX_HEIGHT : DESKTOP_MAX_HEIGHT;
+
   // Auto-resize the textarea to fit content (within its min/max bounds).
+  // On mobile, always starts at a single-line height and grows with content.
   useEffect(() => {
     const ta = textareaRef.current;
     if (!ta) return;
     ta.style.height = "auto";
-    const next = Math.max(textareaMinHeight, Math.min(ta.scrollHeight, 600));
+    const next = Math.max(effectiveMinHeight, Math.min(ta.scrollHeight, effectiveMaxHeight));
     ta.style.height = `${next}px`;
-  }, [input, textareaMinHeight]);
+  }, [input, effectiveMinHeight, effectiveMaxHeight]);
 
   // Pasted/dropped image attachments. Each becomes an @<path> reference in
   // the prompt; previews are shown above the textarea until the prompt is
@@ -3314,7 +3328,7 @@ function ChatView({
       {/* Session usage bar */}
       <SessionUsageBar messages={state.messages} />
 
-      <div className="shrink-0 border-t border-border p-2 space-y-1.5">
+      <div className={cn("shrink-0 border-t border-border space-y-1.5", isMobile ? "p-1.5" : "p-2")}>
         {/* Attachment thumbnails */}
         {(attachments.length > 0 || uploading || uploadError) && (
           <div className="flex flex-wrap items-center gap-1.5">
@@ -3379,13 +3393,15 @@ function ChatView({
           </div>
         )}
 
-        {/* Drag handle to manually resize the textarea */}
-        <ResizeHandle
-          height={textareaMinHeight}
-          onChange={persistTextareaHeight}
-          minHeight={56}
-          maxHeight={600}
-        />
+        {/* Drag handle to manually resize the textarea (hidden on mobile) */}
+        {!isMobile && (
+          <ResizeHandle
+            height={textareaMinHeight}
+            onChange={persistTextareaHeight}
+            minHeight={56}
+            maxHeight={600}
+          />
+        )}
 
         <div className="flex gap-1.5 items-end">
           <input
@@ -3396,15 +3412,17 @@ function ChatView({
             className="hidden"
             onChange={onPickFiles}
           />
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={sending || uploading || (state.ws !== null && !state.alive)}
-            className="shrink-0 h-9 w-9 rounded-md border border-border bg-background hover:bg-muted text-muted-foreground hover:text-foreground flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
-            title="Attach image"
-          >
-            <Paperclip className="h-3.5 w-3.5" />
-          </button>
+          {!isMobile && (
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={sending || uploading || (state.ws !== null && !state.alive)}
+              className="shrink-0 h-9 w-9 rounded-md border border-border bg-background hover:bg-muted text-muted-foreground hover:text-foreground flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Attach image"
+            >
+              <Paperclip className="h-3.5 w-3.5" />
+            </button>
+          )}
           <textarea
             ref={textareaRef}
             value={input}
@@ -3424,16 +3442,20 @@ function ChatView({
             }}
             placeholder={
               state.alive
-                ? "Send a message to Claude… (Shift+Enter for newline, paste an image to attach)"
+                ? isMobile
+                  ? "Message Claude…"
+                  : "Send a message to Claude… (Shift+Enter for newline, paste an image to attach)"
                 : state.spawningTerminal
                 ? "Starting Claude…"
                 : state.ws
                 ? "Session ended"
+                : isMobile
+                ? "Message to start…"
                 : "Send a message — the CLI will start when you submit"
             }
             disabled={sending || (state.ws !== null && !state.alive)}
             rows={1}
-            style={{ minHeight: textareaMinHeight, maxHeight: 600 }}
+            style={{ minHeight: effectiveMinHeight, maxHeight: effectiveMaxHeight }}
             className={cn(
               "flex-1 resize-none px-2 py-1.5 text-sm rounded-md border border-border bg-background overflow-y-auto focus:outline-none focus:ring-1 focus:ring-primary/40",
               theme === "terminal" && "font-mono",
@@ -3445,19 +3467,22 @@ function ChatView({
               onClick={send}
               disabled={!input.trim() || (state.ws !== null && !state.alive)}
               title="Send (Enter)"
+              className={isMobile ? "h-8 w-8 p-0" : undefined}
             >
               <Send className="h-3.5 w-3.5" />
             </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setSchedulingPrompt(input.trim())}
-              disabled={!input.trim() || !state.sessionId}
-              title={state.sessionId ? "Schedule this prompt" : "Save the session first by sending one prompt, then schedule the next"}
-              className="h-7 px-2"
-            >
-              <Clock className="h-3.5 w-3.5" />
-            </Button>
+            {!isMobile && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setSchedulingPrompt(input.trim())}
+                disabled={!input.trim() || !state.sessionId}
+                title={state.sessionId ? "Schedule this prompt" : "Save the session first by sending one prompt, then schedule the next"}
+                className="h-7 px-2"
+              >
+                <Clock className="h-3.5 w-3.5" />
+              </Button>
+            )}
           </div>
         </div>
         {state.ws !== null && !state.alive && !state.spawningTerminal && (

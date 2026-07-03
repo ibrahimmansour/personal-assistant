@@ -61,13 +61,12 @@ const workLayouts: Layout = [
   { i: "email",      x: 0, y: 3,  w: 4, h: 4, minW: 3, minH: 3 },
   { i: "tasks",      x: 4, y: 3,  w: 4, h: 4, minW: 3, minH: 3 },
   { i: "jira",       x: 8, y: 3,  w: 4, h: 4, minW: 3, minH: 3 },
-  // ─── Dev Tools (y=7, h=4) ─────────────────────────────
-  { i: "github-prs", x: 0, y: 7,  w: 4, h: 4, minW: 3, minH: 3 },
-  { i: "notes",      x: 4, y: 7,  w: 4, h: 4, minW: 3, minH: 3 },
-  { i: "terminal",   x: 8, y: 7,  w: 4, h: 4, minW: 3, minH: 3 },
-  // ─── Bottom row ───────────────────────────────────────
-  { i: "reminders",  x: 0, y: 11, w: 4, h: 4, minW: 3, minH: 2 },
-  { i: "claude-code",x: 4, y: 11, w: 8, h: 5, minW: 4, minH: 4 },
+  // ─── Dev Tools (y=7) — Claude Code first ───────────────
+  { i: "claude-code",x: 0, y: 7,  w: 8, h: 5, minW: 4, minH: 4 },
+  { i: "reminders",  x: 8, y: 7,  w: 4, h: 5, minW: 3, minH: 2 },
+  { i: "github-prs", x: 0, y: 12, w: 4, h: 4, minW: 3, minH: 3 },
+  { i: "notes",      x: 4, y: 12, w: 4, h: 4, minW: 3, minH: 3 },
+  { i: "terminal",   x: 8, y: 12, w: 4, h: 4, minW: 3, minH: 3 },
   // ─── More section ────────────────────────────────────
   { i: "news",       x: 0, y: 16, w: 4, h: 4, minW: 3, minH: 3 },
   { i: "bookmarks",  x: 4, y: 16, w: 4, h: 4, minW: 3, minH: 3 },
@@ -87,10 +86,10 @@ const workLayoutsMd: Layout = [
   { i: "tasks",      x: 4, y: 6,  w: 4, h: 4, minW: 3, minH: 3 },
   { i: "jira",       x: 0, y: 10, w: 4, h: 4, minW: 3, minH: 3 },
   { i: "github-prs", x: 4, y: 10, w: 4, h: 4, minW: 3, minH: 3 },
-  // ─── Dev Tools ────────────────────────────────────────
-  { i: "notes",      x: 0, y: 14, w: 4, h: 4, minW: 3, minH: 3 },
-  { i: "terminal",   x: 4, y: 14, w: 4, h: 4, minW: 3, minH: 3 },
-  { i: "claude-code",x: 0, y: 18, w: 8, h: 5, minW: 4, minH: 4 },
+  // ─── Dev Tools — Claude Code first ────────────────────
+  { i: "claude-code",x: 0, y: 14, w: 8, h: 5, minW: 4, minH: 4 },
+  { i: "notes",      x: 0, y: 19, w: 4, h: 4, minW: 3, minH: 3 },
+  { i: "terminal",   x: 4, y: 19, w: 4, h: 4, minW: 3, minH: 3 },
   // ─── More ─────────────────────────────────────────────
   { i: "news",       x: 0, y: 23, w: 4, h: 4, minW: 3, minH: 3 },
   { i: "bookmarks",  x: 4, y: 23, w: 4, h: 4, minW: 3, minH: 3 },
@@ -107,10 +106,10 @@ const workLayoutsSm: Layout = [
   { i: "email",      x: 0, y: 13, w: 4, h: 4, minW: 3, minH: 3 },
   { i: "tasks",      x: 0, y: 17, w: 4, h: 4, minW: 3, minH: 3 },
   { i: "jira",       x: 0, y: 21, w: 4, h: 4, minW: 3, minH: 3 },
-  { i: "github-prs", x: 0, y: 25, w: 4, h: 4, minW: 3, minH: 3 },
-  { i: "notes",      x: 0, y: 29, w: 4, h: 4, minW: 3, minH: 3 },
-  { i: "terminal",   x: 0, y: 33, w: 4, h: 4, minW: 3, minH: 3 },
-  { i: "claude-code",x: 0, y: 37, w: 4, h: 5, minW: 3, minH: 4 },
+  { i: "claude-code",x: 0, y: 25, w: 4, h: 5, minW: 3, minH: 4 },
+  { i: "github-prs", x: 0, y: 30, w: 4, h: 4, minW: 3, minH: 3 },
+  { i: "notes",      x: 0, y: 34, w: 4, h: 4, minW: 3, minH: 3 },
+  { i: "terminal",   x: 0, y: 38, w: 4, h: 4, minW: 3, minH: 3 },
   { i: "news",       x: 0, y: 42, w: 4, h: 4, minW: 3, minH: 3 },
   { i: "bookmarks",  x: 0, y: 46, w: 4, h: 4, minW: 3, minH: 3 },
   { i: "files",      x: 0, y: 50, w: 4, h: 4, minW: 3, minH: 3 },
@@ -146,12 +145,11 @@ const privateLayouts: Layout = [
   { i: "email",      x: 0, y: 3,  w: 4, h: 4, minW: 3, minH: 3 },
   { i: "tasks",      x: 4, y: 3,  w: 4, h: 4, minW: 3, minH: 3 },
   { i: "reminders",  x: 8, y: 3,  w: 4, h: 4, minW: 3, minH: 2 },
-  // ─── Dev Tools ────────────────────────────────────────
-  { i: "github-prs", x: 0, y: 7,  w: 4, h: 4, minW: 3, minH: 3 },
-  { i: "notes",      x: 4, y: 7,  w: 4, h: 4, minW: 3, minH: 3 },
-  { i: "terminal",   x: 8, y: 7,  w: 4, h: 4, minW: 3, minH: 3 },
-  // ─── Bottom ───────────────────────────────────────────
-  { i: "claude-code",x: 0, y: 11, w: 8, h: 5, minW: 4, minH: 4 },
+  // ─── Dev Tools — Claude Code first ────────────────────
+  { i: "claude-code",x: 0, y: 7,  w: 8, h: 5, minW: 4, minH: 4 },
+  { i: "github-prs", x: 0, y: 12, w: 4, h: 4, minW: 3, minH: 3 },
+  { i: "notes",      x: 4, y: 12, w: 4, h: 4, minW: 3, minH: 3 },
+  { i: "terminal",   x: 8, y: 12, w: 4, h: 4, minW: 3, minH: 3 },
   // ─── More section ────────────────────────────────────
   { i: "news",       x: 0, y: 16, w: 4, h: 4, minW: 3, minH: 3 },
   { i: "bookmarks",  x: 4, y: 16, w: 4, h: 4, minW: 3, minH: 3 },
@@ -168,13 +166,13 @@ const privateLayoutsMd: Layout = [
   { i: "email",      x: 0, y: 6,  w: 4, h: 4, minW: 3, minH: 3 },
   { i: "tasks",      x: 4, y: 6,  w: 4, h: 4, minW: 3, minH: 3 },
   { i: "github-prs", x: 0, y: 10, w: 4, h: 4, minW: 3, minH: 3 },
-  { i: "notes",      x: 4, y: 10, w: 4, h: 4, minW: 3, minH: 3 },
-  { i: "terminal",   x: 0, y: 14, w: 4, h: 4, minW: 3, minH: 3 },
-  { i: "claude-code",x: 4, y: 14, w: 4, h: 5, minW: 4, minH: 4 },
-  { i: "news",       x: 0, y: 19, w: 4, h: 4, minW: 3, minH: 3 },
-  { i: "bookmarks",  x: 4, y: 19, w: 4, h: 4, minW: 3, minH: 3 },
-  { i: "files",      x: 0, y: 23, w: 4, h: 4, minW: 3, minH: 3 },
-  { i: "system-monitor", x: 4, y: 23, w: 4, h: 4, minW: 3, minH: 3 },
+  { i: "claude-code",x: 0, y: 14, w: 8, h: 5, minW: 4, minH: 4 },
+  { i: "notes",      x: 0, y: 19, w: 4, h: 4, minW: 3, minH: 3 },
+  { i: "terminal",   x: 4, y: 19, w: 4, h: 4, minW: 3, minH: 3 },
+  { i: "news",       x: 0, y: 23, w: 4, h: 4, minW: 3, minH: 3 },
+  { i: "bookmarks",  x: 4, y: 23, w: 4, h: 4, minW: 3, minH: 3 },
+  { i: "files",      x: 0, y: 27, w: 4, h: 4, minW: 3, minH: 3 },
+  { i: "system-monitor", x: 4, y: 27, w: 4, h: 4, minW: 3, minH: 3 },
 ];
 
 // sm layout: 4 columns — stacked
@@ -185,10 +183,10 @@ const privateLayoutsSm: Layout = [
   { i: "reminders",  x: 0, y: 10, w: 4, h: 3, minW: 3, minH: 2 },
   { i: "email",      x: 0, y: 13, w: 4, h: 4, minW: 3, minH: 3 },
   { i: "tasks",      x: 0, y: 17, w: 4, h: 4, minW: 3, minH: 3 },
-  { i: "github-prs", x: 0, y: 21, w: 4, h: 4, minW: 3, minH: 3 },
-  { i: "notes",      x: 0, y: 25, w: 4, h: 4, minW: 3, minH: 3 },
-  { i: "terminal",   x: 0, y: 29, w: 4, h: 4, minW: 3, minH: 3 },
-  { i: "claude-code",x: 0, y: 33, w: 4, h: 5, minW: 3, minH: 4 },
+  { i: "claude-code",x: 0, y: 21, w: 4, h: 5, minW: 3, minH: 4 },
+  { i: "github-prs", x: 0, y: 26, w: 4, h: 4, minW: 3, minH: 3 },
+  { i: "notes",      x: 0, y: 30, w: 4, h: 4, minW: 3, minH: 3 },
+  { i: "terminal",   x: 0, y: 34, w: 4, h: 4, minW: 3, minH: 3 },
   { i: "news",       x: 0, y: 38, w: 4, h: 4, minW: 3, minH: 3 },
   { i: "bookmarks",  x: 0, y: 42, w: 4, h: 4, minW: 3, minH: 3 },
   { i: "files",      x: 0, y: 46, w: 4, h: 4, minW: 3, minH: 3 },
