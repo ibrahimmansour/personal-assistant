@@ -232,7 +232,8 @@ function escapeHtml(str: string): string {
 
 // ─── Route Handler ───────────────────────────────────────────────────────────
 
-export async function GET(request: NextRequest) {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export async function GET(_request: NextRequest) {
   try {
     const state = await readSyncState();
     return Response.json({
@@ -298,7 +299,7 @@ export async function POST(request: NextRequest) {
           if (noteIdx < 0) continue;
 
           const meta = await getDocMetadata(mapping.docId);
-          if (!meta || (meta as any).trashed) continue;
+          if (!meta || (meta as Record<string, unknown>).trashed) continue;
 
           // Only pull if remote is newer than last sync
           const remoteModified = new Date(meta.modifiedTime).getTime();
@@ -368,7 +369,7 @@ export async function POST(request: NextRequest) {
         }
 
         const meta = await getDocMetadata(mapping.docId);
-        if (!meta || (meta as any).trashed) {
+        if (!meta || (meta as Record<string, unknown>).trashed) {
           return Response.json({ error: "Google Doc not found or deleted" }, { status: 404 });
         }
 

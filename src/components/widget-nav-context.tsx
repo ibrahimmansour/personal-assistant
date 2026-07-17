@@ -79,6 +79,7 @@ export function useWidgetNavFor(widgetType: WidgetType) {
       request.seq !== lastSeqRef.current
     ) {
       lastSeqRef.current = request.seq;
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setPendingItemId(request.itemId ?? null);
       setPendingSearchQuery(request.searchQuery ?? null);
       setExpandRequested(true);

@@ -94,9 +94,9 @@ export async function POST(request: NextRequest) {
       { error: 'Provide { cookies: "..." } or { action: "extract" }' },
       { status: 400 }
     );
-  } catch (error: any) {
+  } catch (error: unknown) {
     return Response.json(
-      { error: error.message || "Authentication failed" },
+      { error: error instanceof Error ? error.message : "Authentication failed" },
       { status: 500 }
     );
   }

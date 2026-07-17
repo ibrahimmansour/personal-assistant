@@ -9,8 +9,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Bug,
-  CheckCircle2,
-  Circle,
   Clock,
   ExternalLink,
   Loader2,

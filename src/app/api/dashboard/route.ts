@@ -10,7 +10,7 @@ function dashboardFile(profile: string): string {
   return join(DATA_DIR, `dashboard-${profile}.json`);
 }
 
-async function readDashboard(profile: string): Promise<any | null> {
+async function readDashboard(profile: string): Promise<Record<string, unknown> | null> {
   try {
     const raw = await readFile(dashboardFile(profile), "utf-8");
     return JSON.parse(raw);
@@ -19,7 +19,7 @@ async function readDashboard(profile: string): Promise<any | null> {
   }
 }
 
-async function writeDashboard(profile: string, data: any): Promise<void> {
+async function writeDashboard(profile: string, data: Record<string, unknown>): Promise<void> {
   await mkdir(DATA_DIR, { recursive: true });
   await writeFile(dashboardFile(profile), JSON.stringify(data, null, 2));
 }

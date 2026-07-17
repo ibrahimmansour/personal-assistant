@@ -78,7 +78,7 @@ async function jiraRequest(
   method: string,
   endpoint: string,
   body?: object
-): Promise<{ status: number; data: any }> {
+): Promise<{ status: number; data: Record<string, unknown> | null }> {
   const cookies = await ensureCookies();
   if (!cookies) {
     throw new JiraAuthError(
@@ -112,7 +112,7 @@ async function jiraRequest(
   }
 
   // Check for login page redirect (non-JSON response)
-  let data: any = null;
+  let data: Record<string, unknown> | null = null;
   try {
     data = JSON.parse(text);
   } catch {
@@ -160,8 +160,9 @@ export async function searchIssues(
     `/search?jql=${encodedJql}&fields=${fields}&maxResults=${maxResults}`
   );
 
-  const total = data?.total ?? 0;
-  const issues: JiraIssue[] = (data?.issues ?? []).map((issue: any) => {
+  const total = (data?.total as number) ?? 0;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const issues: JiraIssue[] = ((data?.issues as any[]) ?? []).map((issue: any) => {
     const f = issue.fields || {};
     return {
       key: issue.key,
@@ -245,6 +246,7 @@ export async function getIssueDetail(
   const rf = data.renderedFields || {};
 
   const comments: JiraComment[] = (f.comment?.comments || []).map(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (c: any) => ({
       author: c.author?.displayName || c.author?.name || "Unknown",
       body: c.body || "",
@@ -278,8 +280,8 @@ export async function getIssueDetail(
     created: f.created || "",
     updated: f.updated || "",
     labels: f.labels || [],
-    components: (f.components || []).map((c: any) => c.name),
-    fixVersions: (f.fixVersions || []).map((v: any) => v.name),
+    components: (f.components || []).map((c: { name: string }) => c.name),
+    fixVersions: (f.fixVersions || []).map((v: { name: string }) => v.name),
     comments,
     url: `${JIRA_BASE}/browse/${data.key}`,
   };

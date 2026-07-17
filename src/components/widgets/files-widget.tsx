@@ -31,7 +31,6 @@ import {
   Pencil,
   Save,
   Undo2,
-  Terminal,
   LayoutList,
   LayoutGrid,
   Columns2,
@@ -57,6 +56,7 @@ import {
   ChevronsUpDown,
   Archive,
   ClipboardCopy,
+  ClipboardPaste,
   BarChart3,
   User,
   RotateCcw,
@@ -72,10 +72,8 @@ import {
   Database,
   Table2,
   Columns3,
-  Eye as EyeIcon2,
   Zap,
   Sparkles,
-  Wand2,
   AlertCircle,
   CheckCircle2,
 } from "lucide-react";
@@ -162,6 +160,7 @@ function PathJump({
 
     const raw = value;
     // Only suggest once the user has typed a separator (looking into a dir)
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!raw || !raw.includes("/")) { setSuggestions([]); return; }
 
     timerRef.current = setTimeout(async () => {
@@ -272,6 +271,7 @@ function FileContextMenu({
   onCopyRelativePath,
   onToggleBookmark,
   onCleanup,
+  onPaste,
   isBookmarked,
 }: {
   state: ContextMenuState;
@@ -284,6 +284,7 @@ function FileContextMenu({
   onCopyRelativePath: (entry: FileEntry) => void;
   onToggleBookmark: (entry: FileEntry) => void;
   onCleanup: (entry: FileEntry) => void;
+  onPaste: (inDir: string) => void;
   isBookmarked: boolean;
 }) {
   const menuRef = useRef<HTMLDivElement>(null);
@@ -308,6 +309,7 @@ function FileContextMenu({
     if (!menuRef.current) return;
     const { offsetWidth: w, offsetHeight: h } = menuRef.current;
     const vw = window.innerWidth, vh = window.innerHeight;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setPos({
       x: state.x + w > vw ? Math.max(0, vw - w - 4) : state.x,
       y: state.y + h > vh ? Math.max(0, vh - h - 4) : state.y,
@@ -340,6 +342,7 @@ function FileContextMenu({
       </div>
       {item(<FilePlus className="h-3.5 w-3.5 shrink-0" />, "New File Here", () => onNewFile(inDir))}
       {item(<FolderPlus className="h-3.5 w-3.5 shrink-0" />, "New Folder Here", () => onNewFolder(inDir))}
+      {item(<ClipboardPaste className="h-3.5 w-3.5 shrink-0" />, "Paste", () => onPaste(inDir))}
       {state.entry.isDirectory && (
         <>
           <div className="border-t border-border my-1" />
@@ -1324,7 +1327,6 @@ function GitActionsPanel({
   resolvedPath,
   gitStatus,
   onRefreshGit,
-  onOpenTerminal: _onOpenTerminal,
   onClose,
 }: {
   resolvedPath: string;
@@ -1633,6 +1635,7 @@ function HighlightedCode({ code, extension }: { code: string; extension: string 
   const shikiTheme = resolvedTheme === "light" ? "github-light-default" : "github-dark-default";
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!lang) { setHtml(null); return; }
     let cancelled = false;
     const cappedCode = code.length > 50_000 ? code.slice(0, 50_000) : code;
@@ -1763,6 +1766,7 @@ function InlinePreview({ entry, onClose, className }: InlinePreviewProps) {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!entry || entry.isDirectory) { setContent(null); return; }
     if (imageExtensions.has(entry.extension)) { setContent(null); return; }
     if (!isTextFile(entry.extension)) { setContent(null); return; }
@@ -2282,7 +2286,8 @@ function TreeNodeRow({
 }
 
 function TreeView({
-  rootPath,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  rootPath: _rootPath,
   rootEntries,
   onFileClick,
   onContextMenu,
@@ -2299,6 +2304,7 @@ function TreeView({
 
   // Refresh root entries when they change
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setNodes(rootEntries.map((e) => ({ entry: e, loaded: false, expanded: false })));
   }, [rootEntries]);
 
@@ -2715,6 +2721,7 @@ function MiniExplorerPane({
   const sourceKey = source.type === "vps" ? source.connectionId : "local";
   useEffect(() => {
     const newPath = source.type === "vps" ? source.connection.defaultPath : "~";
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setCurrentPath(newPath);
   }, [sourceKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -2751,6 +2758,7 @@ function MiniExplorerPane({
   }, [source]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchDir(currentPath);
   }, [currentPath]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -3047,6 +3055,7 @@ function DualPaneExplorer({
   const vpsCount = vpsConnections.length;
   useEffect(() => {
     if (rightSource.type === "local" && vpsCount > 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setRightSource({ type: "vps", connectionId: vpsConnections[0].id, connection: vpsConnections[0] });
     }
   }, [vpsCount]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -3539,6 +3548,7 @@ function VscodeDatabasePanel({
     } catch { setConnections([]); }
   }, []);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { fetchConnections(); }, [fetchConnections]);
 
   const testConnection = async () => {
@@ -3814,7 +3824,8 @@ function VscodeLayout({
   onClose: () => void;
   onRefreshGit: () => void;
 }) {
-  const { resolvedTheme } = useTheme();
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { resolvedTheme: _resolvedTheme } = useTheme();
   const [activePanel, setActivePanel] = useState<VscodeSidebarPanel>("explorer");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [openFiles, setOpenFiles] = useState<VscodeOpenFile[]>([]);
@@ -4419,6 +4430,7 @@ function VscodeSearchPanel({
   useEffect(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
     const q = query.trim();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (q.length < 2) { setResults([]); return; }
     setLoading(true);
     timerRef.current = setTimeout(async () => {
@@ -5279,6 +5291,124 @@ export function FilesWidget() {
     e.dataTransfer.effectAllowed = "copy";
   }, []);
 
+  // ─── Paste files from clipboard ───────────────────────────────────────────
+
+  const [pasting, setPasting] = useState(false);
+  const [pasteStatus, setPasteStatus] = useState<string | null>(null);
+
+  const uploadFile = useCallback(async (file: File, destDir: string): Promise<{ uploaded?: boolean; name?: string; error?: string }> => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const base64 = (reader.result as string).split(",")[1]; // strip data URL prefix
+        try {
+          const res = await fetch("/api/files", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "upload",
+              destDir,
+              fileName: file.name,
+              data: base64,
+            }),
+          });
+          const data = await res.json();
+          resolve(data);
+        } catch (err) {
+          resolve({ error: err instanceof Error ? err.message : "Upload failed" });
+        }
+      };
+      reader.onerror = () => resolve({ error: "Failed to read file" });
+      reader.readAsDataURL(file);
+    });
+  }, []);
+
+  const handlePaste = useCallback(async (files: FileList | File[]) => {
+    if (!files || files.length === 0) return;
+    const destDir = resolvedPath || "~";
+    setPasting(true);
+    setPasteStatus(null);
+
+    let succeeded = 0;
+    let failed = 0;
+    const fileArray = Array.from(files);
+
+    for (const file of fileArray) {
+      const result = await uploadFile(file, destDir);
+      if (result.uploaded) succeeded++;
+      else failed++;
+    }
+
+    setPasting(false);
+    if (failed === 0) {
+      setPasteStatus(`Pasted ${succeeded} file${succeeded !== 1 ? "s" : ""}`);
+    } else {
+      setPasteStatus(`Pasted ${succeeded}, failed ${failed}`);
+    }
+    // Refresh directory listing
+    fetchDir(resolvedPath, true);
+    // Clear status after a few seconds
+    setTimeout(() => setPasteStatus(null), 3000);
+  }, [resolvedPath, uploadFile, fetchDir]);
+
+  const handlePasteEvent = useCallback((e: React.ClipboardEvent) => {
+    const files = e.clipboardData?.files;
+    if (files && files.length > 0) {
+      e.preventDefault();
+      handlePaste(files);
+    }
+  }, [handlePaste]);
+
+  // Handle paste from context menu (uses async Clipboard API)
+  const handlePasteFromClipboard = useCallback(async (destDir: string) => {
+    try {
+      // Try reading clipboard items via the async Clipboard API
+      const clipboardItems = await navigator.clipboard.read();
+      const files: File[] = [];
+
+      for (const item of clipboardItems) {
+        for (const type of item.types) {
+          // Skip plain text — we only want file/binary content
+          if (type === "text/plain" || type === "text/html") continue;
+          const blob = await item.getType(type);
+          // Determine filename from type
+          const ext = type.split("/")[1]?.replace("jpeg", "jpg") || "bin";
+          const name = `pasted-${Date.now()}.${ext}`;
+          files.push(new globalThis.File([blob], name, { type }));
+        }
+      }
+
+      if (files.length > 0) {
+        // Override destination directory for context-menu paste
+        setPasting(true);
+        setPasteStatus(null);
+        let succeeded = 0;
+        let failed = 0;
+        for (const file of files) {
+          const result = await uploadFile(file, destDir);
+          if (result.uploaded) succeeded++;
+          else failed++;
+        }
+        setPasting(false);
+        if (failed === 0) {
+          setPasteStatus(`Pasted ${succeeded} file${succeeded !== 1 ? "s" : ""}`);
+        } else {
+          setPasteStatus(`Pasted ${succeeded}, failed ${failed}`);
+        }
+        fetchDir(resolvedPath, true);
+        setTimeout(() => setPasteStatus(null), 3000);
+      } else {
+        // No file data in clipboard
+        setPasteStatus("No file data in clipboard");
+        setTimeout(() => setPasteStatus(null), 3000);
+      }
+    } catch {
+      // Clipboard API denied or not available — show hint
+      setPasteStatus("Use Cmd+V to paste (clipboard permission needed)");
+      setTimeout(() => setPasteStatus(null), 4000);
+    }
+  }, [uploadFile, fetchDir, resolvedPath]);
+
 
   // ─── Filtered entries ────────────────────────────────────────────────────
 
@@ -5392,7 +5522,23 @@ export function FilesWidget() {
           initialLeftPath={resolvedPath || undefined}
         />
       ) : (
-      <div className="flex flex-col h-full gap-1">
+      <div className="flex flex-col h-full gap-1" onPaste={handlePasteEvent} tabIndex={-1}>
+        {/* Paste status indicator */}
+        {(pasting || pasteStatus) && (
+          <div className="shrink-0 flex items-center gap-2 px-2 py-1 bg-primary/5 border border-primary/20 rounded-md text-[10px]">
+            {pasting ? (
+              <>
+                <div className="h-3 w-3 border-[1.5px] border-primary/30 border-t-primary rounded-full animate-spin shrink-0" />
+                <span className="text-primary">Pasting files…</span>
+              </>
+            ) : pasteStatus ? (
+              <>
+                <CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" />
+                <span className="text-green-600 dark:text-green-400">{pasteStatus}</span>
+              </>
+            ) : null}
+          </div>
+        )}
         {/* Collapsible toolbar */}
         {showToolbar && (
           <div className="shrink-0 flex flex-wrap items-center gap-0.5 px-1 py-1 bg-muted/30 border-b border-border rounded-md">
@@ -5808,7 +5954,7 @@ export function FilesWidget() {
           <div className="shrink-0 max-h-[30%] border border-border rounded-md overflow-hidden">
             <SymbolOutline
               symbols={symbols}
-              onSelect={(_line) => {
+              onSelect={() => {
                 // TODO: scroll to line in the preview textarea if editing
               }}
               onClose={() => { setShowSymbols(false); setSymbols(null); }}
@@ -6328,6 +6474,7 @@ export function FilesWidget() {
         onCopyRelativePath={copyRelativePath}
         onToggleBookmark={toggleBookmark}
         onCleanup={(entry) => { setCleanupFor(entry.path); setCtxMenu(null); }}
+        onPaste={handlePasteFromClipboard}
         isBookmarked={ctxMenu ? bookmarks.some((b) => b.path === ctxMenu.entry.path) : false}
       />
     )}

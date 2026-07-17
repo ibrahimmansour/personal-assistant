@@ -193,6 +193,5 @@ export function ensureSchedulerStarted(): void {
     process.on("SIGTERM", stop);
     process.on("SIGINT", stop);
   }
-  // eslint-disable-next-line no-console
   console.log("[claude-scheduler] started");
 }

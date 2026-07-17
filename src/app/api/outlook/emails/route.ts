@@ -11,7 +11,7 @@ const CACHE_FILE = join(DATA_DIR, "outlook-emails-cache.json");
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 interface CachedEmails {
-  emails: any[];
+  emails: Record<string, unknown>[];
   fetchedAt: string;
   total: number;
 }
@@ -37,39 +37,39 @@ async function writeCache(data: CachedEmails) {
   }
 }
 
-function mapMessage(m: any) {
+function mapMessage(m: Record<string, unknown>) {
   return {
     id: m.Id,
-    from: m.From?.EmailAddress?.Name || m.From?.EmailAddress?.Address || "Unknown",
-    fromAddress: m.From?.EmailAddress?.Address || "",
-    subject: m.Subject || "(no subject)",
-    preview: m.BodyPreview || "",
-    bodyHtml: m.Body?.ContentType === "HTML" ? m.Body?.Content : null,
-    bodyText: m.Body?.ContentType === "Text" ? m.Body?.Content : m.BodyPreview || "",
+    from: (m.From as Record<string, Record<string, string>> | undefined)?.EmailAddress?.Name || (m.From as Record<string, Record<string, string>> | undefined)?.EmailAddress?.Address || "Unknown",
+    fromAddress: (m.From as Record<string, Record<string, string>> | undefined)?.EmailAddress?.Address || "",
+    subject: (m.Subject as string) || "(no subject)",
+    preview: (m.BodyPreview as string) || "",
+    bodyHtml: (m.Body as Record<string, string> | undefined)?.ContentType === "HTML" ? (m.Body as Record<string, string>)?.Content : null,
+    bodyText: (m.Body as Record<string, string> | undefined)?.ContentType === "Text" ? (m.Body as Record<string, string>)?.Content : (m.BodyPreview as string) || "",
     time: m.ReceivedDateTime,
     read: m.IsRead,
     hasAttachments: m.HasAttachments,
-    webLink: m.WebLink || "",
-    categories: (m.Categories || []) as string[],
-    to: (m.ToRecipients || []).map((r: any) => r.EmailAddress?.Name || r.EmailAddress?.Address).filter(Boolean),
-    cc: (m.CcRecipients || []).map((r: any) => r.EmailAddress?.Name || r.EmailAddress?.Address).filter(Boolean),
+    webLink: (m.WebLink as string) || "",
+    categories: ((m.Categories as string[]) || []) as string[],
+    to: ((m.ToRecipients as Record<string, unknown>[]) || []).map((r) => (r.EmailAddress as Record<string, string> | undefined)?.Name || (r.EmailAddress as Record<string, string> | undefined)?.Address).filter(Boolean),
+    cc: ((m.CcRecipients as Record<string, unknown>[]) || []).map((r) => (r.EmailAddress as Record<string, string> | undefined)?.Name || (r.EmailAddress as Record<string, string> | undefined)?.Address).filter(Boolean),
   };
 }
 
-function mapMessageLight(m: any) {
+function mapMessageLight(m: Record<string, unknown>) {
   return {
     id: m.Id,
-    from: m.From?.EmailAddress?.Name || m.From?.EmailAddress?.Address || "Unknown",
-    fromAddress: m.From?.EmailAddress?.Address || "",
-    subject: m.Subject || "(no subject)",
-    preview: m.BodyPreview || "",
+    from: (m.From as Record<string, Record<string, string>> | undefined)?.EmailAddress?.Name || (m.From as Record<string, Record<string, string>> | undefined)?.EmailAddress?.Address || "Unknown",
+    fromAddress: (m.From as Record<string, Record<string, string>> | undefined)?.EmailAddress?.Address || "",
+    subject: (m.Subject as string) || "(no subject)",
+    preview: (m.BodyPreview as string) || "",
     time: m.ReceivedDateTime,
     read: m.IsRead,
     hasAttachments: m.HasAttachments,
-    webLink: m.WebLink || "",
-    categories: (m.Categories || []) as string[],
-    to: (m.ToRecipients || []).map((r: any) => r.EmailAddress?.Name || r.EmailAddress?.Address).filter(Boolean),
-    cc: (m.CcRecipients || []).map((r: any) => r.EmailAddress?.Name || r.EmailAddress?.Address).filter(Boolean),
+    webLink: (m.WebLink as string) || "",
+    categories: ((m.Categories as string[]) || []) as string[],
+    to: ((m.ToRecipients as Record<string, unknown>[]) || []).map((r) => (r.EmailAddress as Record<string, string> | undefined)?.Name || (r.EmailAddress as Record<string, string> | undefined)?.Address).filter(Boolean),
+    cc: ((m.CcRecipients as Record<string, unknown>[]) || []).map((r) => (r.EmailAddress as Record<string, string> | undefined)?.Name || (r.EmailAddress as Record<string, string> | undefined)?.Address).filter(Boolean),
   };
 }
 
@@ -97,7 +97,7 @@ export async function GET(request: NextRequest) {
       ? "Id,Subject,From,ReceivedDateTime,IsRead,BodyPreview,HasAttachments,WebLink,ToRecipients,CcRecipients,Categories"
       : "Id,Subject,From,ReceivedDateTime,IsRead,BodyPreview,Body,HasAttachments,WebLink,ToRecipients,CcRecipients,Categories";
 
-    const allEmails: any[] = [];
+    const allEmails: Record<string, unknown>[] = [];
     const pageSize = 50;
     let skip = 0;
 

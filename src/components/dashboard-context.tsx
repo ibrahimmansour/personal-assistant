@@ -248,13 +248,14 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
   const [widgets, setWidgets] = useState<WidgetConfig[]>(getDefaultWidgets(activeProfile));
   const [layouts, setLayouts] = useState<Layout>(getDefaultLayouts(activeProfile));
   const [layoutLocked, setLayoutLocked] = useState(false);
-  const [loaded, setLoaded] = useState(false);
+  const [, setLoaded] = useState(false);
   const debouncedSave = useDebouncedSave();
   const currentProfile = useRef(activeProfile);
 
   // Load state when profile changes
   useEffect(() => {
     currentProfile.current = activeProfile;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoaded(false);
 
     async function load() {

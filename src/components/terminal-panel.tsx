@@ -8,7 +8,7 @@
 
 import { cn } from "@/lib/utils";
 import { TerminalSquare, X } from "lucide-react";
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const WS_URL = typeof window !== "undefined" ? `ws://${window.location.hostname}:4445` : "ws://localhost:4445";
 
@@ -96,8 +96,8 @@ interface TerminalPanelProps {
 
 export function TerminalPanel({ cwd, command, label, onClose, className, pasteRef }: TerminalPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const terminalRef = useRef<any>(null);
-  const fitAddonRef = useRef<any>(null);
+  const terminalRef = useRef<import("@xterm/xterm").Terminal | null>(null);
+  const fitAddonRef = useRef<import("@xterm/addon-fit").FitAddon | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const [alive, setAlive] = useState(true);
   const [connecting, setConnecting] = useState(true);
@@ -227,6 +227,7 @@ export function TerminalPanel({ cwd, command, label, onClose, className, pasteRe
       wsRef.current = null;
       if (pasteRef) pasteRef.current = null;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // intentionally run only once on mount — cwd/command are initial values
 
   // ── Theme sync ─────────────────────────────────────────────────────────

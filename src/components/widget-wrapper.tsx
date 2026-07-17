@@ -151,6 +151,7 @@ export function WidgetWrapper({
   // Reset split when collapsing
   useEffect(() => {
     if (!isExpanded) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSplitWidget(null);
       setShowSplitPicker(false);
     }
@@ -170,6 +171,7 @@ export function WidgetWrapper({
     if (collapseSeq !== collapseSeqRef.current) {
       collapseSeqRef.current = collapseSeq;
       if (isExpanded) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setIsExpanded(false);
         onExpandChange?.(false);
       }
@@ -179,6 +181,7 @@ export function WidgetWrapper({
   // Handle controlled expand requests
   useEffect(() => {
     if (expandRequested && !isExpanded) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setIsExpanded(true);
       onExpandChange?.(true);
       onExpandHandled?.();
@@ -188,6 +191,7 @@ export function WidgetWrapper({
   // Handle forceExpand from children (e.g. files widget opening split terminal)
   useEffect(() => {
     if (forceExpand && !isExpanded) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setIsExpanded(true);
       onExpandChange?.(true);
     }

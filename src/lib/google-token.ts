@@ -139,7 +139,7 @@ export async function getGoogleToken(): Promise<string> {
  * Make an authenticated fetch to Google APIs.
  * Auto-refreshes token on 401.
  */
-export async function googleFetch(url: string, options?: RequestInit): Promise<any> {
+export async function googleFetch(url: string, options?: RequestInit): Promise<unknown> {
   const makeRequest = async (token: string) => {
     return fetch(url, {
       ...options,

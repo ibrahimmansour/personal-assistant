@@ -37,8 +37,21 @@ export interface ChatMessage {
 // assistant turns that have human-visible text, and we accept several shapes
 // for `message.content` (string, array of typed blocks, or even a stringified
 // JSON array — older versions of the CLI emitted that).
+
+interface ParsedJsonlLine {
+  type?: string;
+  message?: {
+    content?: unknown;
+    usage?: Record<string, number>;
+    id?: string;
+    stop_reason?: string;
+  };
+  uuid?: string;
+  timestamp?: string;
+}
+
 function parseLine(raw: string): ChatMessage | null {
-  let parsed: any;
+  let parsed: ParsedJsonlLine;
   try {
     parsed = JSON.parse(raw);
   } catch {

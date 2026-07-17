@@ -38,9 +38,10 @@ print(token)
       throw new Error("Python get_token() returned empty token");
     }
     return token;
-  } catch (err: any) {
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
     throw new Error(
-      `Failed to auto-refresh Outlook token: ${err.message || err}`
+      `Failed to auto-refresh Outlook token: ${message}`
     );
   }
 }

@@ -6,29 +6,29 @@ export const dynamic = "force-dynamic";
 const MAX_RESULTS = 500;
 const PAGE_SIZE = 50;
 
-function mapMessage(m: any) {
+function mapMessage(m: Record<string, unknown>) {
   return {
     id: m.Id,
     from:
-      m.From?.EmailAddress?.Name ||
-      m.From?.EmailAddress?.Address ||
+      (m.From as Record<string, Record<string, string>> | undefined)?.EmailAddress?.Name ||
+      (m.From as Record<string, Record<string, string>> | undefined)?.EmailAddress?.Address ||
       "Unknown",
-    fromAddress: m.From?.EmailAddress?.Address || "",
-    subject: m.Subject || "(no subject)",
-    preview: m.BodyPreview || "",
+    fromAddress: (m.From as Record<string, Record<string, string>> | undefined)?.EmailAddress?.Address || "",
+    subject: (m.Subject as string) || "(no subject)",
+    preview: (m.BodyPreview as string) || "",
     time: m.ReceivedDateTime,
     read: m.IsRead,
     hasAttachments: m.HasAttachments,
-    webLink: m.WebLink || "",
-    categories: (m.Categories || []) as string[],
-    to: (m.ToRecipients || [])
+    webLink: (m.WebLink as string) || "",
+    categories: ((m.Categories as string[]) || []) as string[],
+    to: ((m.ToRecipients as Record<string, unknown>[]) || [])
       .map(
-        (r: any) => r.EmailAddress?.Name || r.EmailAddress?.Address
+        (r) => (r.EmailAddress as Record<string, string> | undefined)?.Name || (r.EmailAddress as Record<string, string> | undefined)?.Address
       )
       .filter(Boolean),
-    cc: (m.CcRecipients || [])
+    cc: ((m.CcRecipients as Record<string, unknown>[]) || [])
       .map(
-        (r: any) => r.EmailAddress?.Name || r.EmailAddress?.Address
+        (r) => (r.EmailAddress as Record<string, string> | undefined)?.Name || (r.EmailAddress as Record<string, string> | undefined)?.Address
       )
       .filter(Boolean),
   };
@@ -47,7 +47,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const allEmails: any[] = [];
+    const allEmails: Record<string, unknown>[] = [];
 
     // First page uses outlookFetch with params
     const firstPage = await outlookFetch("/me/messages", {

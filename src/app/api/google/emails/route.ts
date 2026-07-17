@@ -10,8 +10,28 @@ const DATA_DIR = join(homedir(), ".personal-assistant");
 const CACHE_FILE = join(DATA_DIR, "gmail-emails-cache.json");
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
+interface GmailHeader {
+  name: string;
+  value: string;
+}
+
+interface GmailPart {
+  mimeType?: string;
+  filename?: string;
+  body?: { data?: string };
+  parts?: GmailPart[];
+}
+
+interface GmailMessage {
+  id: string;
+  labelIds?: string[];
+  snippet?: string;
+  internalDate: string;
+  payload: GmailPart & { headers?: GmailHeader[] };
+}
+
 interface CachedEmails {
-  emails: any[];
+  emails: Record<string, unknown>[];
   fetchedAt: string;
   total: number;
 }
@@ -102,11 +122,11 @@ export async function GET(request: NextRequest) {
     }
 
     // Fetch Gmail labels for resolving IDs to names
-    let labelMap: Record<string, string> = {};
+    const labelMap: Record<string, string> = {};
     try {
       const labelsData = await googleFetch(
         "https://gmail.googleapis.com/gmail/v1/users/me/labels"
-      );
+      ) as { labels?: { id: string; name: string }[] };
       for (const label of labelsData.labels || []) {
         labelMap[label.id] = label.name;
       }
@@ -129,8 +149,8 @@ export async function GET(request: NextRequest) {
       let url = `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=${pageSize}&labelIds=INBOX`;
       if (pageToken) url += `&pageToken=${pageToken}`;
 
-      const listData = await googleFetch(url);
-      const ids: string[] = (listData.messages || []).map((m: any) => m.id);
+      const listData = await googleFetch(url) as { messages?: { id: string }[]; nextPageToken?: string };
+      const ids: string[] = (listData.messages || []).map((m) => m.id);
       if (ids.length === 0) break;
 
       allMessageIds.push(...ids);
@@ -144,7 +164,7 @@ export async function GET(request: NextRequest) {
 
     // Fetch messages in parallel batches to avoid overwhelming the API
     const BATCH_SIZE = 25;
-    const allEmails: any[] = [];
+    const allEmails: Record<string, unknown>[] = [];
 
     for (let i = 0; i < allMessageIds.length; i += BATCH_SIZE) {
       const batch = allMessageIds.slice(i, i + BATCH_SIZE);
@@ -152,7 +172,7 @@ export async function GET(request: NextRequest) {
         batch.map((id) =>
           googleFetch(
             `https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=${format}${metadataHeaders}`
-          )
+          ) as Promise<GmailMessage>
         )
       );
 
@@ -161,7 +181,7 @@ export async function GET(request: NextRequest) {
         const msg = r.value;
         const headers = msg.payload?.headers || [];
         const getHeader = (name: string) =>
-          headers.find((h: any) => h.name.toLowerCase() === name.toLowerCase())?.value || "";
+          headers.find((h) => h.name.toLowerCase() === name.toLowerCase())?.value || "";
 
         const from = getHeader("From");
         const { fromName, fromAddress } = parseFrom(from);
@@ -190,7 +210,7 @@ export async function GET(request: NextRequest) {
           let bodyHtml: string | null = null;
           let bodyText = "";
 
-          function extractParts(part: any) {
+          function extractParts(part: GmailPart) {
             if (part.mimeType === "text/html" && part.body?.data) {
               bodyHtml = Buffer.from(part.body.data, "base64url").toString("utf-8");
             }
@@ -215,7 +235,7 @@ export async function GET(request: NextRequest) {
             time: new Date(parseInt(msg.internalDate)).toISOString(),
             read: isRead,
             hasAttachments: (msg.payload?.parts || []).some(
-              (p: any) => p.filename && p.filename.length > 0
+              (p) => p.filename && p.filename.length > 0
             ),
             webLink: `https://mail.google.com/mail/u/0/#inbox/${msg.id}`,
             categories: resolvedLabels2,
@@ -237,8 +257,8 @@ export async function GET(request: NextRequest) {
     }
 
     return Response.json(result);
-  } catch (error: any) {
-    if (error.message === "GOOGLE_AUTH_REQUIRED") {
+  } catch (error: unknown) {
+    if (error instanceof Error && error.message === "GOOGLE_AUTH_REQUIRED") {
       return Response.json(
         {
           error: "Gmail authentication required. Click to connect your Google account.",

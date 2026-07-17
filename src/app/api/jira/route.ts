@@ -22,7 +22,7 @@ export async function GET() {
       total,
       fetchedAt: new Date().toISOString(),
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (error instanceof JiraAuthError) {
       return Response.json(
         {

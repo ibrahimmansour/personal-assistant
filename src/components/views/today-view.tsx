@@ -1,27 +1,22 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { useProfile } from "@/components/profile-context";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import {
-  CloudSun,
   Calendar,
   ListTodo,
   Mail,
   GitPullRequest,
   TicketCheck,
-  CheckCircle2,
   Circle,
   Loader2,
-  Clock,
   MapPin,
   Thermometer,
   Wind,
   Droplets,
-  Sun,
   Sunrise,
   ArrowRight,
 } from "lucide-react";
@@ -169,7 +164,7 @@ export function TodayView() {
     // Calendar — only today's events
     if (results[1].status === "fulfilled" && results[1].value.events) {
       const today = new Date().toDateString();
-      const todayEvents = results[1].value.events.filter((e: any) => {
+      const todayEvents = results[1].value.events.filter((e: { start: string }) => {
         const eventDate = new Date(e.start).toDateString();
         return eventDate === today;
       });
@@ -178,14 +173,14 @@ export function TodayView() {
 
     // Tasks — only incomplete
     if (results[2].status === "fulfilled" && results[2].value.tasks) {
-      const incomplete = results[2].value.tasks.filter((t: any) => !t.completed);
+      const incomplete = results[2].value.tasks.filter((t: { completed: boolean }) => !t.completed);
       setTasks(incomplete.slice(0, 10));
     }
 
     // Email
     if (results[3].status === "fulfilled" && results[3].value.emails) {
       const emails = results[3].value.emails;
-      const unread = emails.filter((e: any) => !e.read).length;
+      const unread = emails.filter((e: { read: boolean }) => !e.read).length;
       setEmailSummary({
         unreadCount: unread,
         total: emails.length,
@@ -198,8 +193,8 @@ export function TodayView() {
     if (results[4].status === "fulfilled" && results[4].value.prs) {
       const prs = results[4].value.prs;
       setPRSummary({
-        openCount: prs.filter((p: any) => p.status === "open").length,
-        reviewRequested: prs.filter((p: any) => p.reviewRequested).length,
+        openCount: prs.filter((p: { status: string }) => p.status === "open").length,
+        reviewRequested: prs.filter((p: { reviewRequested: boolean }) => p.reviewRequested).length,
       });
     }
 
@@ -207,7 +202,7 @@ export function TodayView() {
     if (results[5].status === "fulfilled" && results[5].value && !results[5].value.error) {
       const issues = results[5].value.issues || [];
       setJiraSummary({
-        inProgressCount: issues.filter((i: any) => i.status?.toLowerCase().includes("progress")).length,
+        inProgressCount: issues.filter((i: { status?: string }) => i.status?.toLowerCase().includes("progress")).length,
         totalCount: issues.length,
       });
     }
@@ -216,10 +211,16 @@ export function TodayView() {
   }, [activeProfile]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchData();
     const interval = setInterval(fetchData, 5 * 60_000);
     return () => clearInterval(interval);
   }, [fetchData]);
+
+  const nextEvent = useMemo(
+    () => events.find((e) => new Date(e.end).getTime() > currentTime.getTime()),
+    [events, currentTime]
+  );
 
   if (loading && !weather && events.length === 0) {
     return (
@@ -231,8 +232,6 @@ export function TodayView() {
       </div>
     );
   }
-
-  const nextEvent = events.find((e) => new Date(e.end).getTime() > Date.now());
 
   return (
     <ScrollArea className="h-full">

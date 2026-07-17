@@ -15,6 +15,11 @@ const ALLOWED_MIME: Record<string, string> = {
   "image/webp": "webp",
   "image/gif": "gif",
   "image/svg+xml": "svg",
+  "application/pdf": "pdf",
+  "application/msword": "doc",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+  "text/plain": "txt",
+  "text/markdown": "md",
 };
 
 const MAX_BYTES = 25 * 1024 * 1024; // 25 MB safety cap
@@ -46,7 +51,7 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: "Empty body" }, { status: 400 });
   }
   if (bytes.byteLength > MAX_BYTES) {
-    return Response.json({ error: "Image too large" }, { status: 413 });
+    return Response.json({ error: "File too large (max 25 MB)" }, { status: 413 });
   }
 
   await mkdir(UPLOAD_DIR, { recursive: true });

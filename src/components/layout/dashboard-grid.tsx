@@ -7,7 +7,6 @@ import {
   noCompactor,
   type Layout,
   type LayoutItem,
-  type ResponsiveLayouts,
 } from "react-grid-layout";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { WidgetType } from "@/types/widget";
@@ -248,14 +247,14 @@ export function DashboardGrid() {
   }, [isDashboard, effectiveLayouts, activeProfile, visibleIds]);
 
   const handleBreakpointChange = useCallback(
-    (newBreakpoint: string, _newCols: number) => {
+    (newBreakpoint: string) => {
       currentBreakpointRef.current = newBreakpoint;
     },
     []
   );
 
   const handleLayoutChange = useCallback(
-    (currentLayout: Layout, _allLayouts: ResponsiveLayouts) => {
+    (currentLayout: Layout) => {
       if (!isDashboard) return;
       if (currentBreakpointRef.current == null) return;
       if (currentBreakpointRef.current !== "lg") return;
@@ -287,6 +286,7 @@ export function DashboardGrid() {
   const [isMobile, setIsMobile] = useState(false);
   useEffect(() => {
     const mql = window.matchMedia("(max-width: 767px)");
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsMobile(mql.matches);
     const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
     mql.addEventListener("change", handler);

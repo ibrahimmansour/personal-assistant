@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, FormEvent } from "react";
-import { Settings, Save, Eye, EyeOff, CheckCircle, GitBranch, Mail, Cloud, Brain, MapPin, TicketCheck, Shield, Download, RefreshCw, LayoutGrid, RotateCcw, Lock, LockOpen, Maximize } from "lucide-react";
+import { Settings, Save, Eye, EyeOff, CheckCircle, GitBranch, Mail, Brain, MapPin, TicketCheck, Shield, Download, RefreshCw, LayoutGrid, RotateCcw, Lock, LockOpen, Maximize } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDashboard } from "@/components/dashboard-context";
 import { useAppearance } from "@/components/appearance-context";

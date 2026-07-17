@@ -4,7 +4,7 @@ import { useTheme } from "next-themes";
 import { LayoutDashboard, Moon, Sun, Briefcase, Home, Search, Sparkles, Settings, Maximize, Minimize, Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AppearancePicker } from "@/components/layout/appearance-picker";
-import { useProfile, profiles, type ProfileId } from "@/components/profile-context";
+import { useProfile, profiles } from "@/components/profile-context";
 import { useCommandPalette } from "@/components/command-palette-context";
 import { useAIChat } from "@/components/ai-chat-context";
 import { useAppearance } from "@/components/appearance-context";
@@ -64,6 +64,7 @@ export function Header() {
     return cleanup;
   }, [appearance.autoFullscreen]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => setMounted(true), []);
 
   // Keyboard shortcut: Cmd+I to toggle AI chat
@@ -77,8 +78,6 @@ export function Header() {
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [toggleAI]);
-
-  const ActiveIcon = profileIcons[profile.icon] || Briefcase;
 
   return (
     <header className="sticky top-0 z-50 border-b border-border/50 bg-background/80 backdrop-blur-xl">

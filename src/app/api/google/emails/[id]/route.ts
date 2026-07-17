@@ -2,6 +2,26 @@ import { googleFetch, isConfigured } from "@/lib/google-token";
 
 export const dynamic = "force-dynamic";
 
+interface GmailHeader {
+  name: string;
+  value: string;
+}
+
+interface GmailPart {
+  mimeType?: string;
+  filename?: string;
+  body?: { data?: string };
+  parts?: GmailPart[];
+}
+
+interface GmailMessage {
+  id: string;
+  labelIds?: string[];
+  snippet?: string;
+  internalDate: string;
+  payload: GmailPart & { headers?: GmailHeader[] };
+}
+
 // System labels to exclude from user-facing categories
 const GMAIL_SYSTEM_LABELS = new Set([
   "INBOX", "UNREAD", "SENT", "DRAFT", "TRASH", "SPAM",
@@ -60,11 +80,11 @@ export async function GET(
 
   try {
     // Fetch labels for resolving IDs to names
-    let labelMap: Record<string, string> = {};
+    const labelMap: Record<string, string> = {};
     try {
       const labelsData = await googleFetch(
         "https://gmail.googleapis.com/gmail/v1/users/me/labels"
-      );
+      ) as { labels?: { id: string; name: string }[] };
       for (const label of labelsData.labels || []) {
         labelMap[label.id] = label.name;
       }
@@ -74,12 +94,12 @@ export async function GET(
 
     const msg = await googleFetch(
       `https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=full`
-    );
+    ) as GmailMessage;
 
     const headers = msg.payload?.headers || [];
     const getHeader = (name: string) =>
       headers.find(
-        (h: any) => h.name.toLowerCase() === name.toLowerCase()
+        (h) => h.name.toLowerCase() === name.toLowerCase()
       )?.value || "";
 
     const from = getHeader("From");
@@ -89,7 +109,7 @@ export async function GET(
     let bodyHtml: string | null = null;
     let bodyText = "";
 
-    function extractParts(part: any) {
+    function extractParts(part: GmailPart) {
       if (part.mimeType === "text/html" && part.body?.data) {
         bodyHtml = Buffer.from(part.body.data, "base64url").toString("utf-8");
       }
@@ -111,7 +131,7 @@ export async function GET(
       time: new Date(parseInt(msg.internalDate)).toISOString(),
       read: isRead,
       hasAttachments: (msg.payload?.parts || []).some(
-        (p: any) => p.filename && p.filename.length > 0
+        (p) => p.filename && p.filename.length > 0
       ),
       webLink: `https://mail.google.com/mail/u/0/#inbox/${msg.id}`,
       categories: mapGmailLabels(msg.labelIds || [], labelMap),
@@ -120,8 +140,8 @@ export async function GET(
     };
 
     return Response.json({ email });
-  } catch (error: any) {
-    if (error.message === "GOOGLE_AUTH_REQUIRED") {
+  } catch (error: unknown) {
+    if (error instanceof Error && error.message === "GOOGLE_AUTH_REQUIRED") {
       return Response.json(
         { error: "Gmail authentication required.", authRequired: true },
         { status: 401 }

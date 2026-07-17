@@ -5,7 +5,6 @@ import { useProfile } from "@/components/profile-context";
 import { useWorkspace } from "@/components/workspace-context";
 import { cn } from "@/lib/utils";
 import {
-  Clock,
   CloudSun,
   Cloud,
   Sun,
@@ -15,9 +14,7 @@ import {
   Mail,
   GitPullRequest,
   TicketCheck,
-  CheckCircle2,
   Loader2,
-  Timer,
   TrendingUp,
 } from "lucide-react";
 
@@ -126,8 +123,8 @@ export function StatusBoardView() {
     if (results[1].status === "fulfilled" && results[1].value.events) {
       const now = Date.now();
       const upcoming = results[1].value.events
-        .filter((e: any) => new Date(e.end).getTime() > now && !e.isAllDay)
-        .sort((a: any, b: any) => new Date(a.start).getTime() - new Date(b.start).getTime());
+        .filter((e: { end: string; isAllDay?: boolean }) => new Date(e.end).getTime() > now && !e.isAllDay)
+        .sort((a: { start: string }, b: { start: string }) => new Date(a.start).getTime() - new Date(b.start).getTime());
       if (upcoming.length > 0) {
         const evt = upcoming[0];
         const minutesUntil = Math.max(0, Math.round((new Date(evt.start).getTime() - now) / 60000));
@@ -146,13 +143,13 @@ export function StatusBoardView() {
     // Email unread count
     let emailCount = 0;
     if (results[2].status === "fulfilled" && results[2].value.emails) {
-      emailCount = results[2].value.emails.filter((e: any) => !e.read).length;
+      emailCount = results[2].value.emails.filter((e: { read?: boolean }) => !e.read).length;
     }
 
     // PR count
     let prCount = 0;
     if (results[3].status === "fulfilled" && results[3].value.prs) {
-      prCount = results[3].value.prs.filter((p: any) => p.reviewRequested).length;
+      prCount = results[3].value.prs.filter((p: { reviewRequested?: boolean }) => p.reviewRequested).length;
     }
 
     // Jira count
@@ -167,7 +164,7 @@ export function StatusBoardView() {
     if (results[5].status === "fulfilled" && results[5].value.tasks) {
       const allTasks = results[5].value.tasks;
       setTasks({
-        completed: allTasks.filter((t: any) => t.completed).length,
+        completed: allTasks.filter((t: { completed?: boolean }) => t.completed).length,
         total: allTasks.length,
       });
     }
@@ -203,6 +200,7 @@ export function StatusBoardView() {
       setNextMeeting((prev) => (prev ? { ...prev, minutesUntil } : null));
     }, 60_000);
     return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nextMeeting?.start]);
 
   if (loading && !weather) {

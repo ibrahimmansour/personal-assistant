@@ -133,8 +133,8 @@ interface OpenCodeSession {
   taskId: string;
   taskTitle: string;
   cwd?: string;
-  terminal: any;
-  fitAddon: any;
+  terminal: import("@xterm/xterm").Terminal;
+  fitAddon: import("@xterm/addon-fit").FitAddon;
   ws: WebSocket;
   alive: boolean;
   /** The off-screen wrapper div that owns the xterm DOM */

@@ -32,11 +32,11 @@ export async function POST(
     // Fetch the original message to get threading info and addresses
     const original = await googleFetch(
       `https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Cc&metadataHeaders=Subject&metadataHeaders=Message-ID&metadataHeaders=References&metadataHeaders=In-Reply-To`
-    );
+    ) as { payload?: { headers?: Record<string, string>[] }; threadId?: string };
 
     const headers = original.payload?.headers || [];
     const getHeader = (name: string) =>
-      headers.find((h: any) => h.name.toLowerCase() === name.toLowerCase())?.value || "";
+      headers.find((h) => h.name.toLowerCase() === name.toLowerCase())?.value || "";
 
     const originalFrom = getHeader("From");
     const originalTo = getHeader("To");
@@ -58,7 +58,7 @@ export async function POST(
       try {
         const profile = await googleFetch(
           "https://gmail.googleapis.com/gmail/v1/users/me/profile"
-        );
+        ) as { emailAddress?: string };
         myEmail = profile.emailAddress?.toLowerCase() || "";
       } catch {
         // Fall back — we'll just include everyone
@@ -122,8 +122,8 @@ export async function POST(
     );
 
     return Response.json({ success: true });
-  } catch (error: any) {
-    if (error.message === "GOOGLE_AUTH_REQUIRED") {
+  } catch (error: unknown) {
+    if (error instanceof Error && error.message === "GOOGLE_AUTH_REQUIRED") {
       return Response.json(
         { error: "Gmail authentication required.", authRequired: true },
         { status: 401 }

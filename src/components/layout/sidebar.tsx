@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState, useRef, useEffect } from "react";
+import { useCallback, useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { useEdgeSwipe, useSwipe } from "@/hooks/use-swipe";
 import {
@@ -18,8 +18,6 @@ import {
   TerminalSquare,
   Bookmark,
   FolderOpen,
-  ChevronLeft,
-  ChevronRight,
   Plus,
   Focus,
   PanelLeftClose,
@@ -31,7 +29,6 @@ import {
   Pencil,
   Trash2,
   X,
-  Check,
   Layers,
   Monitor,
   Bot,
@@ -43,7 +40,6 @@ import {
   widgetCategoryMap,
   type WidgetCategory,
   type Workspace,
-  type FocusCombo,
 } from "@/components/workspace-context";
 import { useDashboard } from "@/components/dashboard-context";
 import { useProfile } from "@/components/profile-context";
@@ -160,7 +156,7 @@ export function Sidebar() {
 
   // ─── Focus combo creation state ───────────────────────────────
   const [fcDialogOpen, setFcDialogOpen] = useState(false);
-  const [fcEditId, setFcEditId] = useState<string | null>(null);
+  const [, setFcEditId] = useState<string | null>(null);
   const [fcName, setFcName] = useState("");
   const [fcWidgetIds, setFcWidgetIds] = useState<string[]>([]);
   const [fcDirection, setFcDirection] = useState<"horizontal" | "vertical">("horizontal");

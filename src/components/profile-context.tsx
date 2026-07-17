@@ -40,6 +40,7 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved === "work" || saved === "private") {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setActiveProfileState(saved);
       }
     } catch {}

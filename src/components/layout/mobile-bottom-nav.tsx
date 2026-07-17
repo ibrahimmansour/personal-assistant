@@ -20,7 +20,7 @@ import {
   Home,
   Briefcase,
 } from "lucide-react";
-import { useWorkspace, type Workspace } from "@/components/workspace-context";
+import { useWorkspace } from "@/components/workspace-context";
 
 const workspaceIcons: Record<string, React.ComponentType<{ className?: string }>> = {
   monitor: Monitor,

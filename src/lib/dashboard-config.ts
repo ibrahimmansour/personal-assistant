@@ -244,7 +244,7 @@ export function getDefaultDashboard(profile: ProfileId): DashboardState {
  * This is used when the user rearranges widgets on desktop —
  * we recalculate tablet/mobile layouts to maintain order.
  */
-export function deriveResponsiveLayouts(lgLayout: Layout, _profile: ProfileId): ResponsiveLayoutSet {
+export function deriveResponsiveLayouts(lgLayout: Layout): ResponsiveLayoutSet {
   // For md: reflow into 2 columns of width 4 each (8 total)
   const sorted = [...lgLayout].sort((a, b) => a.y - b.y || a.x - b.x);
   const mdItems: LayoutItem[] = [];

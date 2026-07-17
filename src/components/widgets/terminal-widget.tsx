@@ -99,8 +99,8 @@ function getTermTheme() {
 interface TermTab {
   id: string;
   label: string;
-  terminal: any;
-  fitAddon: any;
+  terminal: import("@xterm/xterm").Terminal;
+  fitAddon: import("@xterm/addon-fit").FitAddon;
   ws: WebSocket;
   alive: boolean;
 }
@@ -592,7 +592,8 @@ export function TerminalWidget() {
 
   const activeTabObj = activeTab ? tabStore.get(activeTab) : null;
   const hasLiveTab = activeTabObj?.alive && activeTabObj.ws.readyState === WebSocket.OPEN;
-  const showContent = hasLiveTab || (activeTabObj && activeTabObj.terminal.element);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const _showContent = hasLiveTab || (activeTabObj && activeTabObj.terminal.element);
 
   return (
     <WidgetWrapper

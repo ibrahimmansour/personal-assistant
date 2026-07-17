@@ -413,7 +413,8 @@ export function NotesWidget() {
   const [showSearch, setShowSearch] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState<Record<string, boolean>>({});
-  const [lastSync, setLastSync] = useState<string | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [_lastSync, setLastSync] = useState<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const { activeProfile } = useProfile();
   const { expandRequested, onExpandHandled, pendingItemId, clearPendingItem, pendingSearchQuery, clearPendingSearch } =

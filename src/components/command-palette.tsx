@@ -695,6 +695,7 @@ export function CommandPalette() {
     } finally {
       setAiStreaming(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aiQuery, aiStreaming, activeProfile, activeWorkspace.id, widgets, aiAction]);
 
   // Execute an AI action

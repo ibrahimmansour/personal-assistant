@@ -14,6 +14,8 @@
  *   same underlying session.
  */
 
+import type { Terminal as XTermTerminal } from "@xterm/xterm";
+import type { FitAddon as XTermFitAddon } from "@xterm/addon-fit";
 import { WidgetWrapper } from "@/components/widget-wrapper";
 import {
   Bot,
@@ -127,9 +129,9 @@ interface SessionState {
   /** Real Claude session ID once known (matches the JSONL filename). Same as `key` for resumes. */
   sessionId: string | null;
   /** xterm.Terminal instance — created lazily when user submits or opens terminal view. */
-  terminal: any | null;
+  terminal: XTermTerminal | null;
   /** xterm FitAddon — created with the terminal. */
-  fitAddon: any | null;
+  fitAddon: XTermFitAddon | null;
   /** WebSocket to the PTY server — exists only while a terminal is alive. */
   ws: WebSocket | null;
   /** Whether the underlying CLI process is currently running. False before terminal is spawned and after exit. */
@@ -236,7 +238,6 @@ function ensureIdleReaperStarted() {
       state.alive = false;
       state.terminalAwaitingInput = false;
       state.terminalAwaitingHint = "";
-      // eslint-disable-next-line no-console
       console.log(`[claude-code] reaped idle terminal for ${state.key}`);
       notifySubscribers(state);
     }
@@ -491,7 +492,6 @@ function messageHasOpenQuestion(text: string): boolean {
 const ANSI_RE = /\x1b\][^\x07]*\x07|\x1b\[\??[\d;]*[A-Za-z]|\x1b[()][\dA-Za-z]|\x1b[=>]|\x1b[NO]|\x1b\][^\x1b]*\x1b\\|\r/g;
 
 function stripAnsi(input: string): string {
-  // eslint-disable-next-line no-control-regex
   return input.replace(ANSI_RE, "");
 }
 
@@ -3080,16 +3080,17 @@ function ChatView({
     ta.style.height = `${next}px`;
   }, [input, effectiveMinHeight, effectiveMaxHeight]);
 
-  // Pasted/dropped image attachments. Each becomes an @<path> reference in
-  // the prompt; previews are shown above the textarea until the prompt is
-  // sent. Path is the absolute path the CLI will read; previewUrl is the
-  // local blob URL for the thumbnail.
-  const [attachments, setAttachments] = useState<{
-    id: string;
-    path: string;
-    filename: string;
-    previewUrl: string;
-  }[]>([]);
+   // Pasted/dropped file attachments. Each becomes an @<path> reference in
+   // the prompt; previews are shown above the textarea until the prompt is
+   // sent. Path is the absolute path the CLI will read; previewUrl is the
+   // local blob URL for image thumbnails (empty string for non-image files).
+   const [attachments, setAttachments] = useState<{
+     id: string;
+     path: string;
+     filename: string;
+     previewUrl: string;
+     mime: string;
+   }[]>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
@@ -3139,13 +3140,28 @@ function ChatView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Upload a single image file and append it to the attachments list,
-  // inserting an @<path> reference into the textarea at the caret.
-  const uploadFile = useCallback(async (file: File) => {
-    if (!file.type.startsWith("image/")) {
-      setUploadError("Only image files are supported");
-      return;
-    }
+   // Upload a single file (image, PDF, or document) and append it to the
+   // attachments list, inserting an @<path> reference into the textarea.
+
+   const isAllowedFile = useCallback((file: File) => {
+     const ALLOWED_UPLOAD_TYPES = [
+       "image/",
+       "application/pdf",
+       "application/msword",
+       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+       "text/plain",
+       "text/markdown",
+     ];
+     return ALLOWED_UPLOAD_TYPES.some((t) =>
+       t.endsWith("/") ? file.type.startsWith(t) : file.type === t
+     );
+   }, []);
+
+   const uploadFile = useCallback(async (file: File) => {
+     if (!isAllowedFile(file)) {
+       setUploadError("Supported: images, PDF, DOC/DOCX, TXT, MD");
+       return;
+     }
     setUploadError(null);
     setUploading(true);
     try {
@@ -3159,8 +3175,9 @@ function ChatView({
         throw new Error(data?.error || `Upload failed (${res.status})`);
       }
       const data = (await res.json()) as { path: string; filename: string };
-      const previewUrl = URL.createObjectURL(file);
-      const att = { id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, path: data.path, filename: data.filename, previewUrl };
+      const isImage = file.type.startsWith("image/");
+      const previewUrl = isImage ? URL.createObjectURL(file) : "";
+      const att = { id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, path: data.path, filename: data.filename, previewUrl, mime: file.type };
       setAttachments((prev) => [...prev, att]);
 
       // Insert "@<path> " into the textarea at the caret position. Use the
@@ -3189,7 +3206,7 @@ function ChatView({
     } finally {
       setUploading(false);
     }
-  }, []);
+  }, [isAllowedFile]);
 
   const removeAttachment = useCallback((id: string) => {
     setAttachments((prev) => {
@@ -3205,28 +3222,35 @@ function ChatView({
 
   const onPaste = useCallback((e: React.ClipboardEvent<HTMLTextAreaElement>) => {
     const items = Array.from(e.clipboardData?.items || []);
-    const imageItems = items.filter((it) => it.kind === "file" && it.type.startsWith("image/"));
-    if (imageItems.length === 0) return; // let the default text paste happen
+    const fileItems = items.filter((it) => {
+      if (it.kind !== "file") return false;
+      const mime = it.type.toLowerCase();
+      return mime.startsWith("image/") || mime === "application/pdf"
+        || mime === "application/msword"
+        || mime === "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        || mime === "text/plain" || mime === "text/markdown";
+    });
+    if (fileItems.length === 0) return; // let the default text paste happen
     e.preventDefault();
-    for (const it of imageItems) {
+    for (const it of fileItems) {
       const file = it.getAsFile();
       if (file) uploadFile(file);
     }
   }, [uploadFile]);
 
   const onDrop = useCallback((e: React.DragEvent<HTMLTextAreaElement>) => {
-    const files = Array.from(e.dataTransfer?.files || []).filter((f) => f.type.startsWith("image/"));
+    const files = Array.from(e.dataTransfer?.files || []).filter((f) => isAllowedFile(f));
     if (files.length === 0) return;
     e.preventDefault();
     for (const f of files) uploadFile(f);
-  }, [uploadFile]);
+  }, [uploadFile, isAllowedFile]);
 
   const onPickFiles = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []).filter((f) => f.type.startsWith("image/"));
+    const files = Array.from(e.target.files || []).filter((f) => isAllowedFile(f));
     for (const f of files) uploadFile(f);
     // Reset so picking the same file twice still triggers change.
     e.target.value = "";
-  }, [uploadFile]);
+  }, [uploadFile, isAllowedFile]);
 
   const send = useCallback(() => {
     const text = input.trim();
@@ -3335,11 +3359,21 @@ function ChatView({
             {attachments.map((a) => (
               <div
                 key={a.id}
-                className="group relative h-12 w-12 rounded border border-border overflow-hidden bg-muted"
+                className={cn(
+                  "group relative rounded border border-border overflow-hidden bg-muted",
+                  a.mime.startsWith("image/") ? "h-12 w-12" : "h-12 px-2 flex items-center gap-1.5 max-w-[140px]"
+                )}
                 title={a.path}
               >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={a.previewUrl} alt={a.filename} className="h-full w-full object-cover" />
+                {a.mime.startsWith("image/") ? (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img src={a.previewUrl} alt={a.filename} className="h-full w-full object-cover" />
+                ) : (
+                  <>
+                    <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    <span className="text-[10px] text-foreground truncate">{a.filename}</span>
+                  </>
+                )}
                 <button
                   type="button"
                   onClick={() => removeAttachment(a.id)}
@@ -3407,7 +3441,7 @@ function ChatView({
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/*"
+            accept="image/*,.pdf,.doc,.docx,.txt,.md"
             multiple
             className="hidden"
             onChange={onPickFiles}
@@ -3418,7 +3452,7 @@ function ChatView({
               onClick={() => fileInputRef.current?.click()}
               disabled={sending || uploading || (state.ws !== null && !state.alive)}
               className="shrink-0 h-9 w-9 rounded-md border border-border bg-background hover:bg-muted text-muted-foreground hover:text-foreground flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
-              title="Attach image"
+              title="Attach file"
             >
               <Paperclip className="h-3.5 w-3.5" />
             </button>

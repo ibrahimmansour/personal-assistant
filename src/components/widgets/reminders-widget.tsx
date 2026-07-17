@@ -15,6 +15,17 @@ import { useEffect, useState, useCallback } from "react";
 import { useProfile } from "@/components/profile-context";
 import { useWidgetNavFor } from "@/components/widget-nav-context";
 
+interface CalendarEventRaw {
+  id: string;
+  title: string;
+  start: string;
+  startRaw: string;
+  endRaw: string;
+  location: string;
+  isToday: boolean;
+  isAllDay: boolean;
+}
+
 interface ReminderEvent {
   id: string;
   title: string;
@@ -50,8 +61,8 @@ export function RemindersWidget() {
 
       const now = new Date();
       const todayEvents = (data.events || [])
-        .filter((e: any) => e.isToday && !e.isAllDay)
-        .map((e: any) => {
+        .filter((e: CalendarEventRaw) => e.isToday && !e.isAllDay)
+        .map((e: CalendarEventRaw) => {
           // Handle both Outlook (bare datetime + "Z") and Google (ISO with offset)
           const startDate = new Date(
             e.startRaw.includes("T") && !e.startRaw.includes("Z") && !e.startRaw.includes("+") && !e.startRaw.includes("-", 10)

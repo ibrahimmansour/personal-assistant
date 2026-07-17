@@ -672,7 +672,8 @@ export async function POST(request: NextRequest) {
           exec(`swapoff ${targetPath} 2>/dev/null`, 10000);
 
           // Recreate with new size
-          const allocResult = exec(
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          const _allocResult = exec(
             `fallocate -l ${newSizeMB}M ${targetPath} 2>/dev/null || dd if=/dev/zero of=${targetPath} bs=1M count=${newSizeMB} 2>/dev/null`,
             60000
           );

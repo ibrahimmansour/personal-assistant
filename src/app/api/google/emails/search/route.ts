@@ -7,6 +7,19 @@ const MAX_RESULTS = 500;
 const GMAIL_PAGE_SIZE = 100; // Gmail max per page
 const FETCH_BATCH_SIZE = 25; // Parallel metadata fetches
 
+interface GmailHeader {
+  name: string;
+  value: string;
+}
+
+interface GmailMessage {
+  id: string;
+  labelIds?: string[];
+  snippet?: string;
+  internalDate: string;
+  payload: { headers?: GmailHeader[] };
+}
+
 // System labels to exclude from user-facing categories
 const GMAIL_SYSTEM_LABELS = new Set([
   "INBOX", "UNREAD", "SENT", "DRAFT", "TRASH", "SPAM",
@@ -71,8 +84,8 @@ export async function GET(request: NextRequest) {
       let url = `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=${pageSize}&q=${encodeURIComponent(query)}`;
       if (pageToken) url += `&pageToken=${pageToken}`;
 
-      const listData = await googleFetch(url);
-      const ids: string[] = (listData.messages || []).map((m: any) => m.id);
+      const listData = await googleFetch(url) as { messages?: { id: string }[]; nextPageToken?: string };
+      const ids: string[] = (listData.messages || []).map((m) => m.id);
       if (ids.length === 0) break;
 
       allMessageIds.push(...ids);
@@ -85,11 +98,11 @@ export async function GET(request: NextRequest) {
     }
 
     // Fetch Gmail labels for resolving IDs to names
-    let labelMap: Record<string, string> = {};
+    const labelMap: Record<string, string> = {};
     try {
       const labelsData = await googleFetch(
         "https://gmail.googleapis.com/gmail/v1/users/me/labels"
-      );
+      ) as { labels?: { id: string; name: string }[] };
       for (const label of labelsData.labels || []) {
         labelMap[label.id] = label.name;
       }
@@ -98,7 +111,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Step 2: Fetch message metadata in parallel batches
-    const allEmails: any[] = [];
+    const allEmails: Record<string, unknown>[] = [];
 
     for (let i = 0; i < allMessageIds.length; i += FETCH_BATCH_SIZE) {
       const batch = allMessageIds.slice(i, i + FETCH_BATCH_SIZE);
@@ -106,7 +119,7 @@ export async function GET(request: NextRequest) {
         batch.map((id) =>
           googleFetch(
             `https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=To&metadataHeaders=Cc`
-          )
+          ) as Promise<GmailMessage>
         )
       );
 
@@ -116,7 +129,7 @@ export async function GET(request: NextRequest) {
         const headers = msg.payload?.headers || [];
         const getHeader = (name: string) =>
           headers.find(
-            (h: any) => h.name.toLowerCase() === name.toLowerCase()
+            (h) => h.name.toLowerCase() === name.toLowerCase()
           )?.value || "";
 
         const from = getHeader("From");
@@ -141,8 +154,8 @@ export async function GET(request: NextRequest) {
     }
 
     return Response.json({ emails: allEmails, total: allEmails.length });
-  } catch (error: any) {
-    if (error.message === "GOOGLE_AUTH_REQUIRED") {
+  } catch (error: unknown) {
+    if (error instanceof Error && error.message === "GOOGLE_AUTH_REQUIRED") {
       return Response.json(
         {
           error: "Gmail authentication required.",

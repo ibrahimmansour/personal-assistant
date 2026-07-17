@@ -42,12 +42,12 @@ export async function GET(
       categories: (m.Categories || []) as string[],
       to: (m.ToRecipients || [])
         .map(
-          (r: any) => r.EmailAddress?.Name || r.EmailAddress?.Address
+          (r: Record<string, unknown>) => (r.EmailAddress as Record<string, string> | undefined)?.Name || (r.EmailAddress as Record<string, string> | undefined)?.Address
         )
         .filter(Boolean),
       cc: (m.CcRecipients || [])
         .map(
-          (r: any) => r.EmailAddress?.Name || r.EmailAddress?.Address
+          (r: Record<string, unknown>) => (r.EmailAddress as Record<string, string> | undefined)?.Name || (r.EmailAddress as Record<string, string> | undefined)?.Address
         )
         .filter(Boolean),
     };

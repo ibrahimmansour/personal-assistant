@@ -1,12 +1,11 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 import {
   Bot,
   X,
   Send,
-  Loader2,
   Play,
   Trash2,
   StopCircle,

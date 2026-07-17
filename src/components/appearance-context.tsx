@@ -99,6 +99,7 @@ export function AppearanceProvider({ children }: { children: React.ReactNode }) 
       const saved = localStorage.getItem("appearance");
       if (saved) {
         const parsed = JSON.parse(saved);
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setAppearance({ ...defaultAppearance, ...parsed });
       }
     } catch {}

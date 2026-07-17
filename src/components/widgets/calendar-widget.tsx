@@ -4,7 +4,6 @@ import { WidgetWrapper } from "@/components/widget-wrapper";
 import { HtmlContent } from "@/components/html-content";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import { Badge } from "@/components/ui/badge";
 import {
   Calendar,
   ChevronRight,

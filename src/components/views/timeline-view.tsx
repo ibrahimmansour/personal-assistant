@@ -14,7 +14,6 @@ import {
   ListTodo,
   CheckCircle2,
   Loader2,
-  Clock,
   Activity,
 } from "lucide-react";
 
@@ -29,7 +28,7 @@ interface TimelineEntry {
   time: string;
   icon: React.ComponentType<{ className?: string }>;
   iconColor: string;
-  data?: any;
+  data?: Record<string, unknown>;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -190,6 +189,7 @@ export function TimelineView() {
   }, [activeProfile]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchData();
     const interval = setInterval(fetchData, 5 * 60_000);
     return () => clearInterval(interval);
@@ -268,7 +268,7 @@ export function TimelineView() {
                 <div className="absolute left-[11px] top-2 bottom-2 w-px bg-border/50" />
 
                 <div className="space-y-0.5">
-                  {dayEntries.map((entry, idx) => {
+                  {dayEntries.map((entry) => {
                     const Icon = entry.icon;
                     return (
                       <div

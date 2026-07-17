@@ -88,6 +88,7 @@ export function BookmarksWidget() {
   // Handle search from AI actions
   useEffect(() => {
     if (pendingSearchQuery) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setFilterQuery(pendingSearchQuery);
       setShowFilter(true);
       clearPendingSearch();
@@ -136,6 +137,7 @@ export function BookmarksWidget() {
   }, [activeProfile]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     setActiveCategory(null);
     loadBookmarks();
@@ -338,8 +340,9 @@ export function BookmarksWidget() {
               placeholder="Title"
               className="w-full text-xs bg-background border border-border rounded px-2 py-1 outline-none focus:border-primary/50"
               onKeyDown={(e) => {
-                if (e.key === "Enter")
-                  editing ? handleSaveEdit() : handleSaveNew();
+                if (e.key === "Enter") {
+                  if (editing) { handleSaveEdit(); } else { handleSaveNew(); }
+                }
                 if (e.key === "Escape") handleCancel();
               }}
             />
@@ -350,8 +353,9 @@ export function BookmarksWidget() {
               placeholder="URL"
               className="w-full text-xs bg-background border border-border rounded px-2 py-1 outline-none focus:border-primary/50"
               onKeyDown={(e) => {
-                if (e.key === "Enter")
-                  editing ? handleSaveEdit() : handleSaveNew();
+                if (e.key === "Enter") {
+                  if (editing) { handleSaveEdit(); } else { handleSaveNew(); }
+                }
                 if (e.key === "Escape") handleCancel();
               }}
             />
@@ -362,8 +366,9 @@ export function BookmarksWidget() {
               placeholder="Category (optional)"
               className="w-full text-xs bg-background border border-border rounded px-2 py-1 outline-none focus:border-primary/50"
               onKeyDown={(e) => {
-                if (e.key === "Enter")
-                  editing ? handleSaveEdit() : handleSaveNew();
+                if (e.key === "Enter") {
+                  if (editing) { handleSaveEdit(); } else { handleSaveNew(); }
+                }
                 if (e.key === "Escape") handleCancel();
               }}
             />
@@ -407,6 +412,7 @@ export function BookmarksWidget() {
                 className="group flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-muted/60 transition-colors"
               >
                 {/* Favicon */}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={item.favicon || faviconUrl(item.url)}
                   alt=""

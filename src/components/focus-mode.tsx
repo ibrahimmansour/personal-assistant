@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
-import { X, GripVertical } from "lucide-react";
+import { X } from "lucide-react";
 import { useWorkspace } from "@/components/workspace-context";
 import { useDashboard } from "@/components/dashboard-context";
 import { useIsMobile } from "@/hooks/use-swipe";

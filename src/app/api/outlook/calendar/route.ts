@@ -35,17 +35,19 @@ export async function GET() {
     ];
 
     const events = (data.value || [])
-      .filter((ev: any) => !ev.IsCancelled)
-      .map((ev: any, index: number) => {
-        const start = new Date(ev.Start?.DateTime + "Z");
-        const end = new Date(ev.End?.DateTime + "Z");
+      .filter((ev: Record<string, unknown>) => !ev.IsCancelled)
+      .map((ev: Record<string, unknown>, index: number) => {
+        const evStart = ev.Start as Record<string, string> | undefined;
+        const evEnd = ev.End as Record<string, string> | undefined;
+        const start = new Date((evStart?.DateTime || "") + "Z");
+        const end = new Date((evEnd?.DateTime || "") + "Z");
         const isToday = start.toDateString() === now.toDateString();
 
         return {
           id: ev.Id,
-          title: ev.Subject || "(no subject)",
-          startRaw: ev.Start?.DateTime,
-          endRaw: ev.End?.DateTime,
+          title: (ev.Subject as string) || "(no subject)",
+          startRaw: evStart?.DateTime,
+          endRaw: evEnd?.DateTime,
           start: start.toISOString(),
           end: end.toISOString(),
           startFormatted: start.toLocaleTimeString("en-US", {
@@ -58,21 +60,21 @@ export async function GET() {
             minute: "2-digit",
             hour12: true,
           }),
-          location: ev.Location?.DisplayName || "",
+          location: (ev.Location as Record<string, string> | undefined)?.DisplayName || "",
           organizer:
-            ev.Organizer?.EmailAddress?.Name ||
-            ev.Organizer?.EmailAddress?.Address ||
+            (ev.Organizer as Record<string, Record<string, string>> | undefined)?.EmailAddress?.Name ||
+            (ev.Organizer as Record<string, Record<string, string>> | undefined)?.EmailAddress?.Address ||
             "",
           isAllDay: ev.IsAllDay,
           isToday,
           color: colors[index % colors.length],
-          webLink: ev.WebLink || "",
-          bodyPreview: ev.BodyPreview || "",
-          bodyHtml: ev.Body?.ContentType === "HTML" ? ev.Body?.Content : null,
-          onlineMeetingUrl: ev.OnlineMeetingUrl || "",
-          attendees: (ev.Attendees || []).map((a: any) => ({
-            name: a.EmailAddress?.Name || a.EmailAddress?.Address || "",
-            status: a.Status?.Response || "none",
+          webLink: (ev.WebLink as string) || "",
+          bodyPreview: (ev.BodyPreview as string) || "",
+          bodyHtml: (ev.Body as Record<string, string> | undefined)?.ContentType === "HTML" ? (ev.Body as Record<string, string>)?.Content : null,
+          onlineMeetingUrl: (ev.OnlineMeetingUrl as string) || "",
+          attendees: ((ev.Attendees as Record<string, unknown>[] | undefined) || []).map((a) => ({
+            name: (a.EmailAddress as Record<string, string> | undefined)?.Name || (a.EmailAddress as Record<string, string> | undefined)?.Address || "",
+            status: (a.Status as Record<string, string> | undefined)?.Response || "none",
           })),
         };
       });

@@ -9,17 +9,14 @@ import { cn } from "@/lib/utils";
 import { useSwipe } from "@/hooks/use-swipe";
 import {
   Mail,
-  MailOpen,
   GitPullRequest,
   TicketCheck,
   Calendar,
   ListTodo,
-  Bell,
   Loader2,
   ArrowLeft,
   ExternalLink,
   Paperclip,
-  Filter,
   Inbox,
 } from "lucide-react";
 
@@ -36,7 +33,8 @@ interface InboxItem {
   read?: boolean;
   priority?: string;
   /** Type-specific data for detail view */
-  data: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  data: Record<string, any>;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -193,6 +191,7 @@ export function InboxView() {
   }, [activeProfile]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchAll();
     const interval = setInterval(fetchAll, 3 * 60_000);
     return () => clearInterval(interval);
@@ -421,9 +420,9 @@ export function InboxView() {
                     </span>
                     <span className="text-muted-foreground">{selectedItem.data.headBranch}</span>
                   </div>
-                  {selectedItem.data.labels?.length > 0 && (
+                  {(selectedItem.data.labels as Array<{ name: string }>)?.length > 0 && (
                     <div className="flex flex-wrap gap-1 mt-1">
-                      {selectedItem.data.labels.map((l: any) => (
+                      {(selectedItem.data.labels as Array<{ name: string }>).map((l: { name: string }) => (
                         <span key={l.name} className="px-1.5 py-0.5 bg-muted rounded text-[10px]">
                           {l.name}
                         </span>

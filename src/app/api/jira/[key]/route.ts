@@ -19,7 +19,7 @@ export async function GET(
     const { key } = await params;
     const detail = await getIssueDetail(key);
     return Response.json({ issue: detail });
-  } catch (error: any) {
+  } catch (error: unknown) {
     if (error instanceof JiraAuthError) {
       return Response.json(
         {

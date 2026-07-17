@@ -9,7 +9,7 @@ import { WebSocketServer } from "ws";
 import pty from "node-pty";
 import { homedir } from "os";
 import { existsSync } from "fs";
-import { execSync, execFileSync } from "child_process";
+import { execFileSync } from "child_process";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 
@@ -61,6 +61,7 @@ function listManagedTmuxSessions() {
 /**
  * Kill a tmux session by name.
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function killTmuxSession(name) {
   try {
     execFileSync("tmux", ["-f", TMUX_CONF, "kill-session", "-t", name], {

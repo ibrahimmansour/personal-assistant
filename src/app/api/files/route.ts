@@ -1474,6 +1474,73 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // ─── Upload (paste) file ────────────────────────────────────────────────
+    if (action === "upload") {
+      const destDir: string = body.destDir;
+      const fileName: string = body.fileName;
+      const dataBase64: string = body.data; // base64-encoded file content
+
+      if (!destDir || !fileName || !dataBase64) {
+        return Response.json({ error: "Missing destDir, fileName, or data" }, { status: 400 });
+      }
+
+      const resolvedDir = destDir.startsWith("~")
+        ? path.join(os.homedir(), destDir.slice(1))
+        : destDir;
+      const absDir = path.resolve(resolvedDir);
+
+      // Ensure destination directory exists
+      try {
+        const stat = await fs.stat(absDir);
+        if (!stat.isDirectory()) {
+          return Response.json({ error: "Destination is not a directory" }, { status: 400 });
+        }
+      } catch {
+        return Response.json({ error: "Destination directory does not exist" }, { status: 404 });
+      }
+
+      // Sanitize filename (remove path separators)
+      const safeName = path.basename(fileName);
+      if (!safeName) {
+        return Response.json({ error: "Invalid file name" }, { status: 400 });
+      }
+
+      let finalPath = path.join(absDir, safeName);
+
+      // If file already exists, append a number to avoid overwriting
+      try {
+        await fs.access(finalPath);
+        // File exists — find a unique name
+        const ext = path.extname(safeName);
+        const base = path.basename(safeName, ext);
+        let counter = 1;
+        while (true) {
+          finalPath = path.join(absDir, `${base} (${counter})${ext}`);
+          try {
+            await fs.access(finalPath);
+            counter++;
+          } catch {
+            break; // this name is available
+          }
+        }
+      } catch {
+        // File doesn't exist — use original name
+      }
+
+      // Decode base64 and write
+      const buffer = Buffer.from(dataBase64, "base64");
+      await fs.writeFile(finalPath, buffer);
+      const fileStat = await fs.stat(finalPath);
+
+      return Response.json({
+        uploaded: true,
+        path: finalPath,
+        name: path.basename(finalPath),
+        size: fileStat.size,
+        modified: fileStat.mtime.toISOString(),
+      });
+    }
+
     return Response.json({ error: `Unknown action: ${action}` }, { status: 400 });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";

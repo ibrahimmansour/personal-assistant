@@ -5,6 +5,30 @@ import { getConfigEnv } from "@/lib/config";
 
 const execFileAsync = promisify(execFile);
 
+interface GitHubPRItem {
+  id: number;
+  number: number;
+  title: string;
+  repository_url: string;
+  pull_request?: { merged_at: string | null };
+  draft?: boolean;
+  state: string;
+  user: { login: string; avatar_url: string };
+  html_url: string;
+  created_at: string;
+  updated_at: string;
+  comments: number;
+  labels: { name: string; color: string }[];
+}
+
+interface GitHubPRDetail {
+  review_comments?: number;
+  additions?: number;
+  deletions?: number;
+  base?: { ref: string };
+  head?: { ref: string };
+}
+
 async function getGithubComToken(): Promise<string> {
   const token = await getConfigEnv("GITHUB_COM_TOKEN");
   if (token) return token;
@@ -59,7 +83,8 @@ function extractRepoName(repositoryUrl: string): string {
   return match ? match[1] : repositoryUrl;
 }
 
-function timeAgo(dateStr: string): string {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function _timeAgo(dateStr: string): string {
   const now = new Date();
   const date = new Date(dateStr);
   const diffMs = now.getTime() - date.getTime();
@@ -95,20 +120,20 @@ export async function GET(request: NextRequest) {
       `/search/issues?q=author:${username}+type:pr+sort:updated&per_page=25`
     );
 
-    const allPRs = authoredRes.items || [];
+    const allPRs: GitHubPRItem[] = authoredRes.items || [];
 
     // Fetch PR details in parallel
     const prDetails = await Promise.allSettled(
-      allPRs.map((pr: any) => {
+      allPRs.map((pr: GitHubPRItem) => {
         const repo = extractRepoName(pr.repository_url);
         return githubFetch(api, token, `/repos/${repo}/pulls/${pr.number}`);
       })
     );
 
-    const enrichedPRs = allPRs.map((pr: any, index: number) => {
+    const enrichedPRs = allPRs.map((pr: GitHubPRItem, index: number) => {
       const detail =
         prDetails[index].status === "fulfilled"
-          ? (prDetails[index] as PromiseFulfilledResult<any>).value
+          ? (prDetails[index] as PromiseFulfilledResult<GitHubPRDetail>).value
           : null;
 
       const isMerged = pr.pull_request?.merged_at != null;
@@ -134,7 +159,7 @@ export async function GET(request: NextRequest) {
         comments: pr.comments + (detail?.review_comments || 0),
         additions: detail?.additions || 0,
         deletions: detail?.deletions || 0,
-        labels: (pr.labels || []).map((l: any) => ({
+        labels: (pr.labels || []).map((l) => ({
           name: l.name,
           color: `#${l.color}`,
         })),
@@ -145,7 +170,7 @@ export async function GET(request: NextRequest) {
     });
 
     // Sort by repo name
-    enrichedPRs.sort((a: any, b: any) => {
+    enrichedPRs.sort((a: { repoShort: string }, b: { repoShort: string }) => {
       const repoCompare = a.repoShort.localeCompare(b.repoShort);
       if (repoCompare !== 0) return repoCompare;
       return 0;

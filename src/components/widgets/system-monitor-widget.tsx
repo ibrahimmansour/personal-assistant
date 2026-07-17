@@ -17,7 +17,6 @@ import {
   Search,
   X,
   Skull,
-  Info,
   ArrowUpDown,
   ChevronDown,
   ChevronRight,
@@ -26,7 +25,6 @@ import {
   RefreshCw,
   Pause,
   Play,
-  Eye,
   Layers,
   Plus,
   Trash2,
@@ -398,7 +396,8 @@ export function SystemMonitorWidget() {
   const [processDetail, setProcessDetail] = useState<ProcessDetail | null>(null);
   const [killConfirm, setKillConfirm] = useState<number | null>(null);
   const [killMessage, setKillMessage] = useState<string | null>(null);
-  const [processExpanded, setProcessExpanded] = useState<Set<number>>(new Set());
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const [processExpanded, _setProcessExpanded] = useState<Set<number>>(new Set());
 
   // Swap management state
   const [swapInfo, setSwapInfo] = useState<{

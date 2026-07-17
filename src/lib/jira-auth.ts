@@ -10,7 +10,7 @@
  * Ported from prompt-kit/sap-auth to remove external dependency.
  */
 
-import { readFile, writeFile, mkdir } from "fs/promises";
+import { readFile, writeFile } from "fs/promises";
 import { existsSync, mkdirSync, readFileSync, copyFileSync, unlinkSync } from "fs";
 import { join } from "path";
 import { homedir, tmpdir, platform } from "os";
@@ -151,7 +151,7 @@ export async function validateCookies(
     if (!response.ok) return null;
 
     const text = await response.text();
-    let data: any;
+    let data: { name?: string; displayName?: string; emailAddress?: string };
     try {
       data = JSON.parse(text);
     } catch {
@@ -369,9 +369,11 @@ function decryptCookieValue(encrypted: Buffer, key: Buffer): string {
  * Requires Node.js 22+ for node:sqlite.
  */
 export function extractChromeCookies(): string | null {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let DatabaseSync: any;
   try {
     const moduleName = /* turbopackIgnore: true */ "node:sqlite";
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     ({ DatabaseSync } = require(moduleName));
   } catch {
     return null; // node:sqlite not available
@@ -397,7 +399,7 @@ export function extractChromeCookies(): string | null {
 
     const db = new DatabaseSync(tmpDb, { readOnly: true });
 
-    let rows: any[];
+    let rows: { name: string; encrypted_value: Buffer | null; value?: string }[];
     try {
       rows = db
         .prepare(

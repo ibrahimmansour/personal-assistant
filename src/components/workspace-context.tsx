@@ -8,7 +8,7 @@ import React, {
   useEffect,
   useRef,
 } from "react";
-import type { Layout, LayoutItem } from "react-grid-layout";
+import type { Layout } from "react-grid-layout";
 import type { WidgetType } from "@/types/widget";
 import { useProfile, type ProfileId } from "@/components/profile-context";
 
@@ -184,7 +184,8 @@ function getDefaultWorkspaces(profile: ProfileId): Workspace[] {
   ];
 }
 
-function getDefaultFocusCombos(profile: ProfileId): FocusCombo[] {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function getDefaultFocusCombos(_profile: ProfileId): FocusCombo[] {
   return [
     {
       id: "terminal-files",
@@ -357,6 +358,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
           ...repairedWorkspaces,
         ];
       }
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setWorkspaces(repairedWorkspaces);
       setActiveWorkspaceId(saved.activeWorkspaceId);
       setFocusCombos(saved.focusCombos);
