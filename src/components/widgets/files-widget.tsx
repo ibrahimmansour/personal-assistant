@@ -85,6 +85,7 @@ import { useWidgetNavFor } from "@/components/widget-nav-context";
 import { TerminalPanel } from "@/components/terminal-panel";
 import Editor from "@monaco-editor/react";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -3811,6 +3812,47 @@ function VscodeDatabasePanel({
   );
 }
 
+function MarkdownPreview({ content }: { content: string }) {
+  return (
+    <div className="h-full w-full overflow-auto bg-background">
+      <div
+        className={cn(
+          "mx-auto max-w-3xl px-8 py-6 text-sm leading-relaxed text-foreground",
+          "prose prose-sm dark:prose-invert max-w-none",
+          // Headings
+          "[&_h1]:text-2xl [&_h1]:font-bold [&_h1]:mt-6 [&_h1]:mb-4 [&_h1]:pb-1.5 [&_h1]:border-b [&_h1]:border-border",
+          "[&_h2]:text-xl [&_h2]:font-semibold [&_h2]:mt-6 [&_h2]:mb-3 [&_h2]:pb-1 [&_h2]:border-b [&_h2]:border-border",
+          "[&_h3]:text-lg [&_h3]:font-semibold [&_h3]:mt-5 [&_h3]:mb-2",
+          "[&_h4]:text-base [&_h4]:font-semibold [&_h4]:mt-4 [&_h4]:mb-2",
+          "[&_h5]:text-sm [&_h5]:font-semibold [&_h6]:text-sm [&_h6]:font-semibold",
+          // Paragraphs & lists
+          "[&_p]:my-3 [&_ul]:my-3 [&_ul]:pl-6 [&_ul]:list-disc [&_ol]:my-3 [&_ol]:pl-6 [&_ol]:list-decimal [&_li]:my-1",
+          // Links
+          "[&_a]:text-primary [&_a]:underline [&_a]:underline-offset-2 hover:[&_a]:text-primary/80",
+          // Inline code
+          "[&_code]:text-[0.85em] [&_code]:bg-muted [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded [&_code]:font-mono",
+          // Code blocks
+          "[&_pre]:bg-muted/60 [&_pre]:border [&_pre]:border-border [&_pre]:rounded-md [&_pre]:p-3 [&_pre]:my-3 [&_pre]:overflow-x-auto",
+          "[&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:text-[0.8rem]",
+          // Blockquotes
+          "[&_blockquote]:border-l-4 [&_blockquote]:border-border [&_blockquote]:pl-4 [&_blockquote]:italic [&_blockquote]:text-muted-foreground [&_blockquote]:my-3",
+          // Tables (GFM)
+          "[&_table]:my-3 [&_table]:w-full [&_table]:border-collapse [&_table]:text-[0.85em]",
+          "[&_th]:border [&_th]:border-border [&_th]:bg-muted/40 [&_th]:px-3 [&_th]:py-1.5 [&_th]:text-left [&_th]:font-semibold",
+          "[&_td]:border [&_td]:border-border [&_td]:px-3 [&_td]:py-1.5",
+          // Horizontal rule & images
+          "[&_hr]:my-6 [&_hr]:border-border",
+          "[&_img]:max-w-full [&_img]:rounded-md [&_img]:my-3",
+          // Task lists (GFM)
+          "[&_input[type=checkbox]]:mr-1.5 [&_li:has(input[type=checkbox])]:list-none [&_li:has(input[type=checkbox])]:-ml-5"
+        )}
+      >
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+      </div>
+    </div>
+  );
+}
+
 function VscodeLayout({
   rootPath,
   gitStatus,
@@ -3832,6 +3874,8 @@ function VscodeLayout({
   const [activeFileIdx, setActiveFileIdx] = useState(-1);
   const [explorerNodes, setExplorerNodes] = useState<TreeNode[]>([]);
   const [saveStatus, setSaveStatus] = useState<"saved" | "error" | null>(null);
+  // Markdown preview: "off" = editor only, "side" = editor + preview, "preview" = preview only
+  const [mdPreview, setMdPreview] = useState<"off" | "side" | "preview">("off");
 
   // Commit state
   const [commitMsg, setCommitMsg] = useState("");
@@ -3970,6 +4014,7 @@ function VscodeLayout({
 
   // Active file
   const activeFile = activeFileIdx >= 0 ? openFiles[activeFileIdx] : null;
+  const isMarkdown = !!activeFile && /\.(md|markdown|mdx)$/i.test(activeFile.name);
 
   // Activity bar items
   const activityItems: { id: VscodeSidebarPanel; icon: React.ReactNode; label: string }[] = [
@@ -4287,6 +4332,35 @@ function VscodeLayout({
                 {saveStatus === "saved" ? "Saved" : "Save failed"}
               </span>
             )}
+            {/* Markdown preview toggles (only for markdown files) */}
+            {isMarkdown && (
+              <div className="ml-auto flex items-center gap-0.5 pr-1 shrink-0">
+                <button
+                  onClick={() => setMdPreview((p) => (p === "side" ? "off" : "side"))}
+                  className={cn(
+                    "p-1 rounded transition-colors",
+                    mdPreview === "side"
+                      ? "text-primary bg-primary/10"
+                      : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                  )}
+                  title="Open preview to the side"
+                >
+                  <Columns2 className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  onClick={() => setMdPreview((p) => (p === "preview" ? "off" : "preview"))}
+                  className={cn(
+                    "p-1 rounded transition-colors",
+                    mdPreview === "preview"
+                      ? "text-primary bg-primary/10"
+                      : "text-muted-foreground hover:text-foreground hover:bg-muted"
+                  )}
+                  title="Open preview"
+                >
+                  <Eye className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -4304,12 +4378,30 @@ function VscodeLayout({
                 }}
               />
             ) : (
-              <MonacoEditorPanel
-                content={activeFile.content}
-                extension={activeFile.extension}
-                filePath={activeFile.path}
-                onSave={saveActiveFile}
-              />
+              isMarkdown && mdPreview === "preview" ? (
+                <MarkdownPreview content={activeFile.content} />
+              ) : isMarkdown && mdPreview === "side" ? (
+                <div className="flex h-full w-full min-h-0">
+                  <div className="flex-1 min-w-0 h-full border-r border-border">
+                    <MonacoEditorPanel
+                      content={activeFile.content}
+                      extension={activeFile.extension}
+                      filePath={activeFile.path}
+                      onSave={saveActiveFile}
+                    />
+                  </div>
+                  <div className="flex-1 min-w-0 h-full">
+                    <MarkdownPreview content={activeFile.content} />
+                  </div>
+                </div>
+              ) : (
+                <MonacoEditorPanel
+                  content={activeFile.content}
+                  extension={activeFile.extension}
+                  filePath={activeFile.path}
+                  onSave={saveActiveFile}
+                />
+              )
             )
           ) : (
             <div className="flex flex-col items-center justify-center h-full gap-3 text-muted-foreground">

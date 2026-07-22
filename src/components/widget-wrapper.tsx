@@ -102,6 +102,11 @@ export function WidgetWrapper({
   const [splitWidget, setSplitWidget] = useState<WidgetType | null>(null);
   const [showSplitPicker, setShowSplitPicker] = useState(false);
   const splitPickerRef = useRef<HTMLDivElement>(null);
+  // Width (%) of the second (split/side) panel. Adjustable via the divider.
+  const [splitRatio, setSplitRatio] = useState(45);
+  const [isSplitDragging, setIsSplitDragging] = useState(false);
+  const splitContainerRef = useRef<HTMLDivElement>(null);
+  const splitDragStartRef = useRef<{ pos: number; ratio: number } | null>(null);
   const fullscreenRef = useRef<HTMLDivElement>(null);
   const isExpandedRef = useRef(false);
   const { setExpandedWidget, collapseSeq } = useCommandPalette();
@@ -314,6 +319,41 @@ export function WidgetWrapper({
 
   const hasSplit = splitWidget || sidePanel;
 
+  // Divider drag handler for the split view. Uses Pointer Events so it works
+  // for both mouse and touch. The second panel sits on the right, so dragging
+  // the pointer left (negative delta) widens it.
+  const handleSplitDividerPointerDown = useCallback((e: React.PointerEvent) => {
+    e.preventDefault();
+    if (!splitContainerRef.current) return;
+    const target = e.currentTarget as HTMLElement;
+    target.setPointerCapture(e.pointerId);
+
+    const containerWidth = splitContainerRef.current.getBoundingClientRect().width;
+    splitDragStartRef.current = { pos: e.clientX, ratio: splitRatio };
+    setIsSplitDragging(true);
+
+    function onPointerMove(ev: PointerEvent) {
+      if (!splitDragStartRef.current) return;
+      const delta = ev.clientX - splitDragStartRef.current.pos;
+      const deltaPercent = (delta / containerWidth) * 100;
+      // Dragging left (negative delta) increases the right panel width.
+      const next = Math.max(20, Math.min(80, splitDragStartRef.current.ratio - deltaPercent));
+      setSplitRatio(next);
+    }
+
+    function onPointerUp() {
+      setIsSplitDragging(false);
+      splitDragStartRef.current = null;
+      target.removeEventListener("pointermove", onPointerMove);
+      target.removeEventListener("pointerup", onPointerUp);
+      target.removeEventListener("pointercancel", onPointerUp);
+    }
+
+    target.addEventListener("pointermove", onPointerMove);
+    target.addEventListener("pointerup", onPointerUp);
+    target.addEventListener("pointercancel", onPointerUp);
+  }, [splitRatio]);
+
   // ─── Mobile gesture: swipe-down to dismiss expanded widget ───
   // Only active in the expanded overlay. We translate the card downward as
   // the finger moves so the dismissal feels physical.
@@ -372,7 +412,13 @@ export function WidgetWrapper({
             className="fixed inset-0 z-[200] flex items-center justify-center p-0 bg-card"
           >
             {/* Expanded content — split view when sidePanel or splitWidget is active */}
-            <div className="relative z-10 w-full h-full flex gap-3 max-w-full max-h-full">
+            <div
+              ref={splitContainerRef}
+              className={cn(
+                "relative z-10 w-full h-full flex max-w-full max-h-full",
+                hasSplit ? "gap-0" : "gap-3"
+              )}
+            >
               {/* Main card */}
               <Card
                 ref={dismissSwipeRef as React.RefObject<HTMLDivElement>}
@@ -406,30 +452,62 @@ export function WidgetWrapper({
 
               {/* Dynamic split panel from picker (hidden on mobile) */}
               {SplitComponent && (
-                <Card className="hidden md:flex w-[45%] min-w-[350px] max-w-[600px] h-full shrink-0 flex-col overflow-hidden border-border shadow-2xl bg-card">
-                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 px-5 pt-4">
-                    <div className="flex items-center gap-2">
-                      <CardTitle className="text-base font-semibold">{widgetLabels[splitWidget!]}</CardTitle>
-                    </div>
-                    <button
-                      onClick={() => setSplitWidget(null)}
-                      className="text-muted-foreground hover:text-foreground transition-colors p-2 md:p-1 rounded-md hover:bg-muted"
-                      title="Close split panel"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </button>
-                  </CardHeader>
-                  <CardContent className="flex-1 overflow-auto px-5 pb-4">
-                    <SplitComponent />
-                  </CardContent>
-                </Card>
+                <>
+                  {/* Draggable divider */}
+                  <div
+                    onPointerDown={handleSplitDividerPointerDown}
+                    className={cn(
+                      "hidden md:flex shrink-0 w-2 h-full cursor-col-resize items-center justify-center group touch-none",
+                      isSplitDragging && "bg-primary/20"
+                    )}
+                    title="Drag to resize"
+                  >
+                    <div className="w-0.5 h-10 rounded-full bg-border group-hover:bg-primary/50 transition-colors" />
+                  </div>
+                  <Card
+                    style={{ width: `${splitRatio}%` }}
+                    className="hidden md:flex min-w-[280px] h-full shrink-0 flex-col overflow-hidden border-border shadow-2xl bg-card"
+                  >
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 px-5 pt-4">
+                      <div className="flex items-center gap-2">
+                        <CardTitle className="text-base font-semibold">{widgetLabels[splitWidget!]}</CardTitle>
+                      </div>
+                      <button
+                        onClick={() => setSplitWidget(null)}
+                        className="text-muted-foreground hover:text-foreground transition-colors p-2 md:p-1 rounded-md hover:bg-muted"
+                        title="Close split panel"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </CardHeader>
+                    <CardContent className="flex-1 overflow-auto px-5 pb-4">
+                      <SplitComponent />
+                    </CardContent>
+                  </Card>
+                </>
               )}
 
               {/* Side panel (e.g. terminal from files widget) - hidden on mobile */}
               {!SplitComponent && sidePanel && (
-                <div className="hidden md:block w-[45%] min-w-[350px] max-w-[600px] h-full shrink-0">
-                  {sidePanel}
-                </div>
+                <>
+                  {/* Draggable divider */}
+                  <div
+                    onPointerDown={handleSplitDividerPointerDown}
+                    className={cn(
+                      "hidden md:flex shrink-0 w-2 h-full cursor-col-resize items-center justify-center group touch-none",
+                      isSplitDragging && "bg-primary/20"
+                    )}
+                    title="Drag to resize"
+                  >
+                    <div className="w-0.5 h-10 rounded-full bg-border group-hover:bg-primary/50 transition-colors" />
+                  </div>
+                  <div
+                    style={{ width: `${splitRatio}%` }}
+                    className="hidden md:block min-w-[280px] h-full shrink-0"
+                  >
+                    {sidePanel}
+                  </div>
+                </>
               )}
             </div>
           </div>,
