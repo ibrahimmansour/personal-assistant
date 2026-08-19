@@ -3501,9 +3501,9 @@ function ChatView({
               onClick={send}
               disabled={!input.trim() || (state.ws !== null && !state.alive)}
               title="Send (Enter)"
-              className={isMobile ? "h-8 w-8 p-0" : undefined}
+              className={isMobile ? "h-10 w-10 p-0" : undefined}
             >
-              <Send className="h-3.5 w-3.5" />
+              <Send className={isMobile ? "h-4 w-4" : "h-3.5 w-3.5"} />
             </Button>
             {!isMobile && (
               <Button

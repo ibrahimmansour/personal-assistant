@@ -47,6 +47,11 @@ export const viewport: Viewport = {
   initialScale: 1,
   // Allow user pinch-zoom for accessibility (was previously locked at 1).
   viewportFit: "cover",
+  // Shrink the layout viewport when the on-screen keyboard opens instead of
+  // panning it — without this, `fixed inset-0` overlays (expanded widgets)
+  // get scrolled so their header (with the collapse button) ends up off
+  // -screen above the keyboard on focus.
+  interactiveWidget: "resizes-content",
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#ffffff" },
     { media: "(prefers-color-scheme: dark)", color: "#0f172a" },
