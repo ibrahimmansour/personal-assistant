@@ -17,7 +17,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { useTerminal } from "@/components/terminal-context";
 import { useWidgetNavFor } from "@/components/widget-nav-context";
 
-const WS_URL = typeof window !== "undefined" ? `ws://${window.location.hostname}:4445` : "ws://localhost:4445";
+const WS_URL = typeof window !== "undefined" ? (window.location.protocol === "https:" ? `wss://${window.location.host}/pty` : `ws://${window.location.hostname}:4445`) : "ws://localhost:4445";
 
 // ─── Claude Icon ─────────────────────────────────────────────────────────────
 

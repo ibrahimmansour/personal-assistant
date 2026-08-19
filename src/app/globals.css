@@ -822,25 +822,22 @@
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
-/* Prevent text selection on touch-drag areas */
-@media (max-width: 767px) {
-  .layout {
-    touch-action: pan-y;
-  }
-
-  /* Smoother transitions for mobile grid items */
-  .react-grid-item {
-    transition: none !important;
-  }
-
-  /* Hide resize handles on mobile */
-  .react-resizable-handle {
-    display: none !important;
+/* Space reserved by <main> for the fixed mobile bottom nav. The nav is 3.5rem
+   tall *plus* its own safe-area-inset-bottom padding, so reserving a flat
+   pb-14 left the last widget partly under the nav on notched devices. */
+.pb-mobile-nav {
+  padding-bottom: calc(3.5rem + env(safe-area-inset-bottom, 0px));
+}
+@media (min-width: 768px) {
+  .pb-mobile-nav {
+    padding-bottom: 0;
   }
 }
 
-/* Custom xs breakpoint for very small devices */
-@media (min-width: 480px) and (max-width: 767px) {
+/* Custom xs breakpoint for very small devices.
+   Note: no max-width here — `hidden xs:inline` must stay visible on tablet and
+   desktop too, and nothing re-hides it at a larger breakpoint. */
+@media (min-width: 480px) {
   .xs\:inline {
     display: inline !important;
   }
@@ -882,10 +879,24 @@
   }
 }
 
-/* Safe-area padding for the AI panel when running as an installed PWA on
-   notched devices. */
-.safe-area-top {
-  padding-top: env(safe-area-inset-top, 0px);
+/* Top inset reserved by every surface that starts at the top of the window
+   (app header, mobile sidebar drawer, AI panel). Installed PWAs draw
+   edge-to-edge (`viewport-fit=cover` + a black-translucent iOS status bar), so
+   without this the first row of controls sits under the status bar / notch.
+   Phones get a small extra gutter on top of the reported inset because Android
+   standalone reports 0 yet still renders flush against the system bar. */
+:root {
+  --app-top-inset: env(safe-area-inset-top, 0px);
+}
+
+@media (max-width: 767px) {
+  :root {
+    --app-top-inset: calc(env(safe-area-inset-top, 0px) + 0.5rem);
+  }
+}
+
+.pt-app-top {
+  padding-top: var(--app-top-inset);
 }
 .safe-area-x {
   padding-left: env(safe-area-inset-left, 0px);

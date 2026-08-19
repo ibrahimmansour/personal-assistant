@@ -76,13 +76,13 @@ function MainContent() {
   }
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden">
+    <div className="flex flex-col h-[100dvh] overflow-hidden">
       <Header />
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 overflow-hidden min-h-0">
         <Sidebar />
         <main
           ref={mainSwipeRef}
-          className="flex-1 overflow-hidden pb-14 md:pb-0"
+          className="flex-1 overflow-hidden min-w-0 pb-mobile-nav"
         >
           {content}
         </main>

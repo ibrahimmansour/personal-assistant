@@ -14,9 +14,17 @@ The dashboard uses `react-grid-layout`'s `ResponsiveGridLayout` to arrange widge
 | Row height | 80px | Pixels per grid row unit |
 | Vertical margin | 16px | Gap between rows |
 | Horizontal margin | 16px | Gap between columns |
-| Breakpoints | `{ lg: 1200, md: 996, sm: 768, xs: 480, xxs: 0 }` | Responsive breakpoints |
+| Breakpoints | `{ lg: 1200, md: 996, sm: 768, xs: 0 }` | Responsive breakpoints |
 | Drag handle | `.drag-handle` | CSS class for drag-only area |
 | Resize handle | SE corner | Default resize handle position |
+
+> **Mobile (< 768px) bypasses this grid entirely.** `DashboardGrid` checks
+> `useIsMobile()` and returns a single-column flex stack of widgets instead of
+> mounting `ResponsiveGridLayout`, so none of the compaction, drag, or
+> breakpoint machinery below applies on a phone. Per-widget stack heights come
+> from `MOBILE_HEIGHT_CLASS`; stack order follows the `widgets` array
+> (`moveWidget()`), not layout `y`. The `xs` breakpoint above now only serves a
+> desktop viewport whose *container* is narrower than 768px.
 
 ## Component: `dashboard-grid.tsx` (308 lines)
 

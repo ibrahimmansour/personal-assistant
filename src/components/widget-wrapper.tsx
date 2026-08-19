@@ -409,7 +409,7 @@ export function WidgetWrapper({
         {createPortal(
           <div
             ref={fullscreenRef}
-            className="fixed inset-0 z-[200] flex items-center justify-center p-0 bg-card"
+            className="fixed inset-0 z-[200] flex items-center justify-center p-0 bg-card pt-app-top safe-area-bottom safe-area-x"
           >
             {/* Expanded content — split view when sidePanel or splitWidget is active */}
             <div

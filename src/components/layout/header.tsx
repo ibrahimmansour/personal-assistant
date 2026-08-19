@@ -80,15 +80,16 @@ export function Header() {
   }, [toggleAI]);
 
   return (
-    <header className="sticky top-0 z-50 border-b border-border/50 bg-background/80 backdrop-blur-xl">
+    <header className="sticky top-0 z-50 border-b border-border/50 bg-background/80 backdrop-blur-xl pt-app-top">
       <div className="flex items-center justify-between h-12 md:h-14 px-3 md:px-6">
         {/* Left side */}
         <div className="flex items-center gap-2 md:gap-3">
           {/* Mobile hamburger menu */}
           <button
-            className="inline-flex items-center justify-center h-8 w-8 p-0 rounded-md text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground md:hidden"
+            className="inline-flex items-center justify-center h-10 w-10 -ml-1 p-0 rounded-md text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground md:hidden"
             onClick={() => window.dispatchEvent(new Event("toggle-mobile-sidebar"))}
             title="Menu"
+            aria-label="Open menu"
           >
             <Menu className="h-5 w-5" />
           </button>
@@ -115,7 +116,7 @@ export function Header() {
                 key={p.id}
                 onClick={() => setActiveProfile(p.id)}
                 className={cn(
-                  "flex items-center gap-1.5 px-2 md:px-3 py-1.5 rounded-md text-xs font-medium transition-all",
+                  "flex items-center gap-1.5 px-2.5 md:px-3 py-2 md:py-1.5 rounded-md text-xs font-medium transition-all",
                   isActive
                     ? "bg-background text-foreground shadow-sm"
                     : "text-muted-foreground hover:text-foreground"
@@ -133,7 +134,8 @@ export function Header() {
         <div className="flex items-center gap-1">
           <button
             onClick={() => openSearch()}
-            className="inline-flex items-center gap-2 h-8 px-2 md:px-3 rounded-md text-xs text-muted-foreground bg-muted/50 border border-border/50 hover:bg-muted hover:text-foreground transition-colors"
+            className="inline-flex items-center gap-2 h-10 md:h-8 px-2.5 md:px-3 rounded-md text-xs text-muted-foreground bg-muted/50 border border-border/50 hover:bg-muted hover:text-foreground transition-colors"
+            aria-label="Search"
           >
             <Search className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">Search...</span>
@@ -144,7 +146,7 @@ export function Header() {
           <button
             onClick={toggleAI}
             className={cn(
-              "inline-flex items-center gap-1.5 h-8 px-2 md:px-2.5 rounded-md text-xs border transition-colors",
+              "inline-flex items-center gap-1.5 h-10 md:h-8 px-2.5 rounded-md text-xs border transition-colors",
               aiOpen
                 ? "text-primary bg-primary/10 border-primary/30 hover:bg-primary/15"
                 : "text-muted-foreground bg-muted/50 border-border/50 hover:bg-muted hover:text-foreground"
@@ -178,9 +180,10 @@ export function Header() {
             {isFullscreen ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
           </button>
           <button
-            className="inline-flex items-center justify-center h-8 w-8 p-0 rounded-md text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
+            className="inline-flex items-center justify-center h-10 w-10 md:h-8 md:w-8 p-0 rounded-md text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
             onClick={() => setSettingsOpen(true)}
             title="Settings"
+            aria-label="Settings"
           >
             <Settings className="h-4 w-4" />
           </button>
@@ -188,8 +191,9 @@ export function Header() {
             <Button
               variant="ghost"
               size="sm"
-              className="h-8 w-8 p-0"
+              className="h-10 w-10 md:h-8 md:w-8 p-0"
               onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+              aria-label="Toggle theme"
             >
               {theme === "dark" ? (
                 <Sun className="h-4 w-4" />

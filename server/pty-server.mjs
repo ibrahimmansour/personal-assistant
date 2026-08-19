@@ -8,7 +8,8 @@
 import { WebSocketServer } from "ws";
 import pty from "node-pty";
 import { homedir } from "os";
-import { existsSync } from "fs";
+import { existsSync, readFileSync } from "fs";
+import { createHmac, timingSafeEqual } from "crypto";
 import { execFileSync } from "child_process";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
@@ -20,9 +21,57 @@ const PORT = parseInt(process.env.PTY_PORT || "4445", 10);
 const TMUX_CONF = join(__dirname, "tmux.conf");
 const TMUX_SESSION_PREFIX = "pa-"; // prefix for our managed sessions
 
-const wss = new WebSocketServer({ port: PORT });
+const SESSION_COOKIE_NAME = "pa_session";
+const AUTH_FILE = join(homedir(), ".personal-assistant", "auth.json");
 
-console.log(`[pty-server] WebSocket PTY server listening on ws://localhost:${PORT}`);
+/**
+ * Validate the dashboard session cookie (pa_session).
+ * Same scheme as src/middleware.ts: HMAC-SHA256 over the cookie value,
+ * keyed by the stored password hash. Cookies are not port-scoped, so this
+ * works for both direct and reverse-proxied connections.
+ */
+function isValidSession(cookieHeader) {
+  let secret;
+  try {
+    secret = JSON.parse(readFileSync(AUTH_FILE, "utf-8")).passwordHash;
+  } catch {
+    return false;
+  }
+  if (!secret || !cookieHeader) return false;
+
+  const match = cookieHeader.match(new RegExp(SESSION_COOKIE_NAME + "=([^;]+)"));
+  if (!match) return false;
+
+  const signed = match[1];
+  const lastDot = signed.lastIndexOf(".");
+  if (lastDot === -1) return false;
+
+  const value = signed.substring(0, lastDot);
+  const providedSig = signed.substring(lastDot + 1);
+  const expectedSig = createHmac("sha256", secret).update(value).digest("hex");
+
+  try {
+    const a = Buffer.from(providedSig, "hex");
+    const b = Buffer.from(expectedSig, "hex");
+    if (a.length !== b.length) return false;
+    return timingSafeEqual(a, b);
+  } catch {
+    return false;
+  }
+}
+
+const HOST = process.env.PTY_HOST || "127.0.0.1";
+const wss = new WebSocketServer({
+  port: PORT,
+  host: HOST,
+  verifyClient: ({ req }, cb) => {
+    if (isValidSession(req.headers.cookie || null)) return cb(true);
+    console.warn("[pty-server] rejected unauthenticated connection from", req.socket.remoteAddress);
+    cb(false, 401, "Unauthorized");
+  },
+});
+
+console.log(`[pty-server] WebSocket PTY server listening on ws://${HOST}:${PORT}`);
 
 // ─── tmux helpers ────────────────────────────────────────────────────────────
 

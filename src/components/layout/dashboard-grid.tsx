@@ -8,16 +8,18 @@ import {
   type Layout,
   type LayoutItem,
 } from "react-grid-layout";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { WidgetType } from "@/types/widget";
 import { useDashboard } from "@/components/dashboard-context";
 import { useWidgetNav } from "@/components/widget-nav-context";
+import { useIsMobile } from "@/hooks/use-swipe";
 import {
   useWorkspace,
 } from "@/components/workspace-context";
 import { useProfile } from "@/components/profile-context";
 import { useAppearance } from "@/components/appearance-context";
 import { getDefaultResponsiveLayouts, widgetSections, sectionMeta, type WidgetSection } from "@/lib/dashboard-config";
+import { cn } from "@/lib/utils";
 
 import { ClockWidget } from "@/components/widgets/clock-widget";
 import { TasksWidget } from "@/components/widgets/tasks-widget";
@@ -54,6 +56,52 @@ const widgetComponents: Record<WidgetType, React.ComponentType> = {
   "claude-code": ClaudeCodeWidget,
   "system-monitor": SystemMonitorWidget,
   news: NewsWidget,
+};
+
+// ─── Mobile stack heights ────────────────────────────────────────────────────
+// On phones the grid is replaced by a single-column flex stack, so each widget
+// needs an explicit height: several children (terminal/xterm, Monaco, the
+// Claude Code transcript) size themselves from the parent box and collapse
+// inside an auto-height container. Values are tuned per widget type — a clock
+// in a 380px box is mostly empty, a terminal in a 200px box is unusable.
+// Kept as literal class strings so Tailwind's scanner picks them up.
+const MOBILE_HEIGHT_CLASS: Record<WidgetType, string> = {
+  clock: "h-[200px]",
+  weather: "h-[200px]",
+  reminders: "h-[280px]",
+  bookmarks: "h-[280px]",
+  "system-monitor": "h-[280px]",
+  calendar: "h-[340px]",
+  tasks: "h-[340px]",
+  email: "h-[380px]",
+  jira: "h-[380px]",
+  "github-prs": "h-[380px]",
+  news: "h-[380px]",
+  files: "h-[380px]",
+  notes: "h-[440px]",
+  terminal: "h-[440px]",
+  "claude-code": "h-[440px]",
+};
+
+// Same heights in pixels, for the rare case where the grid still has to render
+// a 1-column layout (container narrower than the sm breakpoint on a desktop
+// viewport, e.g. an expanded sidebar on a small window).
+const MOBILE_HEIGHT_PX: Record<WidgetType, number> = {
+  clock: 200,
+  weather: 200,
+  reminders: 280,
+  bookmarks: 280,
+  "system-monitor": 280,
+  calendar: 340,
+  tasks: 340,
+  email: 380,
+  jira: 380,
+  "github-prs": 380,
+  news: 380,
+  files: 380,
+  notes: 440,
+  terminal: 440,
+  "claude-code": 440,
 };
 
 export function DashboardGrid() {
@@ -282,50 +330,40 @@ export function DashboardGrid() {
     [updateLayouts, isDashboard]   // ← layouts intentionally removed
   );
 
-  // Detect mobile for different row height and disabling drag
-  const [isMobile, setIsMobile] = useState(false);
-  useEffect(() => {
-    const mql = window.matchMedia("(max-width: 767px)");
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setIsMobile(mql.matches);
-    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
-    mql.addEventListener("change", handler);
-    return () => mql.removeEventListener("change", handler);
-  }, []);
-
-  // Generate a single-column mobile layout
-  const mobileLayouts = useMemo(() => {
-    const items: LayoutItem[] = [];
-    let y = 0;
-    for (const widget of visibleWidgets) {
-      items.push({
-        i: widget.id,
-        x: 0,
-        y,
-        w: 1,
-        h: 4,
-        minW: 1,
-        minH: 3,
-      });
-      y += 4;
-    }
-    return items as Layout;
-  }, [visibleWidgets]);
+  // Phones get a plain flex stack instead of the grid (see the mobile branch
+  // below). Reads matchMedia synchronously on mount so the first paint is
+  // already correct — no grid-then-stack flash.
+  const isMobile = useIsMobile();
 
   // ─── Section labels: compute pixel positions from layout ─────────────
   // Density affects row height and margins
   const densityConfig = useMemo(() => {
-    if (isMobile) return { rowHeight: 70, margin: 12 };
     switch (appearance.density) {
       case "compact":    return { rowHeight: 64, margin: 10 };
       case "spacious":   return { rowHeight: 96, margin: 20 };
       case "comfortable":
       default:           return { rowHeight: 80, margin: 16 };
     }
-  }, [isMobile, appearance.density]);
+  }, [appearance.density]);
 
   const rowHeight = densityConfig.rowHeight;
   const marginY = densityConfig.margin;
+
+  // Single-column (xs) grid layout. Phones never reach it — they render the
+  // flex stack below — but the grid still needs an xs entry for the case where
+  // the *container* is narrower than the sm breakpoint on a desktop viewport.
+  // Heights are converted from MOBILE_HEIGHT_PX into row units.
+  const mobileLayouts = useMemo(() => {
+    const items: LayoutItem[] = [];
+    let y = 0;
+    for (const widget of visibleWidgets) {
+      const px = MOBILE_HEIGHT_PX[widget.type] ?? 340;
+      const h = Math.max(2, Math.round((px + marginY) / (rowHeight + marginY)));
+      items.push({ i: widget.id, x: 0, y, w: 1, h, minW: 1, minH: 2 });
+      y += h;
+    }
+    return items as Layout;
+  }, [visibleWidgets, rowHeight, marginY]);
 
   const sectionLabels = useMemo(() => {
     if (!isDashboard || isMobile) return [];
@@ -352,6 +390,36 @@ export function DashboardGrid() {
       }))
       .sort((a, b) => a.order - b.order);
   }, [isDashboard, isMobile, responsiveLayoutSet.lg, rowHeight, marginY]);
+
+  // ─── Mobile: flex stack instead of the grid ──────────────────────────────
+  // react-grid-layout absolutely-positions every item and recomputes the whole
+  // layout on each render. On a phone that buys nothing: there is one column,
+  // and drag/resize are disabled anyway. A flex column scrolls natively, drops
+  // the layout math, and keeps widget order in sync with moveWidget() (which
+  // reorders `widgets`, which is what visibleWidgets is derived from).
+  if (isMobile) {
+    return (
+      <div className="h-full overflow-y-auto overscroll-contain p-2 flex flex-col gap-2">
+        {visibleWidgets.map((widget) => {
+          const WidgetComponent = widgetComponents[widget.type];
+          return (
+            <div
+              key={widget.id}
+              data-widget-id={widget.id}
+              className={cn("shrink-0", MOBILE_HEIGHT_CLASS[widget.type] ?? "h-[340px]")}
+            >
+              <WidgetComponent />
+            </div>
+          );
+        })}
+        {visibleWidgets.length === 0 && (
+          <div className="flex items-center justify-center h-64 text-muted-foreground">
+            <p className="text-sm">No widgets in this workspace.</p>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-full">
@@ -388,13 +456,13 @@ export function DashboardGrid() {
             containerPadding={[0, 0]}
             compactor={activeCompactor}
             dragConfig={{
-              enabled: isDashboard && !isMobile,
+              enabled: isDashboard,
               handle: ".drag-handle",
               bounded: false,
               threshold: 3,
             }}
             resizeConfig={{
-              enabled: isDashboard && !isMobile,
+              enabled: isDashboard,
               handles: ["se"],
             }}
             onLayoutChange={handleLayoutChange}
