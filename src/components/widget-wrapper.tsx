@@ -409,7 +409,7 @@ export function WidgetWrapper({
         {createPortal(
           <div
             ref={fullscreenRef}
-            className="fixed inset-0 z-[200] flex items-center justify-center p-0 bg-card pt-app-top safe-area-bottom safe-area-x"
+            className="fixed inset-0 z-[200] flex items-center justify-center p-0 bg-card"
           >
             {/* Expanded content — split view when sidePanel or splitWidget is active */}
             <div
@@ -428,7 +428,10 @@ export function WidgetWrapper({
                     : undefined
                 }
                 className={cn(
-                  "h-full flex flex-col overflow-hidden border-border shadow-2xl bg-card touch-pan-y rounded-none",
+                  // Safe-area insets live on the card, not the overlay: the
+                  // overlay must stay edge-to-edge or the expanded widget
+                  // reads as a padded box instead of full screen.
+                  "h-full flex flex-col overflow-hidden border-border shadow-2xl bg-card touch-pan-y rounded-none pt-app-top safe-area-bottom safe-area-x",
                   hasSplit ? "flex-1 min-w-0" : "w-full",
                   className
                 )}
@@ -466,7 +469,7 @@ export function WidgetWrapper({
                   </div>
                   <Card
                     style={{ width: `${splitRatio}%` }}
-                    className="hidden md:flex min-w-[280px] h-full shrink-0 flex-col overflow-hidden border-border shadow-2xl bg-card"
+                    className="hidden md:flex min-w-[280px] h-full shrink-0 flex-col overflow-hidden border-border shadow-2xl bg-card pt-app-top safe-area-bottom"
                   >
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 px-5 pt-4">
                       <div className="flex items-center gap-2">
