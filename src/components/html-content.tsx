@@ -64,7 +64,9 @@ export function HtmlContent({ html, fallbackText, className }: HtmlContentProps)
     font-size: 12px;
     line-height: 1.6;
     word-wrap: break-word;
-    overflow-wrap: break-word;
+    /* anywhere, not break-word: it also shrinks min-content, so a table
+       cell holding a long URL stops widening the whole mail. */
+    overflow-wrap: anywhere;
     overflow-x: hidden;
   }
   body { padding: 2px 0; }
@@ -72,6 +74,7 @@ export function HtmlContent({ html, fallbackText, className }: HtmlContentProps)
   a:hover { opacity: 0.8; }
   img { max-width: 100%; height: auto; }
   table { max-width: 100%; border-collapse: collapse; font-size: inherit; }
+  pre { white-space: pre-wrap; }
   td, th { padding: 2px 4px; }
   pre, code {
     font-family: ui-monospace, "SF Mono", Monaco, "Cascadia Mono", monospace;

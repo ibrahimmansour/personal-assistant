@@ -229,7 +229,7 @@ export function StatusBoardView() {
 
   return (
     <div className="h-full p-3 md:p-5 flex flex-col gap-3 md:gap-5">
-      <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 md:grid-rows-2 auto-rows-[minmax(150px,auto)] md:auto-rows-auto gap-3 md:gap-5 min-h-0 overflow-auto overscroll-contain md:overflow-hidden">
+      <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 md:grid-rows-2 auto-rows-[minmax(150px,auto)] md:auto-rows-auto gap-3 md:gap-5 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain md:overflow-hidden">
         {/* ─── Clock ─────────────────────────────────────────── */}
         <div
           className="rounded-2xl border bg-card flex flex-col items-center justify-center cursor-pointer hover:bg-accent/5 transition-colors"

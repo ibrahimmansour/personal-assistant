@@ -93,7 +93,7 @@ export function Header() {
           >
             <Menu className="h-5 w-5" />
           </button>
-          <div className="flex items-center justify-center h-8 w-8 rounded-lg bg-primary text-primary-foreground">
+          <div className="header-brand-mark flex items-center justify-center h-8 w-8 rounded-lg bg-primary text-primary-foreground">
             <LayoutDashboard className="h-4 w-4" />
           </div>
           <div className="hidden sm:block">

@@ -448,7 +448,7 @@ export function WidgetWrapper({
                     {expandButton}
                   </div>
                 </CardHeader>
-                <CardContent className="flex-1 overflow-auto px-4 md:px-5 pb-3 md:pb-4">
+                <CardContent className="flex-1 overflow-y-auto overflow-x-hidden px-4 md:px-5 pb-3 md:pb-4">
                   {children}
                 </CardContent>
               </Card>
@@ -483,7 +483,7 @@ export function WidgetWrapper({
                         <X className="h-3.5 w-3.5" />
                       </button>
                     </CardHeader>
-                    <CardContent className="flex-1 overflow-auto px-5 pb-4">
+                    <CardContent className="flex-1 overflow-y-auto overflow-x-hidden px-5 pb-4">
                       <SplitComponent />
                     </CardContent>
                   </Card>
@@ -586,7 +586,7 @@ export function WidgetWrapper({
           )}
         </div>
       </CardHeader>
-      <CardContent className="flex-1 overflow-auto px-3 md:px-4 pb-2.5 md:pb-3">
+      <CardContent className="flex-1 overflow-y-auto overflow-x-hidden px-3 md:px-4 pb-2.5 md:pb-3">
         {children}
       </CardContent>
     </Card>

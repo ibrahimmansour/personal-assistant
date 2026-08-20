@@ -936,3 +936,52 @@ html.font-size-lg {
 html.font-size-xl {
   font-size: 18.88px; /* 1.18 × 16 */
 }
+
+/* ─── Reflow safety under zoom / font scaling ───────────────────────────── */
+/* Both knobs that scale the UI shrink the usable line width. The app-level
+   pinch zoom divides the layout viewport by the zoom factor (a 390px phone
+   lays out at 130 CSS px at 3x), and the font-size setting widens every string
+   without handing the viewport any extra room. Anything that can only be laid
+   out at its min-content width then pushes its container past the screen edge,
+   and reading one sentence costs a sideways scroll. Two defaults stop that
+   globally instead of widget by widget:
+
+   - `overflow-wrap: anywhere` lets long unbreakable runs (URLs, file paths,
+     tokens, IDs) break. `break-word` — what Tailwind's `break-words` emits —
+     is not enough on its own: it wraps the glyphs but still reports the whole
+     run as the element's min-content contribution, so a flex/grid parent keeps
+     sizing itself to the unbroken string. `anywhere` counts the break, so the
+     parent shrinks with it.
+   - `min-width: 0` overrides the automatic minimum size of flex and grid
+     children (`auto`, i.e. min-content), the other half of the same blowout —
+     most visibly under a `truncate`d label, whose min-content is the entire
+     un-ellipsised string. Explicit `min-w-*` utilities outrank this (a class
+     beats the universal selector) and `shrink-0` children keep their natural
+     width, so deliberate horizontal strips — the mobile Recent row, the
+     files-widget column browser — are untouched. */
+body {
+  overflow-wrap: anywhere;
+}
+
+body * {
+  min-width: 0;
+}
+
+/* Embedded media can't wrap, so cap it at its container instead. `canvas` is
+   deliberately absent: xterm sizes its canvases itself and capping them
+   squashes the terminal. */
+img,
+video,
+iframe {
+  max-width: 100%;
+}
+
+/* The header's decorative brand mark is the first thing to go when the layout
+   viewport gets narrow — which happens on a small phone *and* at any zoom
+   above ~1.05x, since media queries see the zoomed viewport. Dropping it keeps
+   the search / AI / theme controls on screen instead of clipped past the edge. */
+@media (max-width: 399px) {
+  .header-brand-mark {
+    display: none;
+  }
+}
