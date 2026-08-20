@@ -903,6 +903,18 @@
   padding-right: env(safe-area-inset-right, 0px);
 }
 
+/* ─── App-level pinch zoom ─────────────────────────────────────────────── */
+/* Installed PWAs (Chrome WebAPK, iOS home-screen apps) disable the browser's
+   own page zoom, so `usePinchZoom` drives this variable from a two-finger
+   gesture instead. `zoom` rather than `transform: scale` so the layout reflows
+   at the new scale — content keeps fitting the viewport width and text
+   re-rasterizes crisply. The class is only on <html> while that hook is in
+   charge; in a browser tab the native gesture handles zooming and this rule
+   never applies. */
+html.app-zoom {
+  zoom: var(--app-zoom, 1);
+}
+
 /* ─── Font size scaling ────────────────────────────────────────────────── */
 /* Applied via class on <html> element. Uses font-size on :root so all rem-based
    sizing throughout the app scales proportionally. */
