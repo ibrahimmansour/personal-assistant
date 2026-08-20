@@ -83,6 +83,56 @@ function isInsideVerticalScroller(el: EventTarget | null): boolean {
   return false;
 }
 
+// ─── Multi-touch guard ──────────────────────────────────────────────────────
+
+/**
+ * Live touch/pen pointer ids, tracked window-wide in the capture phase so a
+ * gesture hook always sees a second finger land before its own handlers run.
+ *
+ * Every hook below bails out while more than one pointer is down: a two-finger
+ * gesture belongs to the browser (pinch-zoom), not to our swipe/long-press
+ * handlers. Without this a pinch inside an expanded widget reads as a
+ * one-finger swipe — the card drags away and the widget dismisses instead of
+ * zooming — and an edge-started pinch hits `preventDefault()` in useEdgeSwipe,
+ * which cancels the zoom outright.
+ */
+const activePointers = new Set<number>();
+let pointerTrackers = 0;
+
+function handleGlobalPointerDown(e: PointerEvent) {
+  if (e.pointerType === "mouse") return;
+  // A primary pointer means no other finger is down, so anything still in the
+  // set leaked (pointerup is missed when an element is removed mid-gesture).
+  if (e.isPrimary) activePointers.clear();
+  activePointers.add(e.pointerId);
+}
+
+function handleGlobalPointerEnd(e: PointerEvent) {
+  activePointers.delete(e.pointerId);
+}
+
+/** Ref-counted subscription to the window-wide pointer tracker. */
+function trackPointers(): () => void {
+  if (pointerTrackers++ === 0) {
+    window.addEventListener("pointerdown", handleGlobalPointerDown, { passive: true, capture: true });
+    window.addEventListener("pointerup", handleGlobalPointerEnd, { passive: true, capture: true });
+    window.addEventListener("pointercancel", handleGlobalPointerEnd, { passive: true, capture: true });
+  }
+  return () => {
+    if (--pointerTrackers === 0) {
+      window.removeEventListener("pointerdown", handleGlobalPointerDown, { capture: true });
+      window.removeEventListener("pointerup", handleGlobalPointerEnd, { capture: true });
+      window.removeEventListener("pointercancel", handleGlobalPointerEnd, { capture: true });
+      activePointers.clear();
+    }
+  };
+}
+
+/** True while more than one finger is on the screen (pinch/rotate in progress). */
+function isMultiTouch(): boolean {
+  return activePointers.size > 1;
+}
+
 // ─── useEdgeSwipe ───────────────────────────────────────────────────────────
 
 export interface UseEdgeSwipeOptions {
@@ -116,7 +166,7 @@ export function useEdgeSwipe({
   enabled = true,
 }: UseEdgeSwipeOptions) {
   const isMobile = useIsMobile();
-  const startRef = useRef<{ x: number; y: number; t: number } | null>(null);
+  const startRef = useRef<{ x: number; y: number; t: number; id: number } | null>(null);
   const decidedRef = useRef<"horizontal" | "vertical" | null>(null);
 
   const onProgressRef = useRef(onProgress);
@@ -126,20 +176,37 @@ export function useEdgeSwipe({
 
   useEffect(() => {
     if (!enabled || !isMobile) return;
+    const untrack = trackPointers();
+
+    function abort() {
+      startRef.current = null;
+      decidedRef.current = null;
+      onProgressRef.current?.(0);
+    }
 
     function handlePointerDown(e: PointerEvent) {
       if (e.pointerType === "mouse") return; // only touch/pen
+      // Second finger down — hand the gesture back to the browser (pinch-zoom).
+      if (isMultiTouch()) {
+        abort();
+        return;
+      }
       const w = window.innerWidth;
       const inEdge =
         edge === "left" ? e.clientX <= edgeWidth : e.clientX >= w - edgeWidth;
       if (!inEdge) return;
       if (isInsideInteractive(e.target)) return;
-      startRef.current = { x: e.clientX, y: e.clientY, t: Date.now() };
+      startRef.current = { x: e.clientX, y: e.clientY, t: Date.now(), id: e.pointerId };
       decidedRef.current = null;
     }
 
     function handlePointerMove(e: PointerEvent) {
       if (!startRef.current) return;
+      if (e.pointerId !== startRef.current.id) return;
+      if (isMultiTouch()) {
+        abort();
+        return;
+      }
       const dx = e.clientX - startRef.current.x;
       const dy = e.clientY - startRef.current.y;
 
@@ -169,6 +236,7 @@ export function useEdgeSwipe({
 
     function handlePointerUp(e: PointerEvent) {
       if (!startRef.current) return;
+      if (e.pointerId !== startRef.current.id) return;
       const dx = e.clientX - startRef.current.x;
       const opening = edge === "left" ? dx : -dx;
       const elapsed = Date.now() - startRef.current.t;
@@ -195,6 +263,7 @@ export function useEdgeSwipe({
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
       window.removeEventListener("pointercancel", handlePointerCancel);
+      untrack();
     };
   }, [edge, edgeWidth, threshold, enabled, isMobile]);
 }
@@ -238,13 +307,25 @@ export function useSwipe<T extends HTMLElement = HTMLDivElement>(
     if (!isMobile) return;
     const el = ref.current;
     if (!el) return;
+    const untrack = trackPointers();
 
-    let start: { x: number; y: number; t: number } | null = null;
+    let start: { x: number; y: number; t: number; id: number } | null = null;
     let decided: "horizontal" | "vertical" | null = null;
+
+    function abort() {
+      start = null;
+      decided = null;
+      optsRef.current.onProgress?.({ dx: 0, dy: 0, axis: null });
+    }
 
     function handlePointerDown(e: PointerEvent) {
       if (e.pointerType === "mouse") return;
       if (optsRef.current.disabled) return;
+      // Second finger down — the browser owns this gesture (pinch-zoom).
+      if (isMultiTouch()) {
+        abort();
+        return;
+      }
       if (isInsideInteractive(e.target)) return;
       // Allow nested swipe handlers to opt out of an ancestor's swipe by
       // marking themselves with [data-swipe-stop].
@@ -268,12 +349,17 @@ export function useSwipe<T extends HTMLElement = HTMLDivElement>(
           return;
         }
       }
-      start = { x: e.clientX, y: e.clientY, t: Date.now() };
+      start = { x: e.clientX, y: e.clientY, t: Date.now(), id: e.pointerId };
       decided = null;
     }
 
     function handlePointerMove(e: PointerEvent) {
       if (!start) return;
+      if (e.pointerId !== start.id) return;
+      if (isMultiTouch()) {
+        abort();
+        return;
+      }
       const dx = e.clientX - start.x;
       const dy = e.clientY - start.y;
       if (decided === null) {
@@ -302,6 +388,7 @@ export function useSwipe<T extends HTMLElement = HTMLDivElement>(
 
     function handlePointerUp(e: PointerEvent) {
       if (!start) return;
+      if (e.pointerId !== start.id) return;
       const dx = e.clientX - start.x;
       const dy = e.clientY - start.y;
       const elapsed = Date.now() - start.t;
@@ -343,6 +430,7 @@ export function useSwipe<T extends HTMLElement = HTMLDivElement>(
       el.removeEventListener("pointermove", handlePointerMove);
       el.removeEventListener("pointerup", handlePointerUp);
       el.removeEventListener("pointercancel", handlePointerCancel);
+      untrack();
     };
   }, [isMobile]);
 
@@ -372,6 +460,7 @@ export function useLongPress<T extends HTMLElement = HTMLDivElement>(
     if (!isMobile) return;
     const el = ref.current;
     if (!el) return;
+    const untrack = trackPointers();
 
     let timer: ReturnType<typeof setTimeout> | null = null;
     let startX = 0;
@@ -388,6 +477,11 @@ export function useLongPress<T extends HTMLElement = HTMLDivElement>(
     function handlePointerDown(e: PointerEvent) {
       if (e.pointerType === "mouse") return;
       if (optsRef.current.disabled) return;
+      // A pinch is not a long press — drop any pending timer and stay out.
+      if (isMultiTouch()) {
+        clear();
+        return;
+      }
       if (isInsideInteractive(e.target)) return;
       startX = e.clientX;
       startY = e.clientY;
@@ -406,6 +500,10 @@ export function useLongPress<T extends HTMLElement = HTMLDivElement>(
 
     function handlePointerMove(e: PointerEvent) {
       if (!timer) return;
+      if (isMultiTouch()) {
+        clear();
+        return;
+      }
       const tol = optsRef.current.moveTolerance ?? 8;
       if (Math.abs(e.clientX - startX) > tol || Math.abs(e.clientY - startY) > tol) {
         clear();
@@ -433,6 +531,7 @@ export function useLongPress<T extends HTMLElement = HTMLDivElement>(
       el.removeEventListener("pointercancel", handlePointerUp);
       el.removeEventListener("contextmenu", handleContextMenu);
       clear();
+      untrack();
     };
   }, [isMobile]);
 

@@ -1767,6 +1767,10 @@ function ClaudeIcon({ className }: { className?: string }) {
 // ─── Main widget ─────────────────────────────────────────────────────────────
 
 export function ClaudeCodeWidget() {
+  // Phones run background-only: no PTY, no terminal view, no mode switch.
+  // A live `claude` PTY needs a terminal to be useful and there is no room
+  // for one at 390px, so mobile always takes the headless path.
+  const isMobile = useIsMobile();
   const [activeKey, setActiveKey] = useState<string | null>(null);
   const [view, setView] = useState<"chat" | "terminal">("chat");
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -1799,6 +1803,10 @@ export function ClaudeCodeWidget() {
     setSelectedModeState(mode);
     try { localStorage.setItem("claude-code-mode", mode); } catch {}
   }, []);
+
+  // Mode actually used when opening a session. The picker's choice only
+  // applies on desktop — mobile is pinned to "background".
+  const effectiveMode: "background" | "interactive" = isMobile ? "background" : selectedMode;
 
   // Chat UI theme. Pure visual preference, persisted locally.
   const [chatTheme, setChatTheme] = useState<ChatTheme>(() => {
@@ -1994,7 +2002,7 @@ export function ClaudeCodeWidget() {
       // Make this the active folder for the worktrees panel
       setActiveFolder(cwd);
       try { localStorage.setItem("claude-code-active-folder", cwd); } catch {}
-      if (selectedMode === "background") {
+      if (effectiveMode === "background") {
         // Headless session — no PTY. Pre-generate the session UUID so the SSE
         // tail can attach immediately and `claude -p --session-id` can create
         // the log. The first submitted prompt kicks off the actual run.
@@ -2009,6 +2017,7 @@ export function ClaudeCodeWidget() {
         setActiveKey(state.key);
         setView("chat");
         setShowFolderPicker(false);
+        if (isMobile) setSidebarOpen(false);
       } else {
         const state = openSession({ cwd, label: "New session", model: selectedModel, mode: "interactive" });
         // For brand-new interactive sessions we spawn the terminal eagerly so
@@ -2017,11 +2026,12 @@ export function ClaudeCodeWidget() {
         setActiveKey(state.key);
         setView("chat");
         setShowFolderPicker(false);
+        if (isMobile) setSidebarOpen(false);
       }
     } finally {
       setCreating(false);
     }
-  }, [persistRecentFolder, selectedModel, selectedMode]);
+  }, [persistRecentFolder, selectedModel, effectiveMode, isMobile]);
 
   // ── Set active folder (persist to localStorage) ────────────────────────
   const selectActiveFolder = useCallback((folder: string | null) => {
@@ -2072,6 +2082,7 @@ export function ClaudeCodeWidget() {
     if (existing) {
       setActiveKey(existing.key);
       setView("chat");
+      if (isMobile) setSidebarOpen(false);
       return;
     }
 
@@ -2082,7 +2093,7 @@ export function ClaudeCodeWidget() {
 
     const customName = getSessionMeta(s.sessionId).customName;
     const label = customName || s.summary || s.firstPrompt?.slice(0, 30) || s.sessionId.slice(0, 8);
-    const state = openSession({ cwd, resumeId: s.sessionId, label, hasLog: s.hasLog !== false, mode: selectedMode });
+    const state = openSession({ cwd, resumeId: s.sessionId, label, hasLog: s.hasLog !== false, mode: effectiveMode });
     // The API gives us the canonical project dir name; openSession's default
     // (encoded from cwd) may not match if the path or session moved. Set it
     // before SSE attaches.
@@ -2091,7 +2102,8 @@ export function ClaudeCodeWidget() {
     }
     setActiveKey(state.key);
     setView("chat");
-  }, [selectedMode]);
+    if (isMobile) setSidebarOpen(false);
+  }, [effectiveMode, isMobile]);
 
   const closeActiveSession = useCallback(() => {
     if (!activeKey) return;
@@ -2185,10 +2197,35 @@ export function ClaudeCodeWidget() {
 
   return (
     <WidgetWrapper title="Claude Code" icon={<ClaudeIcon className="h-4 w-4" />} widgetType="claude-code" expandRequested={expandRequested} onExpandHandled={onExpandHandled}>
-      <div className="flex h-full">
+      <div className="flex h-full relative">
         {/* Sidebar */}
         {sidebarOpen && (
-          <aside className="w-60 shrink-0 border-r border-border flex flex-col bg-muted/20">
+          <aside
+            className={cn(
+              "shrink-0 border-r border-border flex flex-col",
+              // On a phone the sidebar covers the chat instead of splitting the
+              // row: at 390px a 240px pane would squeeze the main pane (and its
+              // toggle button) out of reach. It closes itself once a session is
+              // picked or created.
+              isMobile
+                ? "absolute inset-0 z-20 w-full bg-background"
+                : "w-60 bg-muted/20"
+            )}
+          >
+            {isMobile && (
+              <div className="flex items-center justify-between pl-3 pr-1 pt-1.5 shrink-0">
+                <span className="text-xs font-semibold">Sessions</span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-10 w-10 p-0"
+                  onClick={() => setSidebarOpen(false)}
+                  title="Hide sessions"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            )}
             <div className="p-2 space-y-2 shrink-0">
               <Button
                 size="sm"
@@ -2342,7 +2379,7 @@ export function ClaudeCodeWidget() {
                   />
                 )}
 
-                {view === "chat" && (
+                {view === "chat" && !isMobile && (
                   <ModeToggle
                     value={active.mode}
                     onChange={switchActiveSessionMode}
@@ -2367,7 +2404,9 @@ export function ClaudeCodeWidget() {
                   </Button>
                 )}
 
-                <div className="flex items-center bg-muted rounded-md p-0.5">
+                {/* Chat/Terminal switch — desktop only. Mobile sessions are
+                    always background, so there is no terminal to switch to. */}
+                <div className={cn("items-center bg-muted rounded-md p-0.5", isMobile ? "hidden" : "flex")}>
                   <button
                     onClick={() => setView("chat")}
                     className={cn(
@@ -2898,6 +2937,7 @@ interface FolderPickerProps {
 }
 
 function FolderPickerPanel({ value, onChange, recent, onPick, onClose, mode, onModeChange }: FolderPickerProps) {
+  const isMobile = useIsMobile();
   const [browsing, setBrowsing] = useState(false);
   const [browsePath, setBrowsePath] = useState<string>("");
   const [entries, setEntries] = useState<{ name: string; isDir: boolean }[]>([]);
@@ -2965,14 +3005,16 @@ function FolderPickerPanel({ value, onChange, recent, onPick, onClose, mode, onM
 
         {/* Session mode: background (headless claude -p, chat only) vs
             interactive (live terminal). Chosen here so it applies to the
-            session being created. */}
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] uppercase font-semibold text-muted-foreground">Mode</span>
-          <ModeToggle value={mode} onChange={onModeChange} />
-          <span className="text-[10px] text-muted-foreground truncate">
-            {mode === "background" ? "Headless · chat only" : "Live terminal"}
-          </span>
-        </div>
+            session being created. Hidden on mobile, which is background-only. */}
+        {!isMobile && (
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] uppercase font-semibold text-muted-foreground">Mode</span>
+            <ModeToggle value={mode} onChange={onModeChange} />
+            <span className="text-[10px] text-muted-foreground truncate">
+              {mode === "background" ? "Headless · chat only" : "Live terminal"}
+            </span>
+          </div>
+        )}
 
         {recent.length > 0 && (
           <div>

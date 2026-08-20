@@ -46,6 +46,10 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   // Allow user pinch-zoom for accessibility (was previously locked at 1).
+  // Stated explicitly rather than left to the UA default so no build/runtime
+  // ever emits `user-scalable=no` on our behalf; no maximumScale, so the
+  // zoom ceiling stays the browser's.
+  userScalable: true,
   viewportFit: "cover",
   // Shrink the layout viewport when the on-screen keyboard opens instead of
   // panning it — without this, `fixed inset-0` overlays (expanded widgets)
