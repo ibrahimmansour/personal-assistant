@@ -431,7 +431,7 @@ export function WidgetWrapper({
                   // Safe-area insets live on the card, not the overlay: the
                   // overlay must stay edge-to-edge or the expanded widget
                   // reads as a padded box instead of full screen.
-                  "h-full flex flex-col overflow-hidden border-border shadow-2xl bg-card touch-pan-y rounded-none pt-app-top safe-area-bottom safe-area-x",
+                  "h-full flex flex-col overflow-hidden border-border shadow-2xl bg-card touch-pan-y touch-pinch-zoom rounded-none pt-app-top safe-area-bottom safe-area-x",
                   hasSplit ? "flex-1 min-w-0" : "w-full",
                   className
                 )}

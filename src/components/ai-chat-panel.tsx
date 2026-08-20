@@ -261,7 +261,7 @@ export function AIChatPanel() {
             ? { transform: `translateX(${dragX}px)`, transitionDuration: "0ms" }
             : undefined
         }
-        className="relative ml-auto w-[420px] max-w-[90vw] h-full bg-card border-l border-border shadow-2xl flex flex-col animate-in slide-in-from-right duration-200 touch-pan-y pt-app-top"
+        className="relative ml-auto w-[420px] max-w-[90vw] h-full bg-card border-l border-border shadow-2xl flex flex-col animate-in slide-in-from-right duration-200 touch-pan-y touch-pinch-zoom pt-app-top"
       >
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">

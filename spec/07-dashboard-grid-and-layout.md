@@ -19,11 +19,15 @@ The dashboard uses `react-grid-layout`'s `ResponsiveGridLayout` to arrange widge
 | Resize handle | SE corner | Default resize handle position |
 
 > **Mobile (< 768px) bypasses this grid entirely.** `DashboardGrid` checks
-> `useIsMobile()` and returns a single-column flex stack of widgets instead of
-> mounting `ResponsiveGridLayout`, so none of the compaction, drag, or
-> breakpoint machinery below applies on a phone. Per-widget stack heights come
-> from `MOBILE_HEIGHT_CLASS`; stack order follows the `widgets` array
-> (`moveWidget()`), not layout `y`. The `xs` breakpoint above now only serves a
+> `useIsMobile()` and renders `MobileHome` (`src/components/layout/mobile-home.tsx`)
+> instead of mounting `ResponsiveGridLayout`, so none of the compaction, drag, or
+> breakpoint machinery below applies on a phone. `MobileHome` is a section-grouped
+> icon launcher (Recent + the four `widgetSections` groups) rather than a stack of
+> every widget rendered inline — tapping a tile mounts only that widget and opens
+> it via `navigateTo()`, and it unmounts again once `expandedWidget` (from
+> `command-palette-context`) reports it collapsed. Tile order within a section
+> follows the `widgets` array (`moveWidget()`), driven by long-press-to-reorder on
+> the tile instead of the widget header. The `xs` breakpoint above now only serves a
 > desktop viewport whose *container* is narrower than 768px.
 
 ## Component: `dashboard-grid.tsx` (308 lines)

@@ -8,7 +8,8 @@
 |-----------|------|-------|---------|
 | Header | `layout/header.tsx` | 132 | Top navigation bar |
 | Sidebar | `layout/sidebar.tsx` | 707 | Left sidebar with workspaces and widget nav |
-| DashboardGrid | `layout/dashboard-grid.tsx` | 308 | Widget grid (react-grid-layout) |
+| DashboardGrid | `layout/dashboard-grid.tsx` | 308 | Widget grid (react-grid-layout); delegates to MobileHome below 768px |
+| MobileHome | `layout/mobile-home.tsx` | ~290 | Mobile default page: section-grouped icon launcher, opens one widget at a time |
 | WidgetSettings | `layout/widget-settings.tsx` | 111 | Widget toggle and layout controls |
 | AppearancePicker | `layout/appearance-picker.tsx` | 94 | Color theme + font picker dropdown |
 | TodayView | `views/today-view.tsx` | 498 | Morning briefing view |

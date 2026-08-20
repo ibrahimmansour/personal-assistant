@@ -375,7 +375,7 @@ export function Sidebar() {
           "hidden md:flex",
           sidebarExpanded ? "md:w-[200px]" : "md:w-[48px]",
           // Mobile: overlay drawer (visible when open OR while a finger-drag is in progress)
-          (mobileOpen || dragX !== null) && "!flex fixed inset-y-0 left-0 z-50 w-[260px] shadow-2xl touch-pan-y pt-app-top"
+          (mobileOpen || dragX !== null) && "!flex fixed inset-y-0 left-0 z-50 w-[260px] shadow-2xl touch-pan-y touch-pinch-zoom pt-app-top"
         )}
       >
         {/* ─── Workspace tabs ──────────────────────────────────── */}

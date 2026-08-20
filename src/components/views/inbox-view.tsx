@@ -336,7 +336,7 @@ export function InboxView() {
         <div
           ref={detailSwipeRef}
           data-swipe-stop
-          className="flex-1 flex flex-col overflow-hidden min-h-0 touch-pan-y"
+          className="flex-1 flex flex-col overflow-hidden min-h-0 touch-pan-y touch-pinch-zoom"
         >
           {/* Detail header */}
           <div className="shrink-0 flex items-center gap-2 px-4 py-2.5 border-b border-border/50">

@@ -19,7 +19,7 @@ import {
 import { useProfile } from "@/components/profile-context";
 import { useAppearance } from "@/components/appearance-context";
 import { getDefaultResponsiveLayouts, widgetSections, sectionMeta, type WidgetSection } from "@/lib/dashboard-config";
-import { cn } from "@/lib/utils";
+import { MobileHome } from "@/components/layout/mobile-home";
 
 import { ClockWidget } from "@/components/widgets/clock-widget";
 import { TasksWidget } from "@/components/widgets/tasks-widget";
@@ -58,32 +58,7 @@ const widgetComponents: Record<WidgetType, React.ComponentType> = {
   news: NewsWidget,
 };
 
-// ─── Mobile stack heights ────────────────────────────────────────────────────
-// On phones the grid is replaced by a single-column flex stack, so each widget
-// needs an explicit height: several children (terminal/xterm, Monaco, the
-// Claude Code transcript) size themselves from the parent box and collapse
-// inside an auto-height container. Values are tuned per widget type — a clock
-// in a 380px box is mostly empty, a terminal in a 200px box is unusable.
-// Kept as literal class strings so Tailwind's scanner picks them up.
-const MOBILE_HEIGHT_CLASS: Record<WidgetType, string> = {
-  clock: "h-[200px]",
-  weather: "h-[200px]",
-  reminders: "h-[280px]",
-  bookmarks: "h-[280px]",
-  "system-monitor": "h-[280px]",
-  calendar: "h-[340px]",
-  tasks: "h-[340px]",
-  email: "h-[380px]",
-  jira: "h-[380px]",
-  "github-prs": "h-[380px]",
-  news: "h-[380px]",
-  files: "h-[380px]",
-  notes: "h-[440px]",
-  terminal: "h-[440px]",
-  "claude-code": "h-[440px]",
-};
-
-// Same heights in pixels, for the rare case where the grid still has to render
+// Mobile stack heights in pixels, for the rare case where the grid still has to render
 // a 1-column layout (container narrower than the sm breakpoint on a desktop
 // viewport, e.g. an expanded sidebar on a small window).
 const MOBILE_HEIGHT_PX: Record<WidgetType, number> = {
@@ -391,34 +366,14 @@ export function DashboardGrid() {
       .sort((a, b) => a.order - b.order);
   }, [isDashboard, isMobile, responsiveLayoutSet.lg, rowHeight, marginY]);
 
-  // ─── Mobile: flex stack instead of the grid ──────────────────────────────
+  // ─── Mobile: icon launcher instead of the grid ───────────────────────────
   // react-grid-layout absolutely-positions every item and recomputes the whole
-  // layout on each render. On a phone that buys nothing: there is one column,
-  // and drag/resize are disabled anyway. A flex column scrolls natively, drops
-  // the layout math, and keeps widget order in sync with moveWidget() (which
-  // reorders `widgets`, which is what visibleWidgets is derived from).
+  // layout on each render — pointless on a single column with drag/resize
+  // disabled anyway. MobileHome renders a section-grouped icon grid and only
+  // mounts the widget the user actually taps open (via navigateTo(), the same
+  // mechanism the command palette uses to expand a widget from outside it).
   if (isMobile) {
-    return (
-      <div className="h-full overflow-y-auto overscroll-contain p-2 flex flex-col gap-2">
-        {visibleWidgets.map((widget) => {
-          const WidgetComponent = widgetComponents[widget.type];
-          return (
-            <div
-              key={widget.id}
-              data-widget-id={widget.id}
-              className={cn("shrink-0", MOBILE_HEIGHT_CLASS[widget.type] ?? "h-[340px]")}
-            >
-              <WidgetComponent />
-            </div>
-          );
-        })}
-        {visibleWidgets.length === 0 && (
-          <div className="flex items-center justify-center h-64 text-muted-foreground">
-            <p className="text-sm">No widgets in this workspace.</p>
-          </div>
-        )}
-      </div>
-    );
+    return <MobileHome visibleWidgets={visibleWidgets} widgetComponents={widgetComponents} />;
   }
 
   return (
