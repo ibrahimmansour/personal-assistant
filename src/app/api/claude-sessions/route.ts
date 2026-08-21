@@ -99,12 +99,29 @@ export async function GET(request: NextRequest) {
           let firstPrompt = "";
           let messageCount = 0;
           let realCwd = "";
+          // Title metadata the CLI appends as standalone JSONL records. It
+          // rewrites them over the session's life (the AI title is regenerated
+          // as the conversation moves on, a rename appends a new custom-title),
+          // so the last occurrence of each wins.
+          let aiTitle = "";
+          let customTitle = "";
+          let legacySummary = "";
 
           for (const line of lines) {
             try {
               const parsed = JSON.parse(line);
               if (parsed.type === "user" && parsed.message?.content && !firstPrompt) {
                 firstPrompt = extractUserText(parsed.message.content).slice(0, 200);
+              }
+              if (parsed.type === "ai-title" && typeof parsed.aiTitle === "string") {
+                aiTitle = parsed.aiTitle;
+              }
+              if (parsed.type === "custom-title" && typeof parsed.customTitle === "string") {
+                customTitle = parsed.customTitle;
+              }
+              // Older CLI builds wrote a `summary` record instead of `ai-title`.
+              if (parsed.type === "summary" && typeof parsed.summary === "string") {
+                legacySummary = parsed.summary;
               }
               // The JSONL records `cwd` on each user/assistant entry. Use the
               // first one we see — it's the canonical original path and avoids
@@ -118,9 +135,13 @@ export async function GET(request: NextRequest) {
             } catch {}
           }
 
+          // Same precedence the CLI's own /resume picker uses:
+          // custom (user rename) → AI-generated → legacy summary. The widget
+          // falls back to firstPrompt only when none of them exist.
+          const rawTitle = customTitle || aiTitle || legacySummary;
           allSessions.push({
             sessionId,
-            summary: "",
+            summary: isErrorSummary(rawTitle) ? "" : cleanTitle(rawTitle),
             firstPrompt: cleanTitle(firstPrompt),
             messageCount,
             created: fileStat.birthtime.toISOString(),
