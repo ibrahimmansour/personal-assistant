@@ -319,10 +319,10 @@ function ProgressBar({
   return (
     <div className="space-y-1">
       <div className="flex justify-between items-center">
-        <span className={cn("text-muted-foreground", size === "sm" ? "text-[10px]" : "text-xs")}>
+        <span className={cn("text-muted-foreground", size === "sm" ? "text-[0.625rem]" : "text-xs")}>
           {label}
         </span>
-        <span className={cn("font-mono tabular-nums", size === "sm" ? "text-[10px]" : "text-xs")}>
+        <span className={cn("font-mono tabular-nums", size === "sm" ? "text-[0.625rem]" : "text-xs")}>
           {detail || `${value}%`}
         </span>
       </div>
@@ -359,7 +359,7 @@ function StackedBar({ segments }: { segments: { label: string; value: number; co
       </div>
       <div className="flex flex-wrap gap-x-3 gap-y-0.5">
         {segments.filter((s) => s.value > 0).map((seg) => (
-          <div key={seg.label} className="flex items-center gap-1 text-[9px] text-muted-foreground">
+          <div key={seg.label} className="flex items-center gap-1 text-[0.5625rem] text-muted-foreground">
             <div className={cn("w-2 h-2 rounded-sm", seg.color)} />
             <span>{seg.label}</span>
             <span className="font-mono">{formatBytes(seg.value)}</span>
@@ -696,21 +696,21 @@ export function SystemMonitorWidget() {
         <div className="grid grid-cols-3 gap-3">
           <div className="flex flex-col items-center gap-1">
             <ProgressRing value={metrics.cpu.average} size={52} strokeWidth={5}>
-              <span className="text-[10px] font-bold tabular-nums">{metrics.cpu.average}%</span>
+              <span className="text-[0.625rem] font-bold tabular-nums">{metrics.cpu.average}%</span>
             </ProgressRing>
-            <span className="text-[9px] text-muted-foreground font-medium">CPU</span>
+            <span className="text-[0.5625rem] text-muted-foreground font-medium">CPU</span>
           </div>
           <div className="flex flex-col items-center gap-1">
             <ProgressRing value={metrics.memory.usedPercent} size={52} strokeWidth={5}>
-              <span className="text-[10px] font-bold tabular-nums">{metrics.memory.usedPercent}%</span>
+              <span className="text-[0.625rem] font-bold tabular-nums">{metrics.memory.usedPercent}%</span>
             </ProgressRing>
-            <span className="text-[9px] text-muted-foreground font-medium">RAM</span>
+            <span className="text-[0.5625rem] text-muted-foreground font-medium">RAM</span>
           </div>
           <div className="flex flex-col items-center gap-1">
             <ProgressRing value={metrics.disks[0]?.usedPercent || 0} size={52} strokeWidth={5}>
-              <span className="text-[10px] font-bold tabular-nums">{metrics.disks[0]?.usedPercent || 0}%</span>
+              <span className="text-[0.625rem] font-bold tabular-nums">{metrics.disks[0]?.usedPercent || 0}%</span>
             </ProgressRing>
-            <span className="text-[9px] text-muted-foreground font-medium">Disk</span>
+            <span className="text-[0.5625rem] text-muted-foreground font-medium">Disk</span>
           </div>
         </div>
 
@@ -719,15 +719,15 @@ export function SystemMonitorWidget() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5">
               <Cpu className="h-3 w-3 text-muted-foreground" />
-              <span className="text-[10px] text-muted-foreground">CPU History</span>
+              <span className="text-[0.625rem] text-muted-foreground">CPU History</span>
             </div>
-            <span className="text-[10px] font-mono tabular-nums">{metrics.cpu.average}%</span>
+            <span className="text-[0.625rem] font-mono tabular-nums">{metrics.cpu.average}%</span>
           </div>
           <Sparkline data={cpuHistory} width={280} height={28} className="w-full" />
         </div>
 
         {/* Stats grid */}
-        <div className="grid grid-cols-2 gap-2 text-[10px]">
+        <div className="grid grid-cols-2 gap-2 text-[0.625rem]">
           <div className="rounded-md border p-2 space-y-1">
             <div className="flex items-center gap-1 text-muted-foreground">
               <Zap className="h-3 w-3" />
@@ -772,7 +772,7 @@ export function SystemMonitorWidget() {
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between text-[9px] text-muted-foreground px-1">
+        <div className="flex items-center justify-between text-[0.5625rem] text-muted-foreground px-1">
           <span className="flex items-center gap-1">
             <Server className="h-3 w-3" />
             {metrics.system.uptime}
@@ -811,19 +811,19 @@ export function SystemMonitorWidget() {
           <div className="rounded-md border p-3 space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-xs font-medium">Overall Usage</span>
-              <Badge variant={metrics.cpu.average >= 80 ? "destructive" : "secondary"} className="text-[10px] h-4">
+              <Badge variant={metrics.cpu.average >= 80 ? "destructive" : "secondary"} className="text-[0.625rem] h-4">
                 {metrics.cpu.average}%
               </Badge>
             </div>
             <Sparkline data={cpuHistory} width={280} height={40} className="w-full" />
             {metrics.cpu.frequency && (
-              <div className="text-[10px] text-muted-foreground">
+              <div className="text-[0.625rem] text-muted-foreground">
                 Frequency: {metrics.cpu.frequency} MHz
               </div>
             )}
           </div>
 
-          <div className="text-[10px] text-muted-foreground px-1">
+          <div className="text-[0.625rem] text-muted-foreground px-1">
             {metrics.system.cpuModel} ({metrics.system.cpuCores} cores)
           </div>
 
@@ -842,7 +842,7 @@ export function SystemMonitorWidget() {
               {(["1m", "5m", "15m"] as const).map((key) => (
                 <div key={key}>
                   <div className="text-lg font-bold tabular-nums">{metrics.loadAverage[key]}</div>
-                  <div className="text-[10px] text-muted-foreground">{key.replace("m", " min")}</div>
+                  <div className="text-[0.625rem] text-muted-foreground">{key.replace("m", " min")}</div>
                 </div>
               ))}
             </div>
@@ -889,7 +889,7 @@ export function SystemMonitorWidget() {
                 <span className="text-muted-foreground">Pressure</span>
                 <Badge
                   variant={memory.pressure === "nominal" ? "secondary" : "destructive"}
-                  className="text-[9px] h-4"
+                  className="text-[0.5625rem] h-4"
                 >
                   {memory.pressure}
                 </Badge>
@@ -915,7 +915,7 @@ export function SystemMonitorWidget() {
 
           {/* Sparkline */}
           <div className="rounded-md border p-2 space-y-1">
-            <span className="text-[10px] text-muted-foreground">Memory History</span>
+            <span className="text-[0.625rem] text-muted-foreground">Memory History</span>
             <Sparkline data={memHistory} width={280} height={32} color="var(--chart-2)" className="w-full" />
           </div>
 
@@ -931,7 +931,7 @@ export function SystemMonitorWidget() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-5 px-1.5 text-[9px]"
+                    className="h-5 px-1.5 text-[0.5625rem]"
                     onClick={() => { setSwapAction("create"); fetchSwapInfo(); }}
                   >
                     <Plus className="h-3 w-3 mr-0.5" />
@@ -940,7 +940,7 @@ export function SystemMonitorWidget() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-5 px-1.5 text-[9px]"
+                    className="h-5 px-1.5 text-[0.5625rem]"
                     onClick={() => fetchSwapInfo()}
                   >
                     <Settings className="h-3 w-3" />
@@ -958,7 +958,7 @@ export function SystemMonitorWidget() {
               />
             )}
             {memory.swap.total === 0 && (
-              <div className="text-[10px] text-muted-foreground italic">
+              <div className="text-[0.625rem] text-muted-foreground italic">
                 No swap configured
               </div>
             )}
@@ -966,7 +966,7 @@ export function SystemMonitorWidget() {
             {/* Swap message */}
             {swapMessage && (
               <div className={cn(
-                "text-[10px] px-2 py-1.5 rounded border",
+                "text-[0.625rem] px-2 py-1.5 rounded border",
                 swapMessage.type === "error"
                   ? "text-destructive border-destructive/30 bg-destructive/5"
                   : "text-green-600 border-green-500/30 bg-green-500/5"
@@ -978,9 +978,9 @@ export function SystemMonitorWidget() {
             {/* Swap files list (Linux) */}
             {swapInfo && swapInfo.swapFiles.length > 0 && (
               <div className="space-y-1.5">
-                <span className="text-[10px] text-muted-foreground font-medium">Active Swap Files</span>
+                <span className="text-[0.625rem] text-muted-foreground font-medium">Active Swap Files</span>
                 {swapInfo.swapFiles.map((sf) => (
-                  <div key={sf.filename} className="flex items-center justify-between text-[10px] p-1.5 rounded border bg-muted/20">
+                  <div key={sf.filename} className="flex items-center justify-between text-[0.625rem] p-1.5 rounded border bg-muted/20">
                     <div className="flex-1 min-w-0">
                       <div className="font-mono truncate" title={sf.filename}>{sf.filename}</div>
                       <div className="text-muted-foreground">
@@ -991,7 +991,7 @@ export function SystemMonitorWidget() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-5 px-1.5 text-[9px]"
+                        className="h-5 px-1.5 text-[0.5625rem]"
                         onClick={() => {
                           setSwapAction("resize");
                           setSwapResizeTarget(sf.filename);
@@ -1003,7 +1003,7 @@ export function SystemMonitorWidget() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-5 px-1.5 text-[9px] text-destructive hover:text-destructive"
+                        className="h-5 px-1.5 text-[0.5625rem] text-destructive hover:text-destructive"
                         onClick={() => handleSwapRemove(sf.filename)}
                         disabled={swapLoading}
                       >
@@ -1018,7 +1018,7 @@ export function SystemMonitorWidget() {
             {/* Swappiness control */}
             {swapInfo && metrics.system.platform === "linux" && (
               <div className="space-y-1.5">
-                <span className="text-[10px] text-muted-foreground font-medium">Swappiness (vm.swappiness)</span>
+                <span className="text-[0.625rem] text-muted-foreground font-medium">Swappiness (vm.swappiness)</span>
                 <div className="flex items-center gap-2">
                   <Input
                     type="number"
@@ -1026,7 +1026,7 @@ export function SystemMonitorWidget() {
                     max={100}
                     value={swappinessValue}
                     onChange={(e) => setSwappinessValue(e.target.value)}
-                    className="h-6 w-16 text-[10px] font-mono"
+                    className="h-6 w-16 text-[0.625rem] font-mono"
                   />
                   <input
                     type="range"
@@ -1039,14 +1039,14 @@ export function SystemMonitorWidget() {
                   <Button
                     variant="secondary"
                     size="sm"
-                    className="h-5 px-2 text-[9px]"
+                    className="h-5 px-2 text-[0.5625rem]"
                     onClick={handleSwappinessChange}
                     disabled={swapLoading || parseInt(swappinessValue, 10) === swapInfo.swappiness}
                   >
                     Apply
                   </Button>
                 </div>
-                <div className="text-[9px] text-muted-foreground">
+                <div className="text-[0.5625rem] text-muted-foreground">
                   0 = avoid swap, 100 = swap aggressively (current: {swapInfo.swappiness})
                 </div>
               </div>
@@ -1055,25 +1055,25 @@ export function SystemMonitorWidget() {
             {/* Create swap form */}
             {swapAction === "create" && (
               <div className="space-y-2 p-2 rounded border bg-muted/20">
-                <span className="text-[10px] font-medium">Create New Swap</span>
+                <span className="text-[0.625rem] font-medium">Create New Swap</span>
                 <div className="grid grid-cols-2 gap-2">
                   <div className="space-y-0.5">
-                    <label className="text-[9px] text-muted-foreground">Size (MB)</label>
+                    <label className="text-[0.5625rem] text-muted-foreground">Size (MB)</label>
                     <Input
                       type="number"
                       min={64}
                       max={65536}
                       value={swapSizeMB}
                       onChange={(e) => setSwapSizeMB(e.target.value)}
-                      className="h-6 text-[10px] font-mono"
+                      className="h-6 text-[0.625rem] font-mono"
                     />
                   </div>
                   <div className="space-y-0.5">
-                    <label className="text-[9px] text-muted-foreground">Path</label>
+                    <label className="text-[0.5625rem] text-muted-foreground">Path</label>
                     <Input
                       value={swapPath}
                       onChange={(e) => setSwapPath(e.target.value)}
-                      className="h-6 text-[10px] font-mono"
+                      className="h-6 text-[0.625rem] font-mono"
                     />
                   </div>
                 </div>
@@ -1084,7 +1084,7 @@ export function SystemMonitorWidget() {
                       key={size}
                       onClick={() => setSwapSizeMB(String(size))}
                       className={cn(
-                        "px-1.5 py-0.5 rounded text-[9px] border",
+                        "px-1.5 py-0.5 rounded text-[0.5625rem] border",
                         parseInt(swapSizeMB, 10) === size
                           ? "bg-primary/10 text-primary border-primary/30"
                           : "hover:bg-muted/50 border-transparent"
@@ -1097,7 +1097,7 @@ export function SystemMonitorWidget() {
                 <div className="flex gap-1">
                   <Button
                     size="sm"
-                    className="h-6 text-[10px] px-3"
+                    className="h-6 text-[0.625rem] px-3"
                     onClick={handleSwapCreate}
                     disabled={swapLoading || !swapSizeMB || !swapPath}
                   >
@@ -1106,7 +1106,7 @@ export function SystemMonitorWidget() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-6 text-[10px] px-2"
+                    className="h-6 text-[0.625rem] px-2"
                     onClick={() => setSwapAction("none")}
                   >
                     Cancel
@@ -1118,18 +1118,18 @@ export function SystemMonitorWidget() {
             {/* Resize swap form */}
             {swapAction === "resize" && (
               <div className="space-y-2 p-2 rounded border bg-muted/20">
-                <span className="text-[10px] font-medium">
+                <span className="text-[0.625rem] font-medium">
                   Resize Swap: <span className="font-mono">{swapResizeTarget}</span>
                 </span>
                 <div className="space-y-0.5">
-                  <label className="text-[9px] text-muted-foreground">New Size (MB)</label>
+                  <label className="text-[0.5625rem] text-muted-foreground">New Size (MB)</label>
                   <Input
                     type="number"
                     min={64}
                     max={65536}
                     value={swapSizeMB}
                     onChange={(e) => setSwapSizeMB(e.target.value)}
-                    className="h-6 text-[10px] font-mono"
+                    className="h-6 text-[0.625rem] font-mono"
                   />
                 </div>
                 <div className="flex gap-1 flex-wrap">
@@ -1138,7 +1138,7 @@ export function SystemMonitorWidget() {
                       key={size}
                       onClick={() => setSwapSizeMB(String(size))}
                       className={cn(
-                        "px-1.5 py-0.5 rounded text-[9px] border",
+                        "px-1.5 py-0.5 rounded text-[0.5625rem] border",
                         parseInt(swapSizeMB, 10) === size
                           ? "bg-primary/10 text-primary border-primary/30"
                           : "hover:bg-muted/50 border-transparent"
@@ -1148,13 +1148,13 @@ export function SystemMonitorWidget() {
                     </button>
                   ))}
                 </div>
-                <div className="text-[9px] text-amber-500">
+                <div className="text-[0.5625rem] text-amber-500">
                   Warning: This will temporarily disable swap during resize.
                 </div>
                 <div className="flex gap-1">
                   <Button
                     size="sm"
-                    className="h-6 text-[10px] px-3"
+                    className="h-6 text-[0.625rem] px-3"
                     onClick={handleSwapResize}
                     disabled={swapLoading || !swapSizeMB}
                   >
@@ -1163,7 +1163,7 @@ export function SystemMonitorWidget() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-6 text-[10px] px-2"
+                    className="h-6 text-[0.625rem] px-2"
                     onClick={() => setSwapAction("none")}
                   >
                     Cancel
@@ -1195,7 +1195,7 @@ export function SystemMonitorWidget() {
       <button
         onClick={() => toggleSort(field)}
         className={cn(
-          "flex items-center gap-0.5 text-[9px] font-medium text-muted-foreground hover:text-foreground transition-colors",
+          "flex items-center gap-0.5 text-[0.5625rem] font-medium text-muted-foreground hover:text-foreground transition-colors",
           processSort === field && "text-foreground",
           cls
         )}
@@ -1217,7 +1217,7 @@ export function SystemMonitorWidget() {
               value={processSearch}
               onChange={(e) => handleProcessSearch(e.target.value)}
               placeholder="Search processes..."
-              className="h-6 pl-7 pr-7 text-[10px]"
+              className="h-6 pl-7 pr-7 text-[0.625rem]"
             />
             {processSearch && (
               <button
@@ -1228,7 +1228,7 @@ export function SystemMonitorWidget() {
               </button>
             )}
           </div>
-          <Badge variant="secondary" className="text-[9px] h-5 shrink-0">
+          <Badge variant="secondary" className="text-[0.5625rem] h-5 shrink-0">
             {metrics.processCount} total
           </Badge>
         </div>
@@ -1236,7 +1236,7 @@ export function SystemMonitorWidget() {
         {/* Kill message */}
         {killMessage && (
           <div className={cn(
-            "text-[10px] px-2 py-1 rounded border",
+            "text-[0.625rem] px-2 py-1 rounded border",
             killMessage.includes("Failed") ? "text-destructive border-destructive/30 bg-destructive/5" : "text-green-600 border-green-500/30 bg-green-500/5"
           )}>
             {killMessage}
@@ -1250,7 +1250,7 @@ export function SystemMonitorWidget() {
           <SortHeader field="mem" label="MEM%" />
           <SortHeader field="rss" label="RSS" />
           <SortHeader field="name" label="Name" />
-          <span className="text-[9px] text-muted-foreground text-center">Act</span>
+          <span className="text-[0.5625rem] text-muted-foreground text-center">Act</span>
         </div>
 
         {/* Process list */}
@@ -1260,7 +1260,7 @@ export function SystemMonitorWidget() {
               <div key={proc.pid}>
                 <div
                   className={cn(
-                    "grid grid-cols-[40px_50px_50px_55px_1fr_28px] gap-1 text-[10px] py-1 px-1 rounded hover:bg-muted/50 cursor-pointer items-center",
+                    "grid grid-cols-[40px_50px_50px_55px_1fr_28px] gap-1 text-[0.625rem] py-1 px-1 rounded hover:bg-muted/50 cursor-pointer items-center",
                     selectedPid === proc.pid && "bg-muted/70",
                     killConfirm === proc.pid && "bg-destructive/10 border border-destructive/30"
                   )}
@@ -1288,7 +1288,7 @@ export function SystemMonitorWidget() {
                   )}>
                     {(proc.mem ?? 0).toFixed(1)}
                   </span>
-                  <span className="font-mono tabular-nums text-muted-foreground text-[9px]">
+                  <span className="font-mono tabular-nums text-muted-foreground text-[0.5625rem]">
                     {formatBytesShort(proc.rss)}
                   </span>
                   <span className="truncate flex items-center gap-1" title={proc.command}>
@@ -1331,7 +1331,7 @@ export function SystemMonitorWidget() {
 
                 {/* Expanded detail */}
                 {selectedPid === proc.pid && (
-                  <div className="ml-4 mr-1 mb-1 p-2 rounded border bg-muted/20 text-[9px] space-y-1.5">
+                  <div className="ml-4 mr-1 mb-1 p-2 rounded border bg-muted/20 text-[0.5625rem] space-y-1.5">
                     <div className="text-muted-foreground break-all font-mono leading-relaxed">
                       {proc.command}
                     </div>
@@ -1384,7 +1384,7 @@ export function SystemMonitorWidget() {
                       <Button
                         variant="destructive"
                         size="sm"
-                        className="h-5 text-[9px] px-2"
+                        className="h-5 text-[0.5625rem] px-2"
                         onClick={() => handleKillProcess(proc.pid, "SIGTERM")}
                       >
                         <Skull className="h-2.5 w-2.5 mr-1" />
@@ -1393,7 +1393,7 @@ export function SystemMonitorWidget() {
                       <Button
                         variant="destructive"
                         size="sm"
-                        className="h-5 text-[9px] px-2"
+                        className="h-5 text-[0.5625rem] px-2"
                         onClick={() => handleKillProcess(proc.pid, "SIGKILL")}
                       >
                         <Skull className="h-2.5 w-2.5 mr-1" />
@@ -1402,7 +1402,7 @@ export function SystemMonitorWidget() {
                       <Button
                         variant="secondary"
                         size="sm"
-                        className="h-5 text-[9px] px-2"
+                        className="h-5 text-[0.5625rem] px-2"
                         onClick={() => handleKillProcess(proc.pid, "SIGSTOP")}
                       >
                         <Pause className="h-2.5 w-2.5 mr-1" />
@@ -1411,7 +1411,7 @@ export function SystemMonitorWidget() {
                       <Button
                         variant="secondary"
                         size="sm"
-                        className="h-5 text-[9px] px-2"
+                        className="h-5 text-[0.5625rem] px-2"
                         onClick={() => handleKillProcess(proc.pid, "SIGCONT")}
                       >
                         <Play className="h-2.5 w-2.5 mr-1" />
@@ -1438,7 +1438,7 @@ export function SystemMonitorWidget() {
           {/* Speed cards */}
           <div className="grid grid-cols-2 gap-2">
             <div className="rounded-md border p-2 space-y-1">
-              <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+              <div className="flex items-center gap-1 text-[0.625rem] text-muted-foreground">
                 <ArrowDown className="h-3 w-3 text-green-500" />
                 <span>Download</span>
               </div>
@@ -1455,7 +1455,7 @@ export function SystemMonitorWidget() {
               />
             </div>
             <div className="rounded-md border p-2 space-y-1">
-              <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+              <div className="flex items-center gap-1 text-[0.625rem] text-muted-foreground">
                 <ArrowUp className="h-3 w-3 text-blue-500" />
                 <span>Upload</span>
               </div>
@@ -1478,7 +1478,7 @@ export function SystemMonitorWidget() {
             <div className="rounded-md border p-3 space-y-2">
               <span className="text-xs font-medium">Interface Stats</span>
               {metrics.network.perInterface.map((iface) => (
-                <div key={iface.name} className="flex items-center justify-between text-[10px]">
+                <div key={iface.name} className="flex items-center justify-between text-[0.625rem]">
                   <span className="font-medium">{iface.name}</span>
                   <div className="flex gap-3 font-mono tabular-nums text-muted-foreground">
                     <span className="text-green-500">↓{formatBytesShort(iface.bytesIn)}</span>
@@ -1512,10 +1512,10 @@ export function SystemMonitorWidget() {
               <div key={iface.name + iface.address} className="rounded-md border p-2">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-medium">{iface.name}</span>
-                  <Badge variant="secondary" className="text-[9px] h-4">{iface.family}</Badge>
+                  <Badge variant="secondary" className="text-[0.5625rem] h-4">{iface.family}</Badge>
                 </div>
-                <div className="text-[10px] text-muted-foreground font-mono mt-0.5">{iface.address}</div>
-                <div className="text-[9px] text-muted-foreground font-mono">{iface.mac}</div>
+                <div className="text-[0.625rem] text-muted-foreground font-mono mt-0.5">{iface.address}</div>
+                <div className="text-[0.5625rem] text-muted-foreground font-mono">{iface.mac}</div>
               </div>
             ))}
           </div>
@@ -1540,7 +1540,7 @@ export function SystemMonitorWidget() {
                 </div>
                 <Badge
                   variant={disk.usedPercent >= 90 ? "destructive" : disk.usedPercent >= 70 ? "secondary" : "secondary"}
-                  className="text-[9px] h-4"
+                  className="text-[0.5625rem] h-4"
                 >
                   {disk.usedPercent}%
                 </Badge>
@@ -1550,7 +1550,7 @@ export function SystemMonitorWidget() {
                 label=""
                 detail={`${formatBytes(disk.used)} / ${formatBytes(disk.total)}`}
               />
-              <div className="flex justify-between text-[10px] text-muted-foreground">
+              <div className="flex justify-between text-[0.625rem] text-muted-foreground">
                 <span>Available: {formatBytes(disk.available)}</span>
                 <span className="font-mono">{disk.filesystem}</span>
               </div>
@@ -1564,15 +1564,15 @@ export function SystemMonitorWidget() {
               <div className="grid grid-cols-3 gap-2 text-center">
                 <div>
                   <div className="text-sm font-bold tabular-nums">{(metrics.diskIO.mbPerSec ?? 0).toFixed(2)}</div>
-                  <div className="text-[9px] text-muted-foreground">MB/s</div>
+                  <div className="text-[0.5625rem] text-muted-foreground">MB/s</div>
                 </div>
                 <div>
                   <div className="text-sm font-bold tabular-nums">{metrics.diskIO.transfersPerSec ?? 0}</div>
-                  <div className="text-[9px] text-muted-foreground">IOPS</div>
+                  <div className="text-[0.5625rem] text-muted-foreground">IOPS</div>
                 </div>
                 <div>
                   <div className="text-sm font-bold tabular-nums">{(metrics.diskIO.kbPerTransfer ?? 0).toFixed(1)}</div>
-                  <div className="text-[9px] text-muted-foreground">KB/transfer</div>
+                  <div className="text-[0.5625rem] text-muted-foreground">KB/transfer</div>
                 </div>
               </div>
             </div>
@@ -1592,7 +1592,7 @@ export function SystemMonitorWidget() {
       value ? (
         <div className="flex justify-between items-center py-1 text-xs">
           <span className="text-muted-foreground">{label}</span>
-          <span className="font-mono text-[11px] text-right max-w-[60%] truncate">{value}</span>
+          <span className="font-mono text-[0.6875rem] text-right max-w-[60%] truncate">{value}</span>
         </div>
       ) : null
     );
@@ -1683,13 +1683,13 @@ export function SystemMonitorWidget() {
             <>
               <Badge
                 variant={metrics.cpu.average >= 80 ? "destructive" : "secondary"}
-                className="text-[9px] h-4 px-1.5 tabular-nums"
+                className="text-[0.5625rem] h-4 px-1.5 tabular-nums"
               >
                 {metrics.cpu.average}%
               </Badge>
               <Badge
                 variant={metrics.memory.usedPercent >= 85 ? "destructive" : "secondary"}
-                className="text-[9px] h-4 px-1.5 tabular-nums"
+                className="text-[0.5625rem] h-4 px-1.5 tabular-nums"
               >
                 {metrics.memory.usedPercent}%
               </Badge>
@@ -1723,7 +1723,7 @@ export function SystemMonitorWidget() {
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={cn(
-                "flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium transition-colors whitespace-nowrap",
+                "flex items-center gap-1 px-2 py-1 rounded-md text-[0.625rem] font-medium transition-colors whitespace-nowrap",
                 activeTab === tab.id
                   ? "bg-primary/10 text-primary"
                   : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
@@ -1737,14 +1737,14 @@ export function SystemMonitorWidget() {
 
         {/* Refresh interval control */}
         {activeTab === "processes" && (
-          <div className="flex items-center gap-2 text-[9px] text-muted-foreground">
+          <div className="flex items-center gap-2 text-[0.5625rem] text-muted-foreground">
             <span>Refresh:</span>
             {[1000, 3000, 5000, 10000].map((ms) => (
               <button
                 key={ms}
                 onClick={() => setRefreshInterval(ms)}
                 className={cn(
-                  "px-1.5 py-0.5 rounded text-[9px]",
+                  "px-1.5 py-0.5 rounded text-[0.5625rem]",
                   refreshInterval === ms ? "bg-primary/10 text-primary font-medium" : "hover:bg-muted/50"
                 )}
               >
@@ -1759,12 +1759,12 @@ export function SystemMonitorWidget() {
 
         {/* Status bar */}
         {metrics && (
-          <div className="flex items-center justify-between text-[8px] text-muted-foreground border-t pt-1">
+          <div className="flex items-center justify-between text-[0.5rem] text-muted-foreground border-t pt-1">
             <span>
               Updated {new Date(metrics.timestamp).toLocaleTimeString()}
             </span>
             {paused && (
-              <Badge variant="secondary" className="text-[8px] h-3 px-1 text-amber-500">
+              <Badge variant="secondary" className="text-[0.5rem] h-3 px-1 text-amber-500">
                 PAUSED
               </Badge>
             )}

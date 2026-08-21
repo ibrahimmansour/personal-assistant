@@ -85,7 +85,7 @@ export function MobileBottomNav() {
               )}
             >
               <Icon className={cn("h-5 w-5 shrink-0 transition-transform", isActive && "scale-110")} />
-              <span className="text-[10px] font-medium leading-none truncate max-w-full px-0.5">
+              <span className="text-[0.625rem] font-medium leading-none truncate max-w-full px-0.5">
                 {ws.name}
               </span>
             </button>

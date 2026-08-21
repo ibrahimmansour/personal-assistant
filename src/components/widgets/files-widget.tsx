@@ -213,7 +213,7 @@ function PathJump({
       <button
         onClick={open}
         title="Click to jump to a folder (type a path)"
-        className="flex-1 min-w-0 text-left text-[10px] text-muted-foreground hover:text-foreground truncate px-1 rounded hover:bg-muted/50 transition-colors"
+        className="flex-1 min-w-0 text-left text-[0.625rem] text-muted-foreground hover:text-foreground truncate px-1 rounded hover:bg-muted/50 transition-colors"
       >
         {shortenPath(currentPath)}
       </button>
@@ -228,7 +228,7 @@ function PathJump({
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={handleKeyDown}
         onBlur={() => setTimeout(close, 150)}
-        className="w-full text-[10px] bg-muted/60 border border-primary/40 rounded px-1.5 py-0.5 outline-none font-mono text-foreground"
+        className="w-full text-[0.625rem] bg-muted/60 border border-primary/40 rounded px-1.5 py-0.5 outline-none font-mono text-foreground"
         spellCheck={false}
         autoComplete="off"
       />
@@ -239,7 +239,7 @@ function PathJump({
               key={s}
               onMouseDown={(e) => { e.preventDefault(); setValue(s); setSuggestions([]); }}
               className={cn(
-                "w-full text-left text-[10px] px-2 py-1 font-mono truncate transition-colors",
+                "w-full text-left text-[0.625rem] px-2 py-1 font-mono truncate transition-colors",
                 i === suggIdx ? "bg-primary/15 text-primary" : "hover:bg-muted/60 text-foreground"
               )}
             >
@@ -338,7 +338,7 @@ function FileContextMenu({
       style={{ position: "fixed", left: pos.x, top: pos.y, zIndex: 9999 }}
       className="min-w-[170px] bg-popover border border-border rounded-lg shadow-xl py-1 overflow-hidden"
     >
-      <div className="px-3 py-1 text-[9px] text-muted-foreground/60 uppercase tracking-wider truncate border-b border-border mb-1">
+      <div className="px-3 py-1 text-[0.5625rem] text-muted-foreground/60 uppercase tracking-wider truncate border-b border-border mb-1">
         {state.entry.name}
       </div>
       {item(<FilePlus className="h-3.5 w-3.5 shrink-0" />, "New File Here", () => onNewFile(inDir))}
@@ -397,7 +397,7 @@ function NewEntryRow({
         ? <Folder className="h-3.5 w-3.5 shrink-0 text-blue-400" />
         : <File className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
       }
-      <span className="text-[9px] text-muted-foreground/50 shrink-0 truncate max-w-[100px]" title={inDir}>
+      <span className="text-[0.5625rem] text-muted-foreground/50 shrink-0 truncate max-w-[100px]" title={inDir}>
         {inDir.split("/").pop() || inDir}/
       </span>
       <input
@@ -414,7 +414,7 @@ function NewEntryRow({
         spellCheck={false}
         autoComplete="off"
       />
-      <button onMouseDown={(e) => { e.preventDefault(); commit(); }} className="text-primary hover:text-primary/80 text-[10px] shrink-0">
+      <button onMouseDown={(e) => { e.preventDefault(); commit(); }} className="text-primary hover:text-primary/80 text-[0.625rem] shrink-0">
         <Save className="h-3 w-3" />
       </button>
     </div>
@@ -442,7 +442,7 @@ function RenameDialog({
       onMouseDown={(e) => { if (e.target === e.currentTarget) onCancel(); }}
     >
       <div className="bg-popover border border-border rounded-lg shadow-xl p-3 min-w-[260px] max-w-[360px]">
-        <div className="text-[10px] text-muted-foreground/60 uppercase tracking-wider mb-2">
+        <div className="text-[0.625rem] text-muted-foreground/60 uppercase tracking-wider mb-2">
           Rename {entry.isDirectory ? "folder" : "file"}
         </div>
         <div className="flex items-center gap-2">
@@ -464,13 +464,13 @@ function RenameDialog({
         <div className="flex justify-end gap-2 mt-3">
           <button
             onClick={onCancel}
-            className="text-[10px] text-muted-foreground hover:text-foreground px-2 py-1 rounded hover:bg-muted transition-colors"
+            className="text-[0.625rem] text-muted-foreground hover:text-foreground px-2 py-1 rounded hover:bg-muted transition-colors"
           >
             Cancel
           </button>
           <button
             onClick={onCommit}
-            className="text-[10px] text-primary hover:text-primary/80 px-2 py-1 rounded hover:bg-primary/10 transition-colors font-medium"
+            className="text-[0.625rem] text-primary hover:text-primary/80 px-2 py-1 rounded hover:bg-primary/10 transition-colors font-medium"
           >
             Rename
           </button>
@@ -686,7 +686,7 @@ const gitStatusLabels: Record<string, { label: string; color: string }> = {
 function GitStatusBadge({ status }: { status: string }) {
   const info = gitStatusLabels[status] || { label: status, color: "text-muted-foreground" };
   return (
-    <span className={cn("text-[9px] font-mono font-bold shrink-0", info.color)} title={info.label}>
+    <span className={cn("text-[0.5625rem] font-mono font-bold shrink-0", info.color)} title={info.label}>
       {status}
     </span>
   );
@@ -707,14 +707,14 @@ function DiffViewer({ diff, onClose }: { diff: string; onClose: () => void }) {
   return (
     <div className="flex flex-col h-full overflow-hidden">
       <div className="flex items-center justify-between px-2 py-1 bg-muted/30 border-b border-border shrink-0">
-        <span className="text-[10px] font-medium flex items-center gap-1.5">
+        <span className="text-[0.625rem] font-medium flex items-center gap-1.5">
           <Diff className="h-3 w-3" /> Diff
         </span>
         <button onClick={onClose} className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-muted transition-colors">
           <X className="h-3 w-3" />
         </button>
       </div>
-      <div className="flex-1 min-h-0 overflow-auto font-mono text-[10px] leading-relaxed">
+      <div className="flex-1 min-h-0 overflow-auto font-mono text-[0.625rem] leading-relaxed">
         {lines.map((line, i) => {
           let bg = "";
           let textColor = "text-foreground";
@@ -746,20 +746,20 @@ function BlameViewer({ blameLines, onClose }: { blameLines: BlameLine[]; onClose
   return (
     <div className="flex flex-col h-full overflow-hidden">
       <div className="flex items-center justify-between px-2 py-1 bg-muted/30 border-b border-border shrink-0">
-        <span className="text-[10px] font-medium flex items-center gap-1.5">
+        <span className="text-[0.625rem] font-medium flex items-center gap-1.5">
           <User className="h-3 w-3" /> Blame
         </span>
         <button onClick={onClose} className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-muted transition-colors">
           <X className="h-3 w-3" />
         </button>
       </div>
-      <div className="flex-1 min-h-0 overflow-auto font-mono text-[10px] leading-relaxed">
+      <div className="flex-1 min-h-0 overflow-auto font-mono text-[0.625rem] leading-relaxed">
         {blameLines.map((line, i) => (
           <div key={i} className="flex hover:bg-muted/40 transition-colors group">
             <div className="w-[180px] shrink-0 flex items-start gap-1.5 px-1.5 py-0 border-r border-border bg-muted/20 text-muted-foreground truncate">
               <span className={cn("shrink-0 font-bold", uniqueHashes[line.hash])} title={line.hash}>{line.hash}</span>
               <span className="truncate" title={line.author}>{line.author.split(" ")[0]}</span>
-              <span className="text-[9px] text-muted-foreground/50 shrink-0 ml-auto">{formatDate(line.date)}</span>
+              <span className="text-[0.5625rem] text-muted-foreground/50 shrink-0 ml-auto">{formatDate(line.date)}</span>
             </div>
             <div className="flex-1 min-w-0 px-1.5 py-0 whitespace-pre-wrap break-all text-foreground">
               <span className="text-muted-foreground/40 mr-2 select-none inline-block w-[32px] text-right">{line.lineNum}</span>
@@ -803,7 +803,7 @@ function SymbolOutline({ symbols, onSelect, onClose }: { symbols: SymbolInfo[]; 
   return (
     <div className="flex flex-col h-full overflow-hidden">
       <div className="flex items-center justify-between px-2 py-1 bg-muted/30 border-b border-border shrink-0">
-        <span className="text-[10px] font-medium flex items-center gap-1.5">
+        <span className="text-[0.625rem] font-medium flex items-center gap-1.5">
           <ListTree className="h-3 w-3" /> Outline ({symbols.length})
         </span>
         <button onClick={onClose} className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-muted transition-colors">
@@ -815,7 +815,7 @@ function SymbolOutline({ symbols, onSelect, onClose }: { symbols: SymbolInfo[]; 
           const info = symbolKindIcons[kind] || { icon: <Hash className="h-3 w-3" />, color: "text-muted-foreground" };
           return (
             <div key={kind}>
-              <div className="flex items-center gap-1.5 px-2 py-0.5 text-[9px] text-muted-foreground uppercase tracking-wider">
+              <div className="flex items-center gap-1.5 px-2 py-0.5 text-[0.5625rem] text-muted-foreground uppercase tracking-wider">
                 <span className={info.color}>{info.icon}</span> {kind}s ({syms.length})
               </div>
               {syms.map((s) => (
@@ -825,7 +825,7 @@ function SymbolOutline({ symbols, onSelect, onClose }: { symbols: SymbolInfo[]; 
                   className="w-full flex items-center gap-2 px-3 py-0.5 text-xs hover:bg-muted/60 transition-colors text-left"
                 >
                   <span className={cn("truncate flex-1", info.color)}>{s.name}</span>
-                  <span className="text-[9px] text-muted-foreground/50 shrink-0">:{s.line}</span>
+                  <span className="text-[0.5625rem] text-muted-foreground/50 shrink-0">:{s.line}</span>
                 </button>
               ))}
             </div>
@@ -848,7 +848,7 @@ function LanguageStatsBar({ stats, onClose }: { stats: LangStat[]; onClose: () =
   return (
     <div className="shrink-0 border border-border rounded-md overflow-hidden bg-muted/10">
       <div className="flex items-center justify-between px-2 py-1 bg-muted/30 border-b border-border">
-        <span className="text-[10px] font-medium flex items-center gap-1.5">
+        <span className="text-[0.625rem] font-medium flex items-center gap-1.5">
           <BarChart3 className="h-3 w-3" /> Languages
         </span>
         <button onClick={onClose} className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-muted transition-colors">
@@ -865,7 +865,7 @@ function LanguageStatsBar({ stats, onClose }: { stats: LangStat[]; onClose: () =
         )}
       </div>
       {/* Legend */}
-      <div className="flex flex-wrap gap-x-3 gap-y-0.5 px-2 py-1.5 text-[10px]">
+      <div className="flex flex-wrap gap-x-3 gap-y-0.5 px-2 py-1.5 text-[0.625rem]">
         {topStats.map((s) => (
           <span key={s.lang} className="flex items-center gap-1">
             <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
@@ -902,17 +902,17 @@ function ImageDiffViewer({ filePath, repoRoot, onClose }: { filePath: string; re
   return (
     <div className="flex flex-col h-full overflow-hidden">
       <div className="flex items-center justify-between px-2 py-1 bg-muted/30 border-b border-border shrink-0">
-        <span className="text-[10px] font-medium flex items-center gap-1.5">
+        <span className="text-[0.625rem] font-medium flex items-center gap-1.5">
           <FileImage className="h-3 w-3" /> Image Diff
         </span>
         <div className="flex items-center gap-1">
           <button
             onClick={() => setMode("side")}
-            className={cn("text-[9px] px-1.5 py-0.5 rounded", mode === "side" ? "bg-primary/15 text-primary" : "text-muted-foreground")}
+            className={cn("text-[0.5625rem] px-1.5 py-0.5 rounded", mode === "side" ? "bg-primary/15 text-primary" : "text-muted-foreground")}
           >Side</button>
           <button
             onClick={() => setMode("swipe")}
-            className={cn("text-[9px] px-1.5 py-0.5 rounded", mode === "swipe" ? "bg-primary/15 text-primary" : "text-muted-foreground")}
+            className={cn("text-[0.5625rem] px-1.5 py-0.5 rounded", mode === "swipe" ? "bg-primary/15 text-primary" : "text-muted-foreground")}
           >Swipe</button>
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-muted transition-colors">
             <X className="h-3 w-3" />
@@ -923,12 +923,12 @@ function ImageDiffViewer({ filePath, repoRoot, onClose }: { filePath: string; re
         {mode === "side" ? (
           <div className="flex gap-2 h-full">
             <div className="flex-1 flex flex-col items-center gap-1">
-              <span className="text-[9px] text-red-500 font-medium">Before</span>
+              <span className="text-[0.5625rem] text-red-500 font-medium">Before</span>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={oldImageUrl || ""} alt="Before" className="max-w-full max-h-full object-contain rounded bg-muted/50" onError={(e) => (e.currentTarget.style.display = "none")} />
             </div>
             <div className="flex-1 flex flex-col items-center gap-1">
-              <span className="text-[9px] text-green-500 font-medium">After</span>
+              <span className="text-[0.5625rem] text-green-500 font-medium">After</span>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={rawFileUrl(`${repoRoot}/${filePath}`)} alt="After" className="max-w-full max-h-full object-contain rounded bg-muted/50" />
             </div>
@@ -986,10 +986,10 @@ function ProjectActionsPanel({
   return (
     <div className="shrink-0 border border-border rounded-md overflow-hidden bg-muted/10">
       <div className="flex items-center justify-between px-2 py-1 bg-muted/30 border-b border-border">
-        <span className="text-[10px] font-medium flex items-center gap-1.5">
+        <span className="text-[0.625rem] font-medium flex items-center gap-1.5">
           {projectTypeIcons[project.type] || projectTypeIcons.unknown}
           {project.name}
-          <span className="text-[9px] text-muted-foreground/60">({project.type})</span>
+          <span className="text-[0.5625rem] text-muted-foreground/60">({project.type})</span>
         </span>
         <button onClick={onClose} className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-muted transition-colors">
           <X className="h-3 w-3" />
@@ -1002,7 +1002,7 @@ function ProjectActionsPanel({
               key={name}
               onClick={() => onRunScript(project.type === "node" ? `npm run ${name}` : cmd)}
               title={cmd}
-              className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-md bg-muted/50 hover:bg-primary/10 hover:text-primary border border-border/50 transition-colors"
+              className="flex items-center gap-1 text-[0.625rem] px-2 py-0.5 rounded-md bg-muted/50 hover:bg-primary/10 hover:text-primary border border-border/50 transition-colors"
             >
               <Play className="h-2.5 w-2.5" />
               {name}
@@ -1013,7 +1013,7 @@ function ProjectActionsPanel({
         <div className="text-xs text-muted-foreground text-center py-2">No scripts detected</div>
       )}
       {project.detectedBy && (
-        <div className="text-[9px] text-muted-foreground/50 px-2 py-0.5 border-t border-border">
+        <div className="text-[0.5625rem] text-muted-foreground/50 px-2 py-0.5 border-t border-border">
           Detected via {project.detectedBy}
         </div>
       )}
@@ -1170,7 +1170,7 @@ function CleanupAssistantPanel({
   return (
     <div className="shrink-0 max-h-[60%] flex flex-col border border-primary/30 rounded-md overflow-hidden bg-primary/5">
       <div className="flex items-center justify-between px-2 py-1 bg-primary/10 border-b border-primary/20 shrink-0">
-        <span className="text-[10px] font-medium flex items-center gap-1.5 text-primary min-w-0">
+        <span className="text-[0.625rem] font-medium flex items-center gap-1.5 text-primary min-w-0">
           <Sparkles className="h-3 w-3 shrink-0" />
           <span className="truncate">Clean up: {homeShort}</span>
         </span>
@@ -1184,21 +1184,21 @@ function CleanupAssistantPanel({
 
       <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin">
         {loading && (
-          <div className="flex items-center gap-2 text-[11px] text-muted-foreground p-3">
+          <div className="flex items-center gap-2 text-[0.6875rem] text-muted-foreground p-3">
             <div className="h-3 w-3 border-[1.5px] border-muted-foreground/30 border-t-primary rounded-full animate-spin" />
             Analyzing folder…
           </div>
         )}
 
         {error && (
-          <div className="flex items-start gap-1.5 text-[11px] text-red-500 p-3">
+          <div className="flex items-start gap-1.5 text-[0.6875rem] text-red-500 p-3">
             <AlertCircle className="h-3 w-3 shrink-0 mt-0.5" />
             <span>{error}</span>
           </div>
         )}
 
         {!loading && !error && data && data.categories.length === 0 && (
-          <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground p-3">
+          <div className="flex items-center gap-1.5 text-[0.6875rem] text-muted-foreground p-3">
             <CheckCircle2 className="h-3 w-3 shrink-0 text-green-500" />
             <span>{data.note || "Nothing obvious to clean up here."}</span>
           </div>
@@ -1220,10 +1220,10 @@ function CleanupAssistantPanel({
                       className="mt-0.5 cursor-pointer accent-primary"
                     />
                     <div className="flex-1 min-w-0">
-                      <div className="text-[11px] font-medium text-foreground">{cat.category}</div>
-                      <div className="text-[10px] text-muted-foreground/80">{cat.description}</div>
+                      <div className="text-[0.6875rem] font-medium text-foreground">{cat.category}</div>
+                      <div className="text-[0.625rem] text-muted-foreground/80">{cat.description}</div>
                     </div>
-                    <span className="text-[9px] text-muted-foreground/60 shrink-0 mt-0.5">
+                    <span className="text-[0.5625rem] text-muted-foreground/60 shrink-0 mt-0.5">
                       {cat.items.length}
                     </span>
                   </div>
@@ -1239,8 +1239,8 @@ function CleanupAssistantPanel({
                         className="mt-1 cursor-pointer accent-primary shrink-0"
                       />
                       <div className="flex-1 min-w-0">
-                        <div className="text-[11px] truncate font-mono">{it.name}</div>
-                        <div className="text-[10px] text-muted-foreground/70 italic">{it.reason}</div>
+                        <div className="text-[0.6875rem] truncate font-mono">{it.name}</div>
+                        <div className="text-[0.625rem] text-muted-foreground/70 italic">{it.reason}</div>
                       </div>
                     </label>
                   ))}
@@ -1254,18 +1254,18 @@ function CleanupAssistantPanel({
       {/* Footer / actions */}
       {!loading && !error && data && allItems.length > 0 && (
         <div className="shrink-0 border-t border-primary/20 bg-muted/20 px-2 py-1.5 flex items-center gap-2">
-          <span className="text-[10px] text-muted-foreground flex-1 min-w-0 truncate">
+          <span className="text-[0.625rem] text-muted-foreground flex-1 min-w-0 truncate">
             {selectedCount === 0
               ? "Select items to delete"
               : `${selectedCount} selected${data.bytesSaved ? ` · saves up to ${formatBytes(data.bytesSaved)}` : ""}`}
           </span>
           {deleteResult && (
-            <span className="text-[10px] text-green-500 truncate">{deleteResult}</span>
+            <span className="text-[0.625rem] text-green-500 truncate">{deleteResult}</span>
           )}
           <button
             onClick={performDelete}
             disabled={selectedCount === 0 || deleting}
-            className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+            className="flex items-center gap-1 text-[0.625rem] px-2 py-0.5 rounded bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
           >
             {deleting ? (
               <div className="h-2.5 w-2.5 border-[1.5px] border-red-500/30 border-t-red-500 rounded-full animate-spin" />
@@ -1302,7 +1302,7 @@ function FileTabs({
         <div
           key={tab.path}
           className={cn(
-            "flex items-center gap-1 px-2 py-1 text-[10px] cursor-pointer border-r border-border transition-colors group min-w-0 max-w-[140px]",
+            "flex items-center gap-1 px-2 py-1 text-[0.625rem] cursor-pointer border-r border-border transition-colors group min-w-0 max-w-[140px]",
             idx === activeIdx ? "bg-background text-foreground border-b-2 border-b-primary" : "text-muted-foreground hover:text-foreground hover:bg-muted/40"
           )}
           onClick={() => onSelect(idx)}
@@ -1412,7 +1412,7 @@ function GitActionsPanel({
   return (
     <div className="shrink-0 max-h-[55%] flex flex-col border border-border rounded-md overflow-hidden bg-muted/10">
       <div className="flex items-center justify-between px-2 py-1 bg-muted/30 border-b border-border">
-        <span className="text-[10px] font-medium flex items-center gap-1.5">
+        <span className="text-[0.625rem] font-medium flex items-center gap-1.5">
           <GitBranch className="h-3 w-3" /> Git Actions
           <span className="text-muted-foreground/60">({gitStatus.branch})</span>
         </span>
@@ -1428,21 +1428,21 @@ function GitActionsPanel({
             <div className="flex items-center gap-1 mb-1">
               <button
                 onClick={() => { const working = gitStatus.files?.filter((f) => f.working && !f.staged).map((f) => f.path) || []; if (working.length) doStage(working); }}
-                className="text-[9px] px-1.5 py-0.5 rounded bg-green-500/10 text-green-600 dark:text-green-400 hover:bg-green-500/20 transition-colors"
+                className="text-[0.5625rem] px-1.5 py-0.5 rounded bg-green-500/10 text-green-600 dark:text-green-400 hover:bg-green-500/20 transition-colors"
                 title="Stage all working changes"
               >
                 <Plus className="h-2.5 w-2.5 inline mr-0.5" />Stage All
               </button>
               <button
                 onClick={() => { const staged = gitStatus.files?.filter((f) => f.staged).map((f) => f.path) || []; if (staged.length) doUnstage(staged); }}
-                className="text-[9px] px-1.5 py-0.5 rounded bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 hover:bg-yellow-500/20 transition-colors"
+                className="text-[0.5625rem] px-1.5 py-0.5 rounded bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 hover:bg-yellow-500/20 transition-colors"
                 title="Unstage all"
               >
                 <Minus className="h-2.5 w-2.5 inline mr-0.5" />Unstage All
               </button>
             </div>
             {gitStatus.files.map((f) => (
-              <div key={`${f.path}-${f.staged}`} className="flex items-center gap-1 py-0.5 text-[10px]">
+              <div key={`${f.path}-${f.staged}`} className="flex items-center gap-1 py-0.5 text-[0.625rem]">
                 <button
                   onClick={() => f.staged ? doUnstage([f.path]) : doStage([f.path])}
                   className={cn("shrink-0 p-0.5 rounded hover:bg-muted transition-colors", f.staged ? "text-green-500" : "text-muted-foreground")}
@@ -1465,19 +1465,19 @@ function GitActionsPanel({
               onChange={(e) => setCommitMsg(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter" && commitMsg.trim()) doCommit(); }}
               placeholder={`Commit message (${stagedFiles.length} staged)...`}
-              className="flex-1 text-[10px] bg-muted/40 border border-border rounded px-1.5 py-0.5 outline-none focus:ring-1 focus:ring-primary/50 placeholder:text-muted-foreground/40"
+              className="flex-1 text-[0.625rem] bg-muted/40 border border-border rounded px-1.5 py-0.5 outline-none focus:ring-1 focus:ring-primary/50 placeholder:text-muted-foreground/40"
             />
             <button
               onClick={doCommit}
               disabled={committing || !commitMsg.trim() || stagedFiles.length === 0}
-              className="text-[9px] px-2 py-0.5 rounded bg-primary/10 text-primary hover:bg-primary/20 transition-colors disabled:opacity-40 flex items-center gap-1"
+              className="text-[0.5625rem] px-2 py-0.5 rounded bg-primary/10 text-primary hover:bg-primary/20 transition-colors disabled:opacity-40 flex items-center gap-1"
             >
               <GitCommit className="h-2.5 w-2.5" />
               {committing ? "..." : "Commit"}
             </button>
           </div>
           {commitResult && (
-            <div className={cn("text-[9px] mt-0.5", commitResult.startsWith("Error") ? "text-red-500" : "text-green-500")}>
+            <div className={cn("text-[0.5625rem] mt-0.5", commitResult.startsWith("Error") ? "text-red-500" : "text-green-500")}>
               {commitResult}
             </div>
           )}
@@ -1487,13 +1487,13 @@ function GitActionsPanel({
         <div className="flex items-center gap-1 px-2 py-1.5">
           <button
             onClick={() => { setShowBranches(!showBranches); if (!showBranches) loadBranches(); }}
-            className={cn("text-[9px] px-1.5 py-0.5 rounded flex items-center gap-1 transition-colors", showBranches ? "bg-primary/15 text-primary" : "bg-muted/50 text-muted-foreground hover:text-foreground")}
+            className={cn("text-[0.5625rem] px-1.5 py-0.5 rounded flex items-center gap-1 transition-colors", showBranches ? "bg-primary/15 text-primary" : "bg-muted/50 text-muted-foreground hover:text-foreground")}
           >
             <GitMerge className="h-2.5 w-2.5" /> Branches
           </button>
           <button
             onClick={() => { setShowStash(!showStash); if (!showStash) loadStashes(); }}
-            className={cn("text-[9px] px-1.5 py-0.5 rounded flex items-center gap-1 transition-colors", showStash ? "bg-primary/15 text-primary" : "bg-muted/50 text-muted-foreground hover:text-foreground")}
+            className={cn("text-[0.5625rem] px-1.5 py-0.5 rounded flex items-center gap-1 transition-colors", showStash ? "bg-primary/15 text-primary" : "bg-muted/50 text-muted-foreground hover:text-foreground")}
           >
             <Archive className="h-2.5 w-2.5" /> Stash
           </button>
@@ -1503,18 +1503,18 @@ function GitActionsPanel({
         {showBranches && (
           <div className="px-2 pb-1.5 border-b border-border">
             {branches.length === 0 ? (
-              <div className="text-[9px] text-muted-foreground text-center py-1">Loading...</div>
+              <div className="text-[0.5625rem] text-muted-foreground text-center py-1">Loading...</div>
             ) : (
               <div className="max-h-[120px] overflow-y-auto scrollbar-thin">
                 {branches.filter((b) => !b.name.startsWith("origin/")).map((b) => (
                   <button
                     key={b.name}
                     onClick={() => { if (!b.current) doCheckout(b.name); }}
-                    className={cn("w-full flex items-center gap-1.5 px-1 py-0.5 text-[10px] rounded hover:bg-muted/60 transition-colors text-left", b.current && "text-primary font-medium")}
+                    className={cn("w-full flex items-center gap-1.5 px-1 py-0.5 text-[0.625rem] rounded hover:bg-muted/60 transition-colors text-left", b.current && "text-primary font-medium")}
                   >
                     {b.current ? <Check className="h-2.5 w-2.5 shrink-0" /> : <GitBranch className="h-2.5 w-2.5 shrink-0 text-muted-foreground" />}
                     <span className="truncate flex-1">{b.name}</span>
-                    <span className="text-[8px] text-muted-foreground/50 font-mono shrink-0">{b.sha}</span>
+                    <span className="text-[0.5rem] text-muted-foreground/50 font-mono shrink-0">{b.sha}</span>
                   </button>
                 ))}
               </div>
@@ -1530,15 +1530,15 @@ function GitActionsPanel({
                 value={stashMsg}
                 onChange={(e) => setStashMsg(e.target.value)}
                 placeholder="Stash message (optional)..."
-                className="flex-1 text-[10px] bg-muted/40 border border-border rounded px-1.5 py-0.5 outline-none focus:ring-1 focus:ring-primary/50 placeholder:text-muted-foreground/40"
+                className="flex-1 text-[0.625rem] bg-muted/40 border border-border rounded px-1.5 py-0.5 outline-none focus:ring-1 focus:ring-primary/50 placeholder:text-muted-foreground/40"
               />
-              <button onClick={() => doStash("push")} className="text-[9px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-500 hover:bg-blue-500/20 transition-colors">Push</button>
-              <button onClick={() => doStash("pop")} className="text-[9px] px-1.5 py-0.5 rounded bg-orange-500/10 text-orange-500 hover:bg-orange-500/20 transition-colors">Pop</button>
+              <button onClick={() => doStash("push")} className="text-[0.5625rem] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-500 hover:bg-blue-500/20 transition-colors">Push</button>
+              <button onClick={() => doStash("pop")} className="text-[0.5625rem] px-1.5 py-0.5 rounded bg-orange-500/10 text-orange-500 hover:bg-orange-500/20 transition-colors">Pop</button>
             </div>
             {stashes.length > 0 && (
               <div className="max-h-[80px] overflow-y-auto scrollbar-thin">
                 {stashes.map((s, i) => (
-                  <div key={i} className="text-[10px] text-muted-foreground truncate py-0.5 px-1">{s}</div>
+                  <div key={i} className="text-[0.625rem] text-muted-foreground truncate py-0.5 px-1">{s}</div>
                 ))}
               </div>
             )}
@@ -1546,7 +1546,7 @@ function GitActionsPanel({
         )}
 
         {actionResult && (
-          <div className={cn("text-[9px] px-2 py-1", actionResult.includes("fail") || actionResult.includes("Error") ? "text-red-500" : "text-green-500")}>
+          <div className={cn("text-[0.5625rem] px-2 py-1", actionResult.includes("fail") || actionResult.includes("Error") ? "text-red-500" : "text-green-500")}>
             {actionResult}
           </div>
         )}
@@ -1571,7 +1571,7 @@ function BookmarksPanel({
   return (
     <div className="shrink-0 max-h-[30%] flex flex-col border border-border rounded-md overflow-hidden bg-muted/10">
       <div className="flex items-center justify-between px-2 py-1 bg-muted/30 border-b border-border">
-        <span className="text-[10px] font-medium flex items-center gap-1.5">
+        <span className="text-[0.625rem] font-medium flex items-center gap-1.5">
           <Bookmark className="h-3 w-3" /> Pinned ({bookmarks.length})
         </span>
         <button onClick={onClose} className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-muted transition-colors">
@@ -1588,7 +1588,7 @@ function BookmarksPanel({
                 {b.isDirectory ? <Folder className="h-3 w-3 shrink-0 text-blue-400" /> : <File className="h-3 w-3 shrink-0 text-muted-foreground" />}
                 <span className="text-xs truncate">{b.name}</span>
               </button>
-              <span className="text-[9px] text-muted-foreground/40 truncate max-w-[100px] hidden group-hover:hidden">{shortenPath(b.path)}</span>
+              <span className="text-[0.5625rem] text-muted-foreground/40 truncate max-w-[100px] hidden group-hover:hidden">{shortenPath(b.path)}</span>
               <button
                 onClick={() => onRemove(b.path)}
                 className="p-0.5 rounded text-muted-foreground/0 group-hover:text-red-400/60 hover:!text-red-400 transition-colors shrink-0"
@@ -1648,14 +1648,14 @@ function HighlightedCode({ code, extension }: { code: string; extension: string 
 
   if (!lang || html === null) {
     return (
-      <pre className="text-[10px] leading-relaxed font-mono whitespace-pre-wrap break-all text-foreground">
+      <pre className="text-[0.625rem] leading-relaxed font-mono whitespace-pre-wrap break-all text-foreground">
         {code}
       </pre>
     );
   }
   return (
     <div
-      className="shiki-preview text-[10px] leading-relaxed [&_pre]:!bg-transparent [&_pre]:!p-0 [&_pre]:!m-0 [&_code]:!text-[10px] [&_code]:!leading-relaxed overflow-x-auto"
+      className="shiki-preview text-[0.625rem] leading-relaxed [&_pre]:!bg-transparent [&_pre]:!p-0 [&_pre]:!m-0 [&_code]:!text-[0.625rem] [&_code]:!leading-relaxed overflow-x-auto"
       dangerouslySetInnerHTML={{ __html: html }}
     />
   );
@@ -1803,7 +1803,7 @@ function InlinePreview({ entry, onClose, className }: InlinePreviewProps) {
     <div className={cn("flex flex-col h-full overflow-hidden", className)}>
       {onClose && (
         <div className="flex items-center justify-between px-2 py-1 border-b border-border bg-muted/30 shrink-0">
-          <span className="text-[10px] font-medium truncate">{entry.name}</span>
+          <span className="text-[0.625rem] font-medium truncate">{entry.name}</span>
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-muted transition-colors shrink-0">
             <X className="h-3 w-3" />
           </button>
@@ -1818,7 +1818,7 @@ function InlinePreview({ entry, onClose, className }: InlinePreviewProps) {
             className="max-w-full max-h-full object-contain rounded"
           />
         ) : loading ? (
-          <div className="flex items-center gap-2 text-muted-foreground text-[10px]">
+          <div className="flex items-center gap-2 text-muted-foreground text-[0.625rem]">
             <div className="h-3 w-3 border-2 border-muted-foreground/30 border-t-primary rounded-full animate-spin" />
             Loading...
           </div>
@@ -1886,7 +1886,7 @@ function GridView({
           </div>
           <a
             href={entry.isDirectory ? undefined : rawFileUrl(entry.path)}
-            className="text-[10px] leading-tight line-clamp-2 w-full break-words text-foreground/80 group-hover:text-foreground"
+            className="text-[0.625rem] leading-tight line-clamp-2 w-full break-words text-foreground/80 group-hover:text-foreground"
             onClick={(e) => e.preventDefault()}
             draggable={false}
             tabIndex={-1}
@@ -2258,12 +2258,12 @@ function TreeNodeRow({
         </span>
         {/* Child count badge for directories (only once loaded) */}
         {node.entry.isDirectory && childCount !== null && childCount > 0 && (
-          <span className="ml-1 text-[9px] text-muted-foreground/50 shrink-0 bg-muted/60 rounded px-1">
+          <span className="ml-1 text-[0.5625rem] text-muted-foreground/50 shrink-0 bg-muted/60 rounded px-1">
             {childCount}
           </span>
         )}
         {!node.entry.isDirectory && (
-          <span className="text-[9px] text-muted-foreground/50 shrink-0">
+          <span className="text-[0.5625rem] text-muted-foreground/50 shrink-0">
             {formatDate(node.entry.modified)}
           </span>
         )}
@@ -2417,7 +2417,7 @@ function RecentView({
     <div className="space-y-0">
       {[...grouped.entries()].map(([label, files]) => (
         <div key={label}>
-          <div className="flex items-center gap-1.5 px-2 py-1 text-[10px] text-muted-foreground font-medium uppercase tracking-wider sticky top-0 bg-background/90 backdrop-blur-sm">
+          <div className="flex items-center gap-1.5 px-2 py-1 text-[0.625rem] text-muted-foreground font-medium uppercase tracking-wider sticky top-0 bg-background/90 backdrop-blur-sm">
             <Clock className="h-2.5 w-2.5" />
             {label}
           </div>
@@ -2437,14 +2437,14 @@ function RecentView({
                   <FileIcon entry={f} className="h-3.5 w-3.5 shrink-0" />
                   <span className="flex-1 truncate">{f.name}</span>
                 </button>
-                <span className="text-[9px] text-muted-foreground/60 shrink-0 truncate max-w-[100px] hidden group-hover:hidden">
+                <span className="text-[0.5625rem] text-muted-foreground/60 shrink-0 truncate max-w-[100px] hidden group-hover:hidden">
                   {shortenPath(parentDir)}
                 </span>
                 {hoveredPath === f.path && (
                   <button
                     onClick={() => onOpenParent(parentDir)}
                     title={`Open ${shortenPath(parentDir)}`}
-                    className="shrink-0 flex items-center gap-1 text-[9px] text-muted-foreground hover:text-primary transition-colors px-1 py-0.5 rounded hover:bg-muted"
+                    className="shrink-0 flex items-center gap-1 text-[0.5625rem] text-muted-foreground hover:text-primary transition-colors px-1 py-0.5 rounded hover:bg-muted"
                   >
                     <FolderOpenDot className="h-3 w-3" />
                     <span className="truncate max-w-[90px]">{shortenPath(parentDir)}</span>
@@ -2597,7 +2597,7 @@ function VpsConnectionDialog({
 
   const field = (label: string, value: string, onChange: (v: string) => void, placeholder: string) => (
     <div className="flex items-center gap-2">
-      <span className="text-[10px] text-muted-foreground w-16 shrink-0 text-right">{label}</span>
+      <span className="text-[0.625rem] text-muted-foreground w-16 shrink-0 text-right">{label}</span>
       <input
         value={value}
         onChange={(e) => onChange(e.target.value)}
@@ -2665,12 +2665,12 @@ function VpsConnectionDialog({
         {/* Existing connections list */}
         {connections.length > 0 && !editingConn && (
           <div className="border-t border-border pt-2 mt-2">
-            <div className="text-[10px] text-muted-foreground mb-1">Saved Connections</div>
+            <div className="text-[0.625rem] text-muted-foreground mb-1">Saved Connections</div>
             {connections.map((c) => (
               <div key={c.id} className="flex items-center gap-2 py-1 text-xs">
                 <Server className="h-3 w-3 text-muted-foreground shrink-0" />
                 <span className="truncate flex-1">{c.label}</span>
-                <span className="text-[9px] text-muted-foreground/60">{c.host}:{c.port}</span>
+                <span className="text-[0.5625rem] text-muted-foreground/60">{c.host}:{c.port}</span>
               </div>
             ))}
           </div>
@@ -2876,7 +2876,7 @@ function MiniExplorerPane({
               if (conn) onChangeSource({ type: "vps", connectionId: val, connection: conn });
             }
           }}
-          className="text-[10px] bg-muted/50 border border-border rounded px-1 py-0.5 outline-none min-w-0 flex-1 truncate"
+          className="text-[0.625rem] bg-muted/50 border border-border rounded px-1 py-0.5 outline-none min-w-0 flex-1 truncate"
         >
           <option value="local">Local</option>
           {vpsConnections.map((c) => (
@@ -2930,10 +2930,10 @@ function MiniExplorerPane({
         <button onClick={goHome} className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-muted shrink-0">
           <Home className="h-3 w-3" />
         </button>
-        <span className="text-[9px] text-muted-foreground truncate flex-1" title={resolvedPath}>
+        <span className="text-[0.5625rem] text-muted-foreground truncate flex-1" title={resolvedPath}>
           {shortenRemote(resolvedPath || currentPath)}
         </span>
-        <span className="text-[8px] text-muted-foreground/40 shrink-0">{sortField}</span>
+        <span className="text-[0.5rem] text-muted-foreground/40 shrink-0">{sortField}</span>
       </div>
 
       {/* File list / grid */}
@@ -2945,8 +2945,8 @@ function MiniExplorerPane({
         ) : error ? (
           <div className="flex flex-col items-center justify-center h-full gap-1 text-muted-foreground px-2 text-center">
             <WifiOff className="h-5 w-5 text-red-400" />
-            <span className="text-[10px]">{error}</span>
-            <button onClick={() => fetchDir(currentPath)} className="text-[10px] text-primary hover:underline">Retry</button>
+            <span className="text-[0.625rem]">{error}</span>
+            <button onClick={() => fetchDir(currentPath)} className="text-[0.625rem] text-primary hover:underline">Retry</button>
           </div>
         ) : filteredEntries.length === 0 ? (
           <div className="flex items-center justify-center h-full text-muted-foreground text-xs">
@@ -2964,7 +2964,7 @@ function MiniExplorerPane({
                 className="flex flex-col items-center gap-0.5 p-1.5 rounded-md hover:bg-muted/60 cursor-grab active:cursor-grabbing transition-colors"
               >
                 <FileIcon entry={entry} className="h-6 w-6 shrink-0 pointer-events-none" />
-                <span className={cn("text-[9px] text-center truncate w-full", entry.isDirectory && "font-medium")}>
+                <span className={cn("text-[0.5625rem] text-center truncate w-full", entry.isDirectory && "font-medium")}>
                   {entry.name}
                 </span>
               </div>
@@ -2989,7 +2989,7 @@ function MiniExplorerPane({
                   {entry.name}
                 </span>
                 {!entry.isDirectory && (
-                  <span className="text-[9px] text-muted-foreground/50 shrink-0">{formatSize(entry.size)}</span>
+                  <span className="text-[0.5625rem] text-muted-foreground/50 shrink-0">{formatSize(entry.size)}</span>
                 )}
               </div>
             ))}
@@ -3004,7 +3004,7 @@ function MiniExplorerPane({
           style={{ position: "fixed", left: ctxMenu.x, top: ctxMenu.y, zIndex: 9999 }}
           className="min-w-[140px] bg-popover border border-border rounded-lg shadow-xl py-1 overflow-hidden"
         >
-          <div className="px-3 py-1 text-[9px] text-muted-foreground/60 uppercase tracking-wider truncate border-b border-border mb-1">
+          <div className="px-3 py-1 text-[0.5625rem] text-muted-foreground/60 uppercase tracking-wider truncate border-b border-border mb-1">
             {ctxMenu.entry.name}
           </div>
           <button onClick={() => { handleCopyPath(ctxMenu.entry); setCtxMenu(null); }} className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-muted/70">
@@ -3019,7 +3019,7 @@ function MiniExplorerPane({
       )}
 
       {/* Status bar */}
-      <div className="shrink-0 text-[9px] text-muted-foreground/60 flex items-center justify-between px-1.5 py-0.5 border-t border-border bg-muted/10">
+      <div className="shrink-0 text-[0.5625rem] text-muted-foreground/60 flex items-center justify-between px-1.5 py-0.5 border-t border-border bg-muted/10">
         <span>{filteredEntries.length} items</span>
         {source.type === "vps" && (
           <span className="flex items-center gap-1">
@@ -3202,7 +3202,7 @@ function DualPaneExplorer({
         </div>
       </div>
 
-      <div className="shrink-0 text-[9px] text-muted-foreground/50 text-center">
+      <div className="shrink-0 text-[0.5625rem] text-muted-foreground/50 text-center">
         Drag files between panes to copy • Supports local ↔ VPS transfers
       </div>
     </div>
@@ -3265,11 +3265,11 @@ function DbPreviewTable({ content }: { content: string }) {
     <div className="flex flex-col h-full overflow-hidden">
       <div className="shrink-0 flex items-center gap-2 px-3 py-1.5 bg-muted/30 border-b border-border">
         <Table2 className="h-3.5 w-3.5 text-green-500" />
-        <span className="text-[11px] font-medium">{table}</span>
-        <span className="text-[10px] text-muted-foreground">({rowCount} rows)</span>
+        <span className="text-[0.6875rem] font-medium">{table}</span>
+        <span className="text-[0.625rem] text-muted-foreground">({rowCount} rows)</span>
       </div>
       <div className="flex-1 min-h-0 overflow-auto">
-        <table className="w-full text-[11px] border-collapse">
+        <table className="w-full text-[0.6875rem] border-collapse">
           <thead className="sticky top-0 bg-muted/80 backdrop-blur-sm">
             <tr>
               {columns.map((col) => (
@@ -3283,7 +3283,7 @@ function DbPreviewTable({ content }: { content: string }) {
             {rows.map((row, i) => (
               <tr key={i} className="hover:bg-muted/40 transition-colors border-b border-border/50">
                 {columns.map((col) => (
-                  <td key={col} className="px-2 py-0.5 whitespace-nowrap max-w-[200px] truncate font-mono text-[10px]" title={String(row[col] ?? "")}>
+                  <td key={col} className="px-2 py-0.5 whitespace-nowrap max-w-[200px] truncate font-mono text-[0.625rem]" title={String(row[col] ?? "")}>
                     {row[col] === null ? <span className="text-muted-foreground/40 italic">NULL</span> : String(row[col])}
                   </td>
                 ))}
@@ -3389,12 +3389,12 @@ function DbQueryEditor({
           onChange={(e) => setAiPrompt(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); generateSql(); } }}
           placeholder="Ask in natural language... (e.g. &quot;show all users created this week&quot;)"
-          className="flex-1 text-[11px] bg-transparent border-none outline-none placeholder:text-muted-foreground/50"
+          className="flex-1 text-[0.6875rem] bg-transparent border-none outline-none placeholder:text-muted-foreground/50"
         />
         {aiLoading ? (
           <button
             onClick={stopGenerate}
-            className="flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded bg-red-500/10 text-red-600 dark:text-red-400 hover:bg-red-500/20 border border-red-500/20 transition-colors"
+            className="flex items-center gap-1 px-1.5 py-0.5 text-[0.625rem] rounded bg-red-500/10 text-red-600 dark:text-red-400 hover:bg-red-500/20 border border-red-500/20 transition-colors"
           >
             <Ban className="h-3 w-3" />
             Stop
@@ -3403,7 +3403,7 @@ function DbQueryEditor({
           <button
             onClick={generateSql}
             disabled={!aiPrompt.trim()}
-            className="flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 border border-amber-500/20 transition-colors disabled:opacity-40"
+            className="flex items-center gap-1 px-1.5 py-0.5 text-[0.625rem] rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 border border-amber-500/20 transition-colors disabled:opacity-40"
           >
             <Zap className="h-3 w-3" />
             Generate
@@ -3441,7 +3441,7 @@ function DbQueryEditor({
           <button
             onClick={() => runQuery()}
             disabled={running || !sql.trim()}
-            className="flex items-center gap-1 px-2 py-1 text-[10px] rounded-md bg-green-500/10 text-green-600 dark:text-green-400 hover:bg-green-500/20 border border-green-500/20 transition-colors disabled:opacity-40"
+            className="flex items-center gap-1 px-2 py-1 text-[0.625rem] rounded-md bg-green-500/10 text-green-600 dark:text-green-400 hover:bg-green-500/20 border border-green-500/20 transition-colors disabled:opacity-40"
             title="Run query (Cmd+Enter)"
           >
             {running ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
@@ -3453,20 +3453,20 @@ function DbQueryEditor({
       {/* Results */}
       <div className="flex-[3] min-h-0 overflow-hidden flex flex-col">
         {queryError && (
-          <div className="shrink-0 px-3 py-2 bg-red-500/10 text-red-500 text-[11px] border-b border-border">
+          <div className="shrink-0 px-3 py-2 bg-red-500/10 text-red-500 text-[0.6875rem] border-b border-border">
             {queryError}
           </div>
         )}
         {results && (
           <>
-            <div className="shrink-0 flex items-center gap-2 px-3 py-1 bg-muted/30 border-b border-border text-[10px] text-muted-foreground">
+            <div className="shrink-0 flex items-center gap-2 px-3 py-1 bg-muted/30 border-b border-border text-[0.625rem] text-muted-foreground">
               <span className="font-medium text-foreground">{results.command}</span>
               <span>{results.rowCount} row{results.rowCount !== 1 ? "s" : ""}</span>
               <span>{results.duration}ms</span>
             </div>
             <div className="flex-1 min-h-0 overflow-auto">
               {results.columns.length > 0 ? (
-                <table className="w-full text-[11px] border-collapse">
+                <table className="w-full text-[0.6875rem] border-collapse">
                   <thead className="sticky top-0 bg-muted/80 backdrop-blur-sm">
                     <tr>
                       {results.columns.map((col) => (
@@ -3480,7 +3480,7 @@ function DbQueryEditor({
                     {results.rows.map((row, i) => (
                       <tr key={i} className="hover:bg-muted/40 transition-colors border-b border-border/50">
                         {results.columns.map((col) => (
-                          <td key={col} className="px-2 py-0.5 whitespace-nowrap max-w-[200px] truncate font-mono text-[10px]" title={String(row[col] ?? "")}>
+                          <td key={col} className="px-2 py-0.5 whitespace-nowrap max-w-[200px] truncate font-mono text-[0.625rem]" title={String(row[col] ?? "")}>
                             {row[col] === null ? <span className="text-muted-foreground/40 italic">NULL</span> : String(row[col])}
                           </td>
                         ))}
@@ -3647,7 +3647,7 @@ function VscodeDatabasePanel({
       <div className="px-2 py-1.5 border-b border-border shrink-0">
         <button
           onClick={() => setShowAddForm(!showAddForm)}
-          className="w-full flex items-center gap-1.5 text-[11px] px-2 py-1 rounded-md bg-muted/50 hover:bg-primary/10 hover:text-primary border border-border/50 transition-colors"
+          className="w-full flex items-center gap-1.5 text-[0.6875rem] px-2 py-1 rounded-md bg-muted/50 hover:bg-primary/10 hover:text-primary border border-border/50 transition-colors"
         >
           <Plus className="h-3 w-3" />
           {showAddForm ? "Cancel" : "Add Connection"}
@@ -3657,28 +3657,28 @@ function VscodeDatabasePanel({
       {/* Add connection form */}
       {showAddForm && (
         <div className="px-2 py-2 border-b border-border space-y-1.5 shrink-0">
-          <input value={formLabel} onChange={(e) => setFormLabel(e.target.value)} placeholder="Label (optional)" className="w-full text-[10px] bg-muted/40 border border-border rounded px-2 py-0.5 outline-none focus:ring-1 focus:ring-primary/50" />
+          <input value={formLabel} onChange={(e) => setFormLabel(e.target.value)} placeholder="Label (optional)" className="w-full text-[0.625rem] bg-muted/40 border border-border rounded px-2 py-0.5 outline-none focus:ring-1 focus:ring-primary/50" />
           <div className="flex gap-1">
-            <input value={formHost} onChange={(e) => setFormHost(e.target.value)} placeholder="Host" className="flex-1 text-[10px] bg-muted/40 border border-border rounded px-2 py-0.5 outline-none focus:ring-1 focus:ring-primary/50" />
-            <input value={formPort} onChange={(e) => setFormPort(e.target.value)} placeholder="Port" className="w-12 text-[10px] bg-muted/40 border border-border rounded px-2 py-0.5 outline-none focus:ring-1 focus:ring-primary/50" />
+            <input value={formHost} onChange={(e) => setFormHost(e.target.value)} placeholder="Host" className="flex-1 text-[0.625rem] bg-muted/40 border border-border rounded px-2 py-0.5 outline-none focus:ring-1 focus:ring-primary/50" />
+            <input value={formPort} onChange={(e) => setFormPort(e.target.value)} placeholder="Port" className="w-12 text-[0.625rem] bg-muted/40 border border-border rounded px-2 py-0.5 outline-none focus:ring-1 focus:ring-primary/50" />
           </div>
-          <input value={formDatabase} onChange={(e) => setFormDatabase(e.target.value)} placeholder="Database" className="w-full text-[10px] bg-muted/40 border border-border rounded px-2 py-0.5 outline-none focus:ring-1 focus:ring-primary/50" />
-          <input value={formUsername} onChange={(e) => setFormUsername(e.target.value)} placeholder="Username" className="w-full text-[10px] bg-muted/40 border border-border rounded px-2 py-0.5 outline-none focus:ring-1 focus:ring-primary/50" />
-          <input value={formPassword} onChange={(e) => setFormPassword(e.target.value)} placeholder="Password" type="password" className="w-full text-[10px] bg-muted/40 border border-border rounded px-2 py-0.5 outline-none focus:ring-1 focus:ring-primary/50" />
-          <label className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+          <input value={formDatabase} onChange={(e) => setFormDatabase(e.target.value)} placeholder="Database" className="w-full text-[0.625rem] bg-muted/40 border border-border rounded px-2 py-0.5 outline-none focus:ring-1 focus:ring-primary/50" />
+          <input value={formUsername} onChange={(e) => setFormUsername(e.target.value)} placeholder="Username" className="w-full text-[0.625rem] bg-muted/40 border border-border rounded px-2 py-0.5 outline-none focus:ring-1 focus:ring-primary/50" />
+          <input value={formPassword} onChange={(e) => setFormPassword(e.target.value)} placeholder="Password" type="password" className="w-full text-[0.625rem] bg-muted/40 border border-border rounded px-2 py-0.5 outline-none focus:ring-1 focus:ring-primary/50" />
+          <label className="flex items-center gap-1.5 text-[0.625rem] text-muted-foreground">
             <input type="checkbox" checked={formSsl} onChange={(e) => setFormSsl(e.target.checked)} className="rounded" />
             Use SSL
           </label>
           {testResult && (
-            <div className={cn("text-[9px] px-1 py-0.5 rounded", testResult.success ? "bg-green-500/10 text-green-500" : "bg-red-500/10 text-red-500")}>
+            <div className={cn("text-[0.5625rem] px-1 py-0.5 rounded", testResult.success ? "bg-green-500/10 text-green-500" : "bg-red-500/10 text-red-500")}>
               {testResult.message}
             </div>
           )}
           <div className="flex items-center gap-1">
-            <button onClick={testConnection} disabled={testing} className="flex-1 text-[10px] px-2 py-1 rounded bg-muted hover:bg-muted/80 transition-colors disabled:opacity-40">
+            <button onClick={testConnection} disabled={testing} className="flex-1 text-[0.625rem] px-2 py-1 rounded bg-muted hover:bg-muted/80 transition-colors disabled:opacity-40">
               {testing ? <Loader2 className="h-3 w-3 animate-spin inline" /> : "Test"}
             </button>
-            <button onClick={saveConnection} className="flex-1 text-[10px] px-2 py-1 rounded bg-primary/10 text-primary hover:bg-primary/20 transition-colors">
+            <button onClick={saveConnection} className="flex-1 text-[0.625rem] px-2 py-1 rounded bg-primary/10 text-primary hover:bg-primary/20 transition-colors">
               Save
             </button>
           </div>
@@ -3686,7 +3686,7 @@ function VscodeDatabasePanel({
       )}
 
       {error && (
-        <div className="px-2 py-1 text-[9px] text-red-500 border-b border-border shrink-0">
+        <div className="px-2 py-1 text-[0.5625rem] text-red-500 border-b border-border shrink-0">
           {error}
           <button onClick={() => setError(null)} className="ml-1 underline">dismiss</button>
         </div>
@@ -3704,7 +3704,7 @@ function VscodeDatabasePanel({
               <button
                 onClick={() => loadSchemas(conn.id)}
                 className={cn(
-                  "flex-1 flex items-center gap-1.5 px-2 py-1 text-[11px] hover:bg-muted/60 transition-colors text-left",
+                  "flex-1 flex items-center gap-1.5 px-2 py-1 text-[0.6875rem] hover:bg-muted/60 transition-colors text-left",
                   expandedConn === conn.id && "text-primary font-medium"
                 )}
               >
@@ -3740,7 +3740,7 @@ function VscodeDatabasePanel({
                     <div key={schema}>
                       <button
                         onClick={() => loadTables(conn.id, schema)}
-                        className={cn("w-full flex items-center gap-1.5 py-0.5 text-[11px] hover:bg-muted/60 transition-colors text-left", expandedSchema === schemaKey && "text-primary")}
+                        className={cn("w-full flex items-center gap-1.5 py-0.5 text-[0.6875rem] hover:bg-muted/60 transition-colors text-left", expandedSchema === schemaKey && "text-primary")}
                         style={{ paddingLeft: "28px" }}
                       >
                         <ChevronRight className={cn("h-2.5 w-2.5 shrink-0 text-muted-foreground/60 transition-transform", expandedSchema === schemaKey && "rotate-90")} />
@@ -3759,13 +3759,13 @@ function VscodeDatabasePanel({
                                 <div className="flex items-center group/table">
                                   <button
                                     onClick={() => loadColumns(conn.id, schema, table.name)}
-                                    className={cn("flex-1 flex items-center gap-1.5 py-0.5 text-[11px] hover:bg-muted/60 transition-colors text-left", expandedTable === tableKey && "text-primary")}
+                                    className={cn("flex-1 flex items-center gap-1.5 py-0.5 text-[0.6875rem] hover:bg-muted/60 transition-colors text-left", expandedTable === tableKey && "text-primary")}
                                     style={{ paddingLeft: "44px" }}
                                   >
                                     <ChevronRight className={cn("h-2.5 w-2.5 shrink-0 text-muted-foreground/60 transition-transform", expandedTable === tableKey && "rotate-90")} />
                                     <Table2 className={cn("h-3 w-3 shrink-0", table.type === "view" ? "text-purple-500" : "text-green-500")} />
                                     <span className="truncate">{table.name}</span>
-                                    {table.type === "view" && <span className="text-[8px] text-purple-400 shrink-0">VIEW</span>}
+                                    {table.type === "view" && <span className="text-[0.5rem] text-purple-400 shrink-0">VIEW</span>}
                                     {loading === tableKey && <Loader2 className="h-2.5 w-2.5 animate-spin shrink-0" />}
                                   </button>
                                   <button
@@ -3783,14 +3783,14 @@ function VscodeDatabasePanel({
                                     {columns[tableKey].map((col) => (
                                       <div
                                         key={col.name}
-                                        className="flex items-center gap-1.5 py-[1px] text-[10px] text-muted-foreground hover:bg-muted/40 transition-colors"
+                                        className="flex items-center gap-1.5 py-[1px] text-[0.625rem] text-muted-foreground hover:bg-muted/40 transition-colors"
                                         style={{ paddingLeft: "62px" }}
                                         title={`${col.type}${col.nullable ? " (nullable)" : ""}${col.default ? ` default: ${col.default}` : ""}`}
                                       >
                                         <Columns3 className="h-2.5 w-2.5 shrink-0 text-muted-foreground/60" />
                                         <span className="truncate font-medium">{col.name}</span>
-                                        <span className="text-[9px] text-muted-foreground/50 shrink-0 ml-auto mr-1">{col.type}</span>
-                                        {!col.nullable && <span className="text-[8px] text-orange-400 shrink-0">NN</span>}
+                                        <span className="text-[0.5625rem] text-muted-foreground/50 shrink-0 ml-auto mr-1">{col.type}</span>
+                                        {!col.nullable && <span className="text-[0.5rem] text-orange-400 shrink-0">NN</span>}
                                       </div>
                                     ))}
                                   </div>
@@ -4066,7 +4066,7 @@ function VscodeLayout({
       {/* Sidebar */}
       {!sidebarCollapsed && (
         <div className="w-52 shrink-0 flex flex-col border-r border-border bg-background overflow-hidden">
-          <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium px-3 py-2 border-b border-border shrink-0">
+          <div className="text-[0.625rem] uppercase tracking-wider text-muted-foreground font-medium px-3 py-2 border-b border-border shrink-0">
             {activePanel === "explorer" && "Explorer"}
             {activePanel === "search" && "Search"}
             {activePanel === "sourceControl" && "Source Control"}
@@ -4078,7 +4078,7 @@ function VscodeLayout({
             {/* Explorer Panel */}
             {activePanel === "explorer" && (
               <div className="py-0.5">
-                <div className="text-[9px] uppercase tracking-wider text-muted-foreground/60 px-3 py-1 font-medium">
+                <div className="text-[0.5625rem] uppercase tracking-wider text-muted-foreground/60 px-3 py-1 font-medium">
                   {rootPath.split("/").pop() || rootPath}
                 </div>
                 {explorerNodes.map((node) => (
@@ -4104,7 +4104,7 @@ function VscodeLayout({
               <div className="py-1">
                 {gitStatus?.isGitRepo ? (
                   <>
-                    <div className="flex items-center gap-1.5 px-3 py-1 text-[10px] text-muted-foreground">
+                    <div className="flex items-center gap-1.5 px-3 py-1 text-[0.625rem] text-muted-foreground">
                       <GitBranch className="h-3 w-3" />
                       <span className="font-medium">{gitStatus.branch}</span>
                       {(gitStatus.ahead || 0) > 0 && <span className="text-green-500">↑{gitStatus.ahead}</span>}
@@ -4118,7 +4118,7 @@ function VscodeLayout({
                           onChange={(e) => setCommitMsg(e.target.value)}
                           onKeyDown={(e) => { if (e.key === "Enter" && commitMsg.trim()) doCommit(); }}
                           placeholder="Commit message..."
-                          className="flex-1 text-[11px] bg-muted/40 border border-border rounded px-2 py-1 outline-none focus:ring-1 focus:ring-primary/50 placeholder:text-muted-foreground/40"
+                          className="flex-1 text-[0.6875rem] bg-muted/40 border border-border rounded px-2 py-1 outline-none focus:ring-1 focus:ring-primary/50 placeholder:text-muted-foreground/40"
                         />
                         <button
                           onClick={doCommit}
@@ -4130,7 +4130,7 @@ function VscodeLayout({
                         </button>
                       </div>
                       {commitResult && (
-                        <div className={cn("text-[9px] mt-1", commitResult.startsWith("Error") ? "text-red-500" : "text-green-500")}>
+                        <div className={cn("text-[0.5625rem] mt-1", commitResult.startsWith("Error") ? "text-red-500" : "text-green-500")}>
                           {commitResult}
                         </div>
                       )}
@@ -4141,12 +4141,12 @@ function VscodeLayout({
                         {gitStatus.files.filter((f) => f.staged).length > 0 && (
                           <div>
                             <div className="flex items-center justify-between px-3 py-1">
-                              <span className="text-[9px] uppercase tracking-wider text-green-500 font-medium">
+                              <span className="text-[0.5625rem] uppercase tracking-wider text-green-500 font-medium">
                                 Staged ({gitStatus.files.filter((f) => f.staged).length})
                               </span>
                               <button
                                 onClick={() => doUnstage(gitStatus.files!.filter((f) => f.staged).map((f) => f.path))}
-                                className="text-[9px] text-muted-foreground hover:text-foreground"
+                                className="text-[0.5625rem] text-muted-foreground hover:text-foreground"
                                 title="Unstage all"
                               >
                                 <Minus className="h-3 w-3" />
@@ -4161,7 +4161,7 @@ function VscodeLayout({
                                   const absPath = gitStatus.repoRoot ? `${gitStatus.repoRoot}/${f.path}` : f.path;
                                   openFile({ name, path: absPath, extension: ext, isDirectory: false, size: 0, modified: "" });
                                 }}
-                                className="w-full flex items-center gap-1.5 px-3 py-0.5 text-[11px] hover:bg-muted/60 transition-colors text-left"
+                                className="w-full flex items-center gap-1.5 px-3 py-0.5 text-[0.6875rem] hover:bg-muted/60 transition-colors text-left"
                               >
                                 <GitStatusBadge status={f.status} />
                                 <span className="truncate flex-1 text-green-600 dark:text-green-400">{f.path}</span>
@@ -4179,12 +4179,12 @@ function VscodeLayout({
                         {gitStatus.files.filter((f) => f.working).length > 0 && (
                           <div>
                             <div className="flex items-center justify-between px-3 py-1">
-                              <span className="text-[9px] uppercase tracking-wider text-yellow-500 font-medium">
+                              <span className="text-[0.5625rem] uppercase tracking-wider text-yellow-500 font-medium">
                                 Changes ({gitStatus.files.filter((f) => f.working).length})
                               </span>
                               <button
                                 onClick={() => doStage(gitStatus.files!.filter((f) => f.working && !f.staged).map((f) => f.path))}
-                                className="text-[9px] text-muted-foreground hover:text-foreground"
+                                className="text-[0.5625rem] text-muted-foreground hover:text-foreground"
                                 title="Stage all"
                               >
                                 <Plus className="h-3 w-3" />
@@ -4199,7 +4199,7 @@ function VscodeLayout({
                                   const absPath = gitStatus.repoRoot ? `${gitStatus.repoRoot}/${f.path}` : f.path;
                                   openFile({ name, path: absPath, extension: ext, isDirectory: false, size: 0, modified: "" });
                                 }}
-                                className="w-full flex items-center gap-1.5 px-3 py-0.5 text-[11px] hover:bg-muted/60 transition-colors text-left"
+                                className="w-full flex items-center gap-1.5 px-3 py-0.5 text-[0.6875rem] hover:bg-muted/60 transition-colors text-left"
                               >
                                 <GitStatusBadge status={f.status} />
                                 <span className={cn("truncate flex-1", f.status === "D" ? "text-red-500 line-through" : "text-yellow-600 dark:text-yellow-400")}>{f.path}</span>
@@ -4229,7 +4229,7 @@ function VscodeLayout({
               <div className="py-1">
                 {projectInfo && Object.entries(projectInfo.scripts).length > 0 ? (
                   <>
-                    <div className="flex items-center gap-1.5 px-3 py-1 text-[10px] text-muted-foreground">
+                    <div className="flex items-center gap-1.5 px-3 py-1 text-[0.625rem] text-muted-foreground">
                       <Package className="h-3 w-3" />
                       <span className="font-medium">{projectInfo.name}</span>
                       <span className="text-muted-foreground/50">({projectInfo.type})</span>
@@ -4238,12 +4238,12 @@ function VscodeLayout({
                       <button
                         key={name}
                         onClick={() => runScript(name, cmd)}
-                        className="w-full flex items-center gap-1.5 px-3 py-1.5 text-[11px] hover:bg-muted/60 transition-colors group text-left"
+                        className="w-full flex items-center gap-1.5 px-3 py-1.5 text-[0.6875rem] hover:bg-muted/60 transition-colors group text-left"
                         title={`Run: ${cmd}`}
                       >
                         <Play className="h-3 w-3 text-green-500 shrink-0 group-hover:scale-110 transition-transform" />
                         <span className="truncate flex-1 font-medium">{name}</span>
-                        <span className="text-[9px] text-muted-foreground/50 truncate max-w-[80px] hidden group-hover:block">{cmd}</span>
+                        <span className="text-[0.5625rem] text-muted-foreground/50 truncate max-w-[80px] hidden group-hover:block">{cmd}</span>
                       </button>
                     ))}
                   </>
@@ -4308,7 +4308,7 @@ function VscodeLayout({
               <div
                 key={file.path}
                 className={cn(
-                  "flex items-center gap-1.5 px-3 py-1.5 text-[11px] cursor-pointer border-r border-border transition-colors group min-w-0 max-w-[160px] shrink-0",
+                  "flex items-center gap-1.5 px-3 py-1.5 text-[0.6875rem] cursor-pointer border-r border-border transition-colors group min-w-0 max-w-[160px] shrink-0",
                   idx === activeFileIdx
                     ? "bg-background text-foreground border-b-2 border-b-primary"
                     : "text-muted-foreground hover:text-foreground hover:bg-muted/40"
@@ -4328,7 +4328,7 @@ function VscodeLayout({
             ))}
             {/* Save status */}
             {saveStatus && (
-              <span className={cn("text-[9px] px-2 shrink-0", saveStatus === "saved" ? "text-green-500" : "text-red-500")}>
+              <span className={cn("text-[0.5625rem] px-2 shrink-0", saveStatus === "saved" ? "text-green-500" : "text-red-500")}>
                 {saveStatus === "saved" ? "Saved" : "Save failed"}
               </span>
             )}
@@ -4427,7 +4427,7 @@ function VscodeLayout({
         )}
 
         {/* Status Bar */}
-        <div className="shrink-0 flex items-center justify-between px-2 py-0.5 bg-primary/10 border-t border-border text-[9px]">
+        <div className="shrink-0 flex items-center justify-between px-2 py-0.5 bg-primary/10 border-t border-border text-[0.5625rem]">
           <div className="flex items-center gap-2 text-muted-foreground">
             {gitStatus?.isGitRepo && (
               <span className="flex items-center gap-1">
@@ -4478,7 +4478,7 @@ function VscodeTreeNode({
           else onFileClick(node.entry);
         }}
         className={cn(
-          "w-full flex items-center gap-1 px-1 py-[2px] text-[11px] text-left hover:bg-muted/60 transition-colors focus:outline-none",
+          "w-full flex items-center gap-1 px-1 py-[2px] text-[0.6875rem] text-left hover:bg-muted/60 transition-colors focus:outline-none",
           isActive && "bg-primary/10 text-primary"
         )}
         style={{ paddingLeft: `${8 + depth * 12}px` }}
@@ -4545,7 +4545,7 @@ function VscodeSearchPanel({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search in files..."
-            className="w-full pl-7 pr-2 py-1 text-[11px] bg-muted/40 border border-border rounded focus:outline-none focus:ring-1 focus:ring-primary/50 placeholder:text-muted-foreground/50"
+            className="w-full pl-7 pr-2 py-1 text-[0.6875rem] bg-muted/40 border border-border rounded focus:outline-none focus:ring-1 focus:ring-primary/50 placeholder:text-muted-foreground/50"
           />
           {loading && (
             <Loader2 className="absolute right-2 top-1/2 -translate-y-1/2 h-3 w-3 animate-spin text-muted-foreground" />
@@ -4559,13 +4559,13 @@ function VscodeSearchPanel({
             onClick={() => onOpenFile(r)}
             className="w-full flex flex-col px-3 py-1 text-left hover:bg-muted/60 transition-colors"
           >
-            <div className="flex items-center gap-1.5 text-[11px]">
+            <div className="flex items-center gap-1.5 text-[0.6875rem]">
               <FileIcon entry={r} className="h-3 w-3 shrink-0" />
               <span className="truncate font-medium">{r.name}</span>
-              {r.matchLineNumber && <span className="text-[9px] text-muted-foreground/50">:{r.matchLineNumber}</span>}
+              {r.matchLineNumber && <span className="text-[0.5625rem] text-muted-foreground/50">:{r.matchLineNumber}</span>}
             </div>
             {r.matchLine && (
-              <span className="text-[10px] text-muted-foreground truncate pl-[18px] font-mono">{r.matchLine}</span>
+              <span className="text-[0.625rem] text-muted-foreground truncate pl-[18px] font-mono">{r.matchLine}</span>
             )}
           </button>
         ))}
@@ -5617,7 +5617,7 @@ export function FilesWidget() {
       <div className="flex flex-col h-full gap-1" onPaste={handlePasteEvent} tabIndex={-1}>
         {/* Paste status indicator */}
         {(pasting || pasteStatus) && (
-          <div className="shrink-0 flex items-center gap-2 px-2 py-1 bg-primary/5 border border-primary/20 rounded-md text-[10px]">
+          <div className="shrink-0 flex items-center gap-2 px-2 py-1 bg-primary/5 border border-primary/20 rounded-md text-[0.625rem]">
             {pasting ? (
               <>
                 <div className="h-3 w-3 border-[1.5px] border-primary/30 border-t-primary rounded-full animate-spin shrink-0" />
@@ -5638,7 +5638,7 @@ export function FilesWidget() {
             <button
               onClick={() => setMonacoMode(!monacoMode)}
               className={cn(
-                "px-1.5 py-0.5 rounded-md text-[10px] font-medium transition-colors",
+                "px-1.5 py-0.5 rounded-md text-[0.625rem] font-medium transition-colors",
                 monacoMode ? "text-primary bg-primary/10 border border-primary/30" : "text-muted-foreground hover:text-foreground hover:bg-muted"
               )}
               title={monacoMode ? "Exit VS Code mode" : "VS Code mode"}
@@ -5651,7 +5651,7 @@ export function FilesWidget() {
             <select
               value={mainSortField}
               onChange={(e) => setMainSortField(e.target.value as SortField)}
-              className="text-[10px] bg-muted/50 border border-border rounded px-1 py-0.5 outline-none h-6"
+              className="text-[0.625rem] bg-muted/50 border border-border rounded px-1 py-0.5 outline-none h-6"
               title="Sort by"
             >
               <option value="name">Name</option>
@@ -5735,7 +5735,7 @@ export function FilesWidget() {
               >
                 <GitBranch className="h-3.5 w-3.5" />
                 {gitChangedCount > 0 && (
-                  <span className="text-[9px] font-medium text-yellow-500">{gitChangedCount}</span>
+                  <span className="text-[0.5625rem] font-medium text-yellow-500">{gitChangedCount}</span>
                 )}
               </button>
             )}
@@ -5862,7 +5862,7 @@ export function FilesWidget() {
                   setSearchMode(next);
                 }}
                 className={cn(
-                  "flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded transition-colors",
+                  "flex items-center gap-1 text-[0.625rem] px-1.5 py-0.5 rounded transition-colors",
                   searchMode === "ai"
                     ? "bg-primary/15 text-primary border border-primary/30"
                     : searchMode === "content"
@@ -5882,7 +5882,7 @@ export function FilesWidget() {
               <button
                 onClick={() => setSearchGlobal(!searchGlobal)}
                 className={cn(
-                  "flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded transition-colors",
+                  "flex items-center gap-1 text-[0.625rem] px-1.5 py-0.5 rounded transition-colors",
                   searchGlobal ? "bg-primary/10 text-primary border border-primary/20" : "text-muted-foreground hover:text-foreground hover:bg-muted"
                 )}
               >
@@ -5890,7 +5890,7 @@ export function FilesWidget() {
                 {searchGlobal ? "Global" : "Current dir"}
               </button>
               {isSearchActive && !searchLoading && (
-                <span className="text-[10px] text-muted-foreground ml-auto">
+                <span className="text-[0.625rem] text-muted-foreground ml-auto">
                   {searchResults.length}{searchTotal > searchResults.length ? ` of ${searchTotal}` : ""} result{searchResults.length !== 1 ? "s" : ""}
                 </span>
               )}
@@ -5904,9 +5904,9 @@ export function FilesWidget() {
             <div className="flex items-center justify-between px-2 py-1.5 bg-muted/30 border-b border-border">
               <div className="flex items-center gap-2 min-w-0">
                 <GitBranch className="h-3 w-3 text-muted-foreground shrink-0" />
-                <span className="text-[11px] font-medium truncate">{gitStatus.branch}</span>
-                {(gitStatus.ahead || 0) > 0 && <span className="text-[9px] text-green-500 shrink-0">↑{gitStatus.ahead}</span>}
-                {(gitStatus.behind || 0) > 0 && <span className="text-[9px] text-orange-500 shrink-0">↓{gitStatus.behind}</span>}
+                <span className="text-[0.6875rem] font-medium truncate">{gitStatus.branch}</span>
+                {(gitStatus.ahead || 0) > 0 && <span className="text-[0.5625rem] text-green-500 shrink-0">↑{gitStatus.ahead}</span>}
+                {(gitStatus.behind || 0) > 0 && <span className="text-[0.5625rem] text-orange-500 shrink-0">↓{gitStatus.behind}</span>}
               </div>
               <div className="flex items-center gap-1 shrink-0">
                 <button onClick={() => fetchGitStatus(resolvedPath)} className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-muted transition-colors" title="Refresh git status">
@@ -5926,7 +5926,7 @@ export function FilesWidget() {
                 <div className="py-0.5">
                   {gitStagedFiles.length > 0 && (
                     <div>
-                      <div className="flex items-center gap-1.5 px-2 py-1 text-[10px] text-green-600 dark:text-green-400 font-medium uppercase tracking-wider">
+                      <div className="flex items-center gap-1.5 px-2 py-1 text-[0.625rem] text-green-600 dark:text-green-400 font-medium uppercase tracking-wider">
                         <Plus className="h-2.5 w-2.5" /> Staged ({gitStagedFiles.length})
                       </div>
                       {gitStagedFiles.map((f) => (
@@ -5940,7 +5940,7 @@ export function FilesWidget() {
                   )}
                   {gitWorkingFiles.length > 0 && (
                     <div>
-                      <div className="flex items-center gap-1.5 px-2 py-1 text-[10px] text-yellow-600 dark:text-yellow-400 font-medium uppercase tracking-wider">
+                      <div className="flex items-center gap-1.5 px-2 py-1 text-[0.625rem] text-yellow-600 dark:text-yellow-400 font-medium uppercase tracking-wider">
                         <Pencil className="h-2.5 w-2.5" /> Changes ({gitWorkingFiles.length})
                       </div>
                       {gitWorkingFiles.map((f) => (
@@ -5956,7 +5956,7 @@ export function FilesWidget() {
               )}
             </div>
             {gitStatus.lastCommit && (
-              <div className="flex items-center gap-1.5 px-2 py-1 border-t border-border bg-muted/20 text-[9px] text-muted-foreground truncate">
+              <div className="flex items-center gap-1.5 px-2 py-1 border-t border-border bg-muted/20 text-[0.5625rem] text-muted-foreground truncate">
                 <GitCommit className="h-2.5 w-2.5 shrink-0" />
                 <span className="truncate">{gitStatus.lastCommit}</span>
               </div>
@@ -6070,7 +6070,7 @@ export function FilesWidget() {
                     if (conn) setSingleViewVps({ id: val, connection: conn });
                   }
                 }}
-                className="text-[10px] bg-muted/50 border border-border rounded px-1 py-0.5 outline-none max-w-[90px] truncate shrink-0"
+                className="text-[0.625rem] bg-muted/50 border border-border rounded px-1 py-0.5 outline-none max-w-[90px] truncate shrink-0"
                 title="File source"
               >
                 <option value="local">Local</option>
@@ -6109,10 +6109,10 @@ export function FilesWidget() {
             {/* Multi-file tabs */}
             <FileTabs tabs={openTabs} activeIdx={activeTabIdx} onSelect={selectTab} onClose={closeTab} />
             <div className="flex items-center justify-between px-2 py-1 bg-muted/40 border-b border-border">
-              <span className="text-[10px] font-medium truncate">
+              <span className="text-[0.625rem] font-medium truncate">
                 {preview.name}
-                {saveStatus === "saved" && <span className="ml-2 text-green-500 text-[9px]">Saved</span>}
-                {saveStatus === "error" && <span className="ml-2 text-red-500 text-[9px]">Save failed</span>}
+                {saveStatus === "saved" && <span className="ml-2 text-green-500 text-[0.5625rem]">Saved</span>}
+                {saveStatus === "error" && <span className="ml-2 text-red-500 text-[0.5625rem]">Save failed</span>}
               </span>
               <div className="flex items-center gap-1 shrink-0">
                 {/* Blame button */}
@@ -6194,7 +6194,7 @@ export function FilesWidget() {
             {/* AI summary panel — shown above the file content when active */}
             {(aiSummary || aiSummaryError || aiSummaryLoading) && aiSummaryFor === preview.filePath && (
               <div className="shrink-0 border-b border-border bg-primary/5 px-2 py-1.5 max-h-[40%] overflow-y-auto scrollbar-thin">
-                <div className="flex items-center gap-1.5 mb-1 text-[10px] font-medium text-primary">
+                <div className="flex items-center gap-1.5 mb-1 text-[0.625rem] font-medium text-primary">
                   <Sparkles className="h-3 w-3" />
                   <span>AI summary</span>
                   {aiSummaryLoading && (
@@ -6211,16 +6211,16 @@ export function FilesWidget() {
                   )}
                 </div>
                 {aiSummaryError ? (
-                  <div className="flex items-start gap-1.5 text-[11px] text-red-500">
+                  <div className="flex items-start gap-1.5 text-[0.6875rem] text-red-500">
                     <AlertCircle className="h-3 w-3 shrink-0 mt-0.5" />
                     <span>{aiSummaryError}</span>
                   </div>
                 ) : aiSummary ? (
-                  <div className="text-[11px] leading-relaxed text-foreground prose prose-sm dark:prose-invert max-w-none [&_p]:my-1 [&_ul]:my-1 [&_ul]:pl-4 [&_li]:my-0 [&_strong]:font-semibold [&_strong]:text-foreground [&_h1]:text-xs [&_h2]:text-xs [&_h3]:text-xs [&_code]:text-[10px] [&_code]:bg-muted [&_code]:px-1 [&_code]:rounded">
+                  <div className="text-[0.6875rem] leading-relaxed text-foreground prose prose-sm dark:prose-invert max-w-none [&_p]:my-1 [&_ul]:my-1 [&_ul]:pl-4 [&_li]:my-0 [&_strong]:font-semibold [&_strong]:text-foreground [&_h1]:text-xs [&_h2]:text-xs [&_h3]:text-xs [&_code]:text-[0.625rem] [&_code]:bg-muted [&_code]:px-1 [&_code]:rounded">
                     <ReactMarkdown>{aiSummary}</ReactMarkdown>
                   </div>
                 ) : (
-                  <div className="text-[11px] text-muted-foreground italic">
+                  <div className="text-[0.6875rem] text-muted-foreground italic">
                     Reading the file…
                   </div>
                 )}
@@ -6228,7 +6228,7 @@ export function FilesWidget() {
             )}
             <div className={cn("flex-1 overflow-hidden", monacoMode ? "min-h-0" : "overflow-auto p-2")}>
               {previewLoading ? (
-                <div className="flex items-center gap-2 text-muted-foreground text-[10px] p-2">
+                <div className="flex items-center gap-2 text-muted-foreground text-[0.625rem] p-2">
                   <div className="h-3 w-3 border-2 border-muted-foreground/30 border-t-primary rounded-full animate-spin" />
                   Loading...
                 </div>
@@ -6267,7 +6267,7 @@ export function FilesWidget() {
                     if (e.key === "s" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); saveFile(); }
                     if (e.key === "Escape") cancelEditing();
                   }}
-                  className="w-full h-full min-h-[200px] text-[10px] leading-relaxed font-mono bg-transparent border-none outline-none resize-none text-foreground"
+                  className="w-full h-full min-h-[200px] text-[0.625rem] leading-relaxed font-mono bg-transparent border-none outline-none resize-none text-foreground"
                   spellCheck={false}
                 />
               ) : (
@@ -6275,7 +6275,7 @@ export function FilesWidget() {
               )}
             </div>
             {preview.truncated && !editing && !monacoMode && (
-              <div className="text-[9px] text-muted-foreground/60 px-2 py-0.5 border-t border-border bg-muted/20 text-center">
+              <div className="text-[0.5625rem] text-muted-foreground/60 px-2 py-0.5 border-t border-border bg-muted/20 text-center">
                 File truncated (showing first 100KB)
               </div>
             )}
@@ -6307,7 +6307,7 @@ export function FilesWidget() {
               <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-1 px-4 text-center">
                 <span className="text-xs">{aiSearchNote || "No matches found"}</span>
                 {searchMode === "ai" && !aiSearchNote && (
-                  <span className="text-[10px] text-muted-foreground/60">
+                  <span className="text-[0.625rem] text-muted-foreground/60">
                     Try rephrasing — AI search looks at filenames, dates, and folder context.
                   </span>
                 )}
@@ -6323,7 +6323,7 @@ export function FilesWidget() {
                         {result.confidence && (
                           <span
                             className={cn(
-                              "text-[8px] uppercase font-bold px-1 py-px rounded shrink-0",
+                              "text-[0.5rem] uppercase font-bold px-1 py-px rounded shrink-0",
                               result.confidence === "high"
                                 ? "bg-green-500/15 text-green-600 dark:text-green-400"
                                 : result.confidence === "medium"
@@ -6335,17 +6335,17 @@ export function FilesWidget() {
                             {result.confidence}
                           </span>
                         )}
-                        {!result.isDirectory && <span className="text-[9px] text-muted-foreground/50 shrink-0">{formatSize(result.size)}</span>}
+                        {!result.isDirectory && <span className="text-[0.5625rem] text-muted-foreground/50 shrink-0">{formatSize(result.size)}</span>}
                       </div>
-                      <div className="text-[10px] text-muted-foreground/60 truncate">{shortenPath(result.path)}</div>
+                      <div className="text-[0.625rem] text-muted-foreground/60 truncate">{shortenPath(result.path)}</div>
                       {result.reason && (
-                        <div className="text-[10px] text-primary/80 mt-0.5 italic flex items-start gap-1">
+                        <div className="text-[0.625rem] text-primary/80 mt-0.5 italic flex items-start gap-1">
                           <Sparkles className="h-2.5 w-2.5 shrink-0 mt-0.5" />
                           <span className="flex-1">{result.reason}</span>
                         </div>
                       )}
                       {result.matchLine && (
-                        <div className="text-[10px] text-muted-foreground mt-0.5 truncate font-mono bg-muted/40 rounded px-1 py-0.5">
+                        <div className="text-[0.625rem] text-muted-foreground mt-0.5 truncate font-mono bg-muted/40 rounded px-1 py-0.5">
                           {result.matchLineNumber && <span className="text-muted-foreground/40 mr-1">L{result.matchLineNumber}:</span>}
                           {result.matchLine}
                         </div>
@@ -6499,8 +6499,8 @@ export function FilesWidget() {
                       >
                         <Trash2 className="h-3 w-3" />
                       </button>
-                      <span className="text-[9px] text-muted-foreground/60 shrink-0 hidden group-hover:block pointer-events-none">{entry.isDirectory ? "" : formatSize(entry.size)}</span>
-                      <span className="text-[9px] text-muted-foreground/60 shrink-0 group-hover:hidden pointer-events-none">{formatDate(entry.modified)}</span>
+                      <span className="text-[0.5625rem] text-muted-foreground/60 shrink-0 hidden group-hover:block pointer-events-none">{entry.isDirectory ? "" : formatSize(entry.size)}</span>
+                      <span className="text-[0.5625rem] text-muted-foreground/60 shrink-0 group-hover:hidden pointer-events-none">{formatDate(entry.modified)}</span>
                     </div>
                 ))}
               </div>
@@ -6509,7 +6509,7 @@ export function FilesWidget() {
         )}
 
         {/* Status bar */}
-        <div className="shrink-0 text-[9px] text-muted-foreground/60 flex items-center justify-between px-1">
+        <div className="shrink-0 text-[0.5625rem] text-muted-foreground/60 flex items-center justify-between px-1">
           {isSearchActive ? (
             <span>{searchResults.length} result{searchResults.length !== 1 ? "s" : ""}{searchTotal > searchResults.length ? ` (${searchTotal} total)` : ""}</span>
           ) : viewMode === "recent" ? (

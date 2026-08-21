@@ -393,7 +393,7 @@ export function Sidebar() {
           "hidden md:flex",
           sidebarExpanded ? "md:w-[200px]" : "md:w-[48px]",
           // Mobile: overlay drawer (visible when open OR while a finger-drag is in progress)
-          (mobileOpen || dragX !== null) && "!flex fixed inset-y-0 left-0 z-50 w-[260px] max-w-[85vw] shadow-2xl touch-pan-y touch-pinch-zoom pt-app-top"
+          (mobileOpen || dragX !== null) && "!flex fixed inset-y-0 left-0 z-50 w-[260px] max-w-[85vw] shadow-2xl touch-pan-y pt-app-top"
         )}
       >
         {/* ─── Workspace tabs ──────────────────────────────────── */}
@@ -429,7 +429,7 @@ export function Sidebar() {
                         {ws.name}
                       </span>
                       {!isCustom && ws.shortcut ? (
-                        <kbd className="text-[9px] text-muted-foreground/60 font-mono hidden md:inline">
+                        <kbd className="text-[0.5625rem] text-muted-foreground/60 font-mono hidden md:inline">
                           ⌘{ws.shortcut}
                         </kbd>
                       ) : null}
@@ -506,7 +506,7 @@ export function Sidebar() {
         {/* ─── Focus combos ────────────────────────────────────── */}
         <div className="shrink-0 border-b border-border/50 p-1.5 space-y-0.5">
           {showLabels && (
-            <div className="text-[9px] uppercase tracking-wider text-muted-foreground/50 px-2.5 py-0.5">
+            <div className="text-[0.5625rem] uppercase tracking-wider text-muted-foreground/50 px-2.5 py-0.5">
               Focus
             </div>
           )}
@@ -588,7 +588,7 @@ export function Sidebar() {
             return (
               <div key={cat}>
                 {showLabels && (
-                  <div className="text-[9px] uppercase tracking-wider text-muted-foreground/50 px-2.5 py-0.5 mb-0.5">
+                  <div className="text-[0.5625rem] uppercase tracking-wider text-muted-foreground/50 px-2.5 py-0.5 mb-0.5">
                     {widgetCategories[cat].label}
                   </div>
                 )}
@@ -607,7 +607,7 @@ export function Sidebar() {
                       >
                         <Icon className="h-3.5 w-3.5 shrink-0" />
                         {showLabels && (
-                          <span className="text-[11px] truncate">
+                          <span className="text-[0.6875rem] truncate">
                             {widgetTitles[widgetType]}
                           </span>
                         )}
@@ -633,7 +633,7 @@ export function Sidebar() {
             {sidebarExpanded ? (
               <>
                 <PanelLeftClose className="h-3.5 w-3.5 shrink-0" />
-                <span className="text-[11px]">Collapse</span>
+                <span className="text-[0.6875rem]">Collapse</span>
               </>
             ) : (
               <PanelLeft className="h-3.5 w-3.5" />
@@ -648,7 +648,7 @@ export function Sidebar() {
             className="flex items-center gap-2 w-full rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors px-2.5 py-1.5"
           >
             <X className="h-3.5 w-3.5 shrink-0" />
-            <span className="text-[11px]">Close</span>
+            <span className="text-[0.6875rem]">Close</span>
           </button>
         </div>
       </aside>

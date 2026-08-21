@@ -422,17 +422,17 @@ export function JiraWidget() {
 
             {/* Key + Status + Priority badges */}
             <div className="flex items-center gap-2 flex-wrap mb-3">
-              <Badge variant="secondary" className="text-[10px] px-1.5 py-0 font-mono">
+              <Badge variant="secondary" className="text-[0.625rem] px-1.5 py-0 font-mono">
                 {detail.key}
               </Badge>
-              <Badge variant="secondary" className={cn("text-[10px] px-1.5 py-0", statusBadge?.color)}>
+              <Badge variant="secondary" className={cn("text-[0.625rem] px-1.5 py-0", statusBadge?.color)}>
                 {statusBadge?.label}
               </Badge>
               <span className="flex items-center gap-0.5">
                 <PriorityIcon className={cn("h-3 w-3", priorityCfg.color)} />
-                <span className="text-[10px] text-muted-foreground">{detail.priority}</span>
+                <span className="text-[0.625rem] text-muted-foreground">{detail.priority}</span>
               </span>
-              <span className="text-[10px] text-muted-foreground">
+              <span className="text-[0.625rem] text-muted-foreground">
                 {detail.type}
               </span>
             </div>
@@ -472,7 +472,7 @@ export function JiraWidget() {
                   <Tag className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                   <div className="flex flex-wrap gap-1">
                     {detail.labels.map((l) => (
-                      <Badge key={l} variant="secondary" className="text-[10px] px-1.5 py-0">
+                      <Badge key={l} variant="secondary" className="text-[0.625rem] px-1.5 py-0">
                         {l}
                       </Badge>
                     ))}
@@ -515,7 +515,7 @@ export function JiraWidget() {
                       <div key={i} className="text-xs">
                         <div className="flex items-center gap-2 mb-1">
                           <span className="font-medium">{comment.author}</span>
-                          <span className="text-[10px] text-muted-foreground">
+                          <span className="text-[0.625rem] text-muted-foreground">
                             {formatRelative(comment.created)}
                           </span>
                         </div>
@@ -629,7 +629,7 @@ export function JiraWidget() {
                       Cancel
                     </Button>
                   </div>
-                  <p className="text-[10px] text-muted-foreground">
+                  <p className="text-[0.625rem] text-muted-foreground">
                     Open jira.tools.sap in Chrome, press F12, go to Console, run:{" "}
                     <code className="bg-muted px-1 rounded">document.cookie</code>
                   </p>
@@ -677,7 +677,7 @@ export function JiraWidget() {
                   </button>
                 )}
               </div>
-              <span className="text-[10px] text-muted-foreground shrink-0">{filteredIssues.length}/{issues.length}</span>
+              <span className="text-[0.625rem] text-muted-foreground shrink-0">{filteredIssues.length}/{issues.length}</span>
             </div>
           )}
           <ScrollArea className="flex-1 -mx-1 px-1">
@@ -705,13 +705,13 @@ export function JiraWidget() {
                       <div className="flex items-center gap-2 mt-1 flex-wrap">
                         <Badge
                           variant="secondary"
-                          className="text-[10px] px-1.5 py-0 font-mono"
+                          className="text-[0.625rem] px-1.5 py-0 font-mono"
                         >
                           {issue.key}
                         </Badge>
                         <Badge
                           variant="secondary"
-                          className={cn("text-[10px] px-1.5 py-0", statusBadge.color)}
+                          className={cn("text-[0.625rem] px-1.5 py-0", statusBadge.color)}
                         >
                           {statusBadge.label}
                         </Badge>
@@ -720,7 +720,7 @@ export function JiraWidget() {
                             className={cn("h-3 w-3", priorityCfg.color)}
                           />
                         </span>
-                        <span className="text-[10px] text-muted-foreground">
+                        <span className="text-[0.625rem] text-muted-foreground">
                           {issue.project} &middot; {issue.updated}
                         </span>
                       </div>
@@ -731,7 +731,7 @@ export function JiraWidget() {
             })}
           </div>
           {lastFetched && (
-            <p className="text-[10px] text-muted-foreground text-center mt-2 pb-1">
+            <p className="text-[0.625rem] text-muted-foreground text-center mt-2 pb-1">
               Updated {new Date(lastFetched).toLocaleTimeString()}
             </p>
           )}

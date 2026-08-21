@@ -46,11 +46,16 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  // Allow user pinch-zoom for accessibility (was previously locked at 1).
-  // Stated explicitly rather than left to the UA default so no build/runtime
-  // ever emits `user-scalable=no` on our behalf; no maximumScale, so the
-  // zoom ceiling stays the browser's.
-  userScalable: true,
+  // Page zoom is off. The dashboard is a fixed-chrome app shell — a pinch that
+  // scales the whole page shrinks the layout viewport, which our media queries
+  // read, so zooming in used to flip a phone toward the desktop grid and leave
+  // panels clipped at the edges. The accessibility need it served is covered
+  // instead by the five text-size steps (header text-size button, appearance
+  // picker, command palette), which grow the type inside a layout that holds
+  // still. Note mobile Safari ignores both of these flags by design; the
+  // font-size floor on inputs in globals.css covers what that lets through.
+  userScalable: false,
+  maximumScale: 1,
   viewportFit: "cover",
   // Shrink the layout viewport when the on-screen keyboard opens instead of
   // panning it — without this, `fixed inset-0` overlays (expanded widgets)

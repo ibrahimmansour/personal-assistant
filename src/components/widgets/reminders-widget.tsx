@@ -208,7 +208,7 @@ export function RemindersWidget() {
             ))}
             {past.length > 0 && (
               <>
-                <div className="text-[10px] text-muted-foreground uppercase tracking-wider pt-2 pb-1 px-1">
+                <div className="text-[0.625rem] text-muted-foreground uppercase tracking-wider pt-2 pb-1 px-1">
                   Completed
                 </div>
                 {past.map((r) => (

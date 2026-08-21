@@ -265,7 +265,7 @@ export function GitHubPRsWidget() {
                   </button>
                 )}
               </div>
-              <span className="text-[10px] text-muted-foreground shrink-0">{filteredPRs.length}/{prs.length}</span>
+              <span className="text-[0.625rem] text-muted-foreground shrink-0">{filteredPRs.length}/{prs.length}</span>
             </div>
           )}
           <ScrollArea className="flex-1 -mx-1 px-1">
@@ -280,7 +280,7 @@ export function GitHubPRsWidget() {
                 <div key={pr.id}>
                   {showRepoHeader && (
                     <div className={cn(
-                      "text-[10px] text-muted-foreground uppercase tracking-wider px-1 pb-1 font-semibold",
+                      "text-[0.625rem] text-muted-foreground uppercase tracking-wider px-1 pb-1 font-semibold",
                       index > 0 && "pt-2 mt-1 border-t border-border/50"
                     )}>
                       {pr.repoShort}
@@ -312,7 +312,7 @@ export function GitHubPRsWidget() {
                             <Badge
                               key={label.name}
                               variant="secondary"
-                              className="text-[10px] px-1.5 py-0"
+                              className="text-[0.625rem] px-1.5 py-0"
                               style={{
                                 backgroundColor: `${label.color}20`,
                                 color: label.color,
@@ -322,11 +322,11 @@ export function GitHubPRsWidget() {
                               {label.name}
                             </Badge>
                           ))}
-                          <span className="text-[10px] text-muted-foreground">
+                          <span className="text-[0.625rem] text-muted-foreground">
                             #{pr.number} &middot; {timeAgo(pr.updatedAt)}
                           </span>
                         </div>
-                        <div className="flex items-center gap-3 mt-1.5 text-[10px] text-muted-foreground">
+                        <div className="flex items-center gap-3 mt-1.5 text-[0.625rem] text-muted-foreground">
                           <span className="flex items-center gap-0.5">
                             <MessageSquare className="h-3 w-3" />
                             {pr.comments}
@@ -339,7 +339,7 @@ export function GitHubPRsWidget() {
                             <Minus className="h-3 w-3" />
                             {pr.deletions}
                           </span>
-                          <span className="text-[10px] text-muted-foreground ml-auto">
+                          <span className="text-[0.625rem] text-muted-foreground ml-auto">
                             {pr.headBranch}
                           </span>
                         </div>
@@ -351,7 +351,7 @@ export function GitHubPRsWidget() {
             })}
           </div>
           {lastFetched && (
-            <p className="text-[10px] text-muted-foreground text-center mt-2 pb-1">
+            <p className="text-[0.625rem] text-muted-foreground text-center mt-2 pb-1">
               Updated {new Date(lastFetched).toLocaleTimeString()}
             </p>
           )}

@@ -4,6 +4,7 @@ import { useTheme } from "next-themes";
 import { LayoutDashboard, Moon, Sun, Briefcase, Home, Search, Sparkles, Settings, Maximize, Minimize, Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AppearancePicker } from "@/components/layout/appearance-picker";
+import { TextSizePicker } from "@/components/layout/text-size-picker";
 import { useProfile, profiles } from "@/components/profile-context";
 import { useCommandPalette } from "@/components/command-palette-context";
 import { useAIChat } from "@/components/ai-chat-context";
@@ -100,7 +101,7 @@ export function Header() {
             <h1 className="text-sm font-semibold leading-none">
               Personal Assistant
             </h1>
-            <p className="text-[10px] text-muted-foreground mt-0.5">
+            <p className="text-[0.625rem] text-muted-foreground mt-0.5">
               {profile.description}
             </p>
           </div>
@@ -144,7 +145,7 @@ export function Header() {
           >
             <Search className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">Search…</span>
-            <kbd className="pointer-events-none hidden md:inline-flex h-5 items-center gap-0.5 rounded border border-border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
+            <kbd className="pointer-events-none hidden md:inline-flex h-5 items-center gap-0.5 rounded border border-border bg-muted px-1.5 font-mono text-[0.625rem] font-medium text-muted-foreground">
               <span className="text-xs">⌘</span>P
             </kbd>
           </button>
@@ -163,10 +164,13 @@ export function Header() {
           >
             <Sparkles className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">AI</span>
-            <kbd className="pointer-events-none hidden md:inline-flex h-5 items-center gap-0.5 rounded border border-border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
+            <kbd className="pointer-events-none hidden md:inline-flex h-5 items-center gap-0.5 rounded border border-border bg-muted px-1.5 font-mono text-[0.625rem] font-medium text-muted-foreground">
               <span className="text-xs">⌘</span>I
             </kbd>
           </button>
+          {/* Text size: the app's only zoom, so it stays visible at every
+              breakpoint (the appearance picker beside it is desktop-only). */}
+          <TextSizePicker />
           <span className="hidden md:inline-flex">
             <AppearancePicker />
           </span>

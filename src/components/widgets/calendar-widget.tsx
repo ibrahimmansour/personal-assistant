@@ -264,7 +264,7 @@ export function CalendarWidget() {
                       return (
                         <div key={i} className="flex items-center justify-between text-xs px-1">
                           <span className="truncate flex-1">{a.name}</span>
-                          <span className={cn("text-[10px] shrink-0 ml-2", resp.color)}>
+                          <span className={cn("text-[0.625rem] shrink-0 ml-2", resp.color)}>
                             {resp.label}
                           </span>
                         </div>
@@ -336,7 +336,7 @@ export function CalendarWidget() {
                   ) : (
                     <>
                       <span className="text-xs font-medium tabular-nums">{event.startFormatted || formatEventTime(event.start)}</span>
-                      <span className="text-[10px] text-muted-foreground tabular-nums">{event.endFormatted || formatEventTime(event.end)}</span>
+                      <span className="text-[0.625rem] text-muted-foreground tabular-nums">{event.endFormatted || formatEventTime(event.end)}</span>
                     </>
                   )}
                 </div>

@@ -1122,7 +1122,7 @@ export function CommandPalette() {
           <div className="flex items-center border-b border-border px-3">
             <button
               onClick={clearFilter}
-              className="shrink-0 flex items-center gap-1 text-[11px] font-medium bg-primary/10 text-primary border border-primary/20 rounded-md px-2 py-0.5 mr-2 hover:bg-primary/20 transition-colors"
+              className="shrink-0 flex items-center gap-1 text-[0.6875rem] font-medium bg-primary/10 text-primary border border-primary/20 rounded-md px-2 py-0.5 mr-2 hover:bg-primary/20 transition-colors"
               title="Clear filter"
             >
               {(() => { const Icon = widgetIcons[filterWidget!] || Search; return <Icon className="h-3 w-3" />; })()}
@@ -1178,13 +1178,13 @@ export function CommandPalette() {
             {!aiResponse && !aiStreaming && (
               <div className="flex flex-col items-center justify-center py-8 text-muted-foreground text-sm gap-2">
                 <Bot className="h-8 w-8 text-muted-foreground/40" />
-                <p>Type your question and press <kbd className="text-[10px] font-mono bg-muted rounded px-1 py-0.5">Enter</kbd></p>
-                <div className="text-[11px] text-muted-foreground/60 text-center mt-1 space-y-0.5">
+                <p>Type your question and press <kbd className="text-[0.625rem] font-mono bg-muted rounded px-1 py-0.5">Enter</kbd></p>
+                <div className="text-[0.6875rem] text-muted-foreground/60 text-center mt-1 space-y-0.5">
                   <p>&quot;show me my calendar&quot; &middot; &quot;switch to dark mode&quot;</p>
                   <p>&quot;open the dev workspace&quot; &middot; &quot;create a task to review PRs&quot;</p>
                 </div>
                 {aiAvailable === false && (
-                  <p className="text-destructive text-[11px] mt-2">Ollama is not running. Start it with: ollama serve</p>
+                  <p className="text-destructive text-[0.6875rem] mt-2">Ollama is not running. Start it with: ollama serve</p>
                 )}
               </div>
             )}
@@ -1210,7 +1210,7 @@ export function CommandPalette() {
                   >
                     <Play className="h-3.5 w-3.5 shrink-0" />
                     <span className="truncate">{actionLabel(aiAction)}</span>
-                    <kbd className="ml-auto shrink-0 text-[10px] font-mono text-primary/60 bg-primary/10 rounded px-1.5 py-0.5">
+                    <kbd className="ml-auto shrink-0 text-[0.625rem] font-mono text-primary/60 bg-primary/10 rounded px-1.5 py-0.5">
                       click
                     </kbd>
                   </button>
@@ -1265,7 +1265,7 @@ export function CommandPalette() {
                   <Maximize2 className="h-4 w-4 text-muted-foreground" />
                   <span>Focus {widget.title}</span>
                   {!widget.visible && (
-                    <span className="text-[10px] text-muted-foreground ml-1">(hidden)</span>
+                    <span className="text-[0.625rem] text-muted-foreground ml-1">(hidden)</span>
                   )}
                   <Icon className="ml-auto h-3.5 w-3.5 text-muted-foreground/60" />
                 </CommandItem>
@@ -1293,12 +1293,12 @@ export function CommandPalette() {
                   <span>{ws.name}</span>
                   <span className="ml-auto flex items-center gap-1.5">
                     {isActive && (
-                      <span className="text-[10px] text-muted-foreground">
+                      <span className="text-[0.625rem] text-muted-foreground">
                         Active
                       </span>
                     )}
                     {ws.shortcut && (
-                      <kbd className="text-[10px] text-muted-foreground/60 font-mono">
+                      <kbd className="text-[0.625rem] text-muted-foreground/60 font-mono">
                         ⌘{ws.shortcut}
                       </kbd>
                     )}
@@ -1326,7 +1326,7 @@ export function CommandPalette() {
                   <Focus className="h-4 w-4 text-muted-foreground" />
                   <span>{isActive ? `Exit: ${combo.name}` : combo.name}</span>
                   {isActive && (
-                    <span className="ml-auto text-[10px] text-muted-foreground">
+                    <span className="ml-auto text-[0.625rem] text-muted-foreground">
                       Active
                     </span>
                   )}
@@ -1341,7 +1341,7 @@ export function CommandPalette() {
               >
                 <LogOut className="h-4 w-4 text-muted-foreground" />
                 <span>Exit Focus Mode</span>
-                <kbd className="ml-auto text-[10px] text-muted-foreground/60 font-mono">
+                <kbd className="ml-auto text-[0.625rem] text-muted-foreground/60 font-mono">
                   Esc
                 </kbd>
               </CommandItem>
@@ -1404,7 +1404,7 @@ export function CommandPalette() {
                   <Icon className="h-4 w-4 text-muted-foreground" />
                   <span>Switch to {p.name}</span>
                   {isActive && (
-                    <span className="ml-auto text-[10px] text-muted-foreground">
+                    <span className="ml-auto text-[0.625rem] text-muted-foreground">
                       Active
                     </span>
                   )}
@@ -1425,7 +1425,7 @@ export function CommandPalette() {
               <Sun className="h-4 w-4 text-muted-foreground" />
               <span>Light mode</span>
               {theme === "light" && (
-                <span className="ml-auto text-[10px] text-muted-foreground">
+                <span className="ml-auto text-[0.625rem] text-muted-foreground">
                   Active
                 </span>
               )}
@@ -1438,7 +1438,7 @@ export function CommandPalette() {
               <Moon className="h-4 w-4 text-muted-foreground" />
               <span>Dark mode</span>
               {theme === "dark" && (
-                <span className="ml-auto text-[10px] text-muted-foreground">
+                <span className="ml-auto text-[0.625rem] text-muted-foreground">
                   Active
                 </span>
               )}
@@ -1451,7 +1451,7 @@ export function CommandPalette() {
               <Monitor className="h-4 w-4 text-muted-foreground" />
               <span>System theme</span>
               {theme === "system" && (
-                <span className="ml-auto text-[10px] text-muted-foreground">
+                <span className="ml-auto text-[0.625rem] text-muted-foreground">
                   Active
                 </span>
               )}
@@ -1550,7 +1550,7 @@ export function CommandPalette() {
                       <div className="flex-1 min-w-0">
                         <div className="text-sm truncate">{item.title}</div>
                         {item.subtitle && (
-                          <div className="text-[10px] text-muted-foreground truncate">
+                          <div className="text-[0.625rem] text-muted-foreground truncate">
                             {item.subtitle}
                           </div>
                         )}
@@ -1565,7 +1565,7 @@ export function CommandPalette() {
 
         {/* ─── Footer ────────────────────────────────────────── */}
         {(loading || fileSearching || emailSearching) && (hasSearch || !!filterGroup) && (
-          <div className="border-t border-border px-3 py-1.5 text-[10px] text-muted-foreground flex items-center gap-1.5">
+          <div className="border-t border-border px-3 py-1.5 text-[0.625rem] text-muted-foreground flex items-center gap-1.5">
             <div className="h-2.5 w-2.5 border-[1.5px] border-muted-foreground/30 border-t-primary rounded-full animate-spin" />
             {emailSearching ? "Searching all emails..." : fileSearching ? "Searching files..." : "Loading widget data..."}
           </div>
@@ -1576,15 +1576,15 @@ export function CommandPalette() {
         {/* ─── AI mode hint in footer ─────────────────────────── */}
         {!isAiMode && !filterGroup && (
           <div className="border-t border-border px-3 py-1.5 flex items-center justify-between">
-            <div className="text-[10px] text-muted-foreground/50 flex items-center gap-1">
+            <div className="text-[0.625rem] text-muted-foreground/50 flex items-center gap-1">
               <Sparkles className="h-2.5 w-2.5" />
               Type <kbd className="font-mono bg-muted/50 rounded px-1">&gt;</kbd> to ask AI
             </div>
             {aiAvailable === false && (
-              <div className="text-[10px] text-destructive/60">AI offline</div>
+              <div className="text-[0.625rem] text-destructive/60">AI offline</div>
             )}
             {aiAvailable === true && (
-              <div className="text-[10px] text-emerald-500/60 flex items-center gap-1">
+              <div className="text-[0.625rem] text-emerald-500/60 flex items-center gap-1">
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-500/60" />
                 AI ready
               </div>

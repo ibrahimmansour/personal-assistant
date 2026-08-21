@@ -126,7 +126,7 @@ export function FocusMode() {
         <div className="flex items-center gap-2">
           <div className="h-2 w-2 rounded-full bg-primary animate-pulse" />
           <span className="text-xs font-medium">{combo.name}</span>
-          <span className="text-[10px] text-muted-foreground">Focus Mode</span>
+          <span className="text-[0.625rem] text-muted-foreground">Focus Mode</span>
         </div>
         <button
           onClick={exitFocusMode}
@@ -134,7 +134,7 @@ export function FocusMode() {
         >
           <X className="h-3.5 w-3.5 sm:hidden" />
           <span className="hidden sm:inline">Exit</span>
-          <kbd className="hidden sm:inline text-[9px] font-mono border border-border rounded px-1 py-0.5">Esc</kbd>
+          <kbd className="hidden sm:inline text-[0.5625rem] font-mono border border-border rounded px-1 py-0.5">Esc</kbd>
         </button>
       </div>
 

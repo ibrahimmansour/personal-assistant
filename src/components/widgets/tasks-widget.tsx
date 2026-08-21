@@ -485,10 +485,10 @@ function OpenCodeTerminalPanel({ taskId, taskTitle, cwd, context, onClose }: Ope
           <TerminalSquare className="h-3.5 w-3.5 text-primary shrink-0" />
           <span className="text-xs font-medium truncate">OpenCode</span>
           {isExited && (
-            <span className="text-[10px] text-muted-foreground">(exited)</span>
+            <span className="text-[0.625rem] text-muted-foreground">(exited)</span>
           )}
           {cwd && (
-            <span className="text-[10px] text-muted-foreground truncate font-mono" title={cwd}>
+            <span className="text-[0.625rem] text-muted-foreground truncate font-mono" title={cwd}>
               {cwd.split("/").pop()}
             </span>
           )}
@@ -585,12 +585,12 @@ function TaskDetailView({ task, onBack, onUpdateTask }: TaskDetailViewProps) {
           <div className="flex items-center gap-2 mt-0.5">
             <Badge
               variant="secondary"
-              className={cn("text-[10px]", priorityColors[task.priority])}
+              className={cn("text-[0.625rem]", priorityColors[task.priority])}
             >
               {task.priority}
             </Badge>
             {task.completed && (
-              <span className="text-[10px] text-muted-foreground">Completed</span>
+              <span className="text-[0.625rem] text-muted-foreground">Completed</span>
             )}
           </div>
         </div>
@@ -603,12 +603,12 @@ function TaskDetailView({ task, onBack, onUpdateTask }: TaskDetailViewProps) {
           <div className="flex items-center justify-between mb-1.5 shrink-0">
             <div className="flex items-center gap-1.5 text-muted-foreground">
               <FileText className="h-3 w-3" />
-              <span className="text-[11px] font-medium uppercase tracking-wide">Context</span>
+              <span className="text-[0.6875rem] font-medium uppercase tracking-wide">Context</span>
             </div>
             {contextDirty && (
               <button
                 onClick={saveContext}
-                className="flex items-center gap-1 text-[10px] text-primary hover:text-primary/80 transition-colors"
+                className="flex items-center gap-1 text-[0.625rem] text-primary hover:text-primary/80 transition-colors"
               >
                 <Save className="h-3 w-3" />
                 Save
@@ -641,7 +641,7 @@ function TaskDetailView({ task, onBack, onUpdateTask }: TaskDetailViewProps) {
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
           <div className="flex items-center gap-1.5 text-muted-foreground mb-1.5 shrink-0">
             <BookOpen className="h-3 w-3" />
-            <span className="text-[11px] font-medium uppercase tracking-wide">Implementation</span>
+            <span className="text-[0.6875rem] font-medium uppercase tracking-wide">Implementation</span>
           </div>
           <ScrollArea className="flex-1">
             {task.summary ? (
@@ -654,10 +654,10 @@ function TaskDetailView({ task, onBack, onUpdateTask }: TaskDetailViewProps) {
             ) : (
               <div className="flex flex-col items-center justify-center h-full text-muted-foreground/50 gap-2 py-8">
                 <Sparkles className="h-5 w-5" />
-                <p className="text-[11px] text-center">
+                <p className="text-[0.6875rem] text-center">
                   No implementation summary yet.
                   <br />
-                  Run with OpenCode and use <code className="text-[10px] bg-muted px-1 py-0.5 rounded">/PA</code> to add one.
+                  Run with OpenCode and use <code className="text-[0.625rem] bg-muted px-1 py-0.5 rounded">/PA</code> to add one.
                 </p>
               </div>
             )}
@@ -1060,7 +1060,7 @@ export function TasksWidget() {
           <button onClick={cyclePriority} title="Cycle priority">
             <Badge
               variant="secondary"
-              className={cn("text-[10px] shrink-0 cursor-pointer hover:opacity-80", priorityColors[editPriority])}
+              className={cn("text-[0.625rem] shrink-0 cursor-pointer hover:opacity-80", priorityColors[editPriority])}
             >
               {editPriority}
             </Badge>
@@ -1153,7 +1153,7 @@ export function TasksWidget() {
         {!isCompleted && (
           <Badge
             variant="secondary"
-            className={cn("text-[10px] shrink-0", priorityColors[task.priority])}
+            className={cn("text-[0.625rem] shrink-0", priorityColors[task.priority])}
           >
             {task.priority}
           </Badge>
@@ -1331,7 +1331,7 @@ export function TasksWidget() {
               >
                 <Inbox className="h-3 w-3 shrink-0" />
                 <span className="truncate flex-1">All</span>
-                <span className="text-[10px] opacity-60">{folderCounts.get(null) || 0}</span>
+                <span className="text-[0.625rem] opacity-60">{folderCounts.get(null) || 0}</span>
               </button>
 
               {/* User folders */}
@@ -1377,7 +1377,7 @@ export function TasksWidget() {
                           <FolderCog className="h-2.5 w-2.5 shrink-0 text-primary/50" />
                         </span>
                       )}
-                      <span className="text-[10px] opacity-60 group-hover/folder:hidden">
+                      <span className="text-[0.625rem] opacity-60 group-hover/folder:hidden">
                         {folderCounts.get(folder.id) || 0}
                       </span>
                       <span
@@ -1440,7 +1440,7 @@ export function TasksWidget() {
           {/* Folder cwd setting dialog */}
           {settingCwdFolderId && (
             <div className="border-t border-border/50 pt-1.5 mt-1 px-1">
-              <p className="text-[10px] text-muted-foreground mb-1 truncate">
+              <p className="text-[0.625rem] text-muted-foreground mb-1 truncate">
                 Project path
               </p>
               <input
@@ -1456,7 +1456,7 @@ export function TasksWidget() {
                   if (e.key === "Escape") setSettingCwdFolderId(null);
                 }}
                 placeholder="/path/to/project"
-                className="w-full text-[10px] bg-muted/50 border border-border rounded px-1.5 py-1 outline-none focus:ring-1 focus:ring-primary placeholder:text-muted-foreground font-mono"
+                className="w-full text-[0.625rem] bg-muted/50 border border-border rounded px-1.5 py-1 outline-none focus:ring-1 focus:ring-primary placeholder:text-muted-foreground font-mono"
               />
               <div className="flex items-center gap-1 mt-1">
                 <button
@@ -1464,14 +1464,14 @@ export function TasksWidget() {
                     updateFolderCwd(settingCwdFolderId, cwdInputValue.trim());
                     setSettingCwdFolderId(null);
                   }}
-                  className="text-[10px] text-primary hover:underline"
+                  className="text-[0.625rem] text-primary hover:underline"
                 >
                   Save
                 </button>
                 <span className="text-muted-foreground/40">|</span>
                 <button
                   onClick={() => setSettingCwdFolderId(null)}
-                  className="text-[10px] text-muted-foreground hover:text-foreground"
+                  className="text-[0.625rem] text-muted-foreground hover:text-foreground"
                 >
                   Cancel
                 </button>
@@ -1504,7 +1504,7 @@ export function TasksWidget() {
                       key={p}
                       onClick={() => setNewPriority(p)}
                       className={cn(
-                        "text-[10px] px-2 py-0.5 rounded-full border transition-colors capitalize",
+                        "text-[0.625rem] px-2 py-0.5 rounded-full border transition-colors capitalize",
                         newPriority === p
                           ? priorityColors[p] + " border-current"
                           : "border-border text-muted-foreground hover:border-foreground/30"
@@ -1571,7 +1571,7 @@ export function TasksWidget() {
                 {activeTasks.map((task) => renderTask(task, false))}
                 {completedTasks.length > 0 && (
                   <>
-                    <div className="text-[10px] text-muted-foreground uppercase tracking-wider pt-2 pb-1 px-1">
+                    <div className="text-[0.625rem] text-muted-foreground uppercase tracking-wider pt-2 pb-1 px-1">
                       Completed
                     </div>
                     {completedTasks.map((task) => renderTask(task, true))}

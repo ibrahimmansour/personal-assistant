@@ -74,12 +74,23 @@ export const fontFamilies: { id: FontFamily; label: string; className: string }[
   { id: "serif", label: "Serif", className: "font-serif" },
 ];
 
+/**
+ * The five text-size steps. `scale` multiplies the root font-size (the matching
+ * `html.font-size-*` rules in globals.css hold the resolved px values, and
+ * `HtmlContent` reads `scale` to size the email iframe, which has its own
+ * document and can't inherit the root).
+ *
+ * This is the app's only zoom — page/pinch zoom is disabled — so the range is
+ * wider than it was when it merely nudged an already-zoomable UI. It stops at
+ * 1.25 because the spacing scale is pinned in px: text grows inside containers
+ * that don't, and past ~1.25 the denser widget rows start clipping.
+ */
 export const fontSizes: { id: FontSize; label: string; scale: number }[] = [
   { id: "xs", label: "Extra Small", scale: 0.85 },
-  { id: "sm", label: "Small", scale: 0.92 },
+  { id: "sm", label: "Small", scale: 0.925 },
   { id: "base", label: "Default", scale: 1 },
-  { id: "lg", label: "Large", scale: 1.08 },
-  { id: "xl", label: "Extra Large", scale: 1.18 },
+  { id: "lg", label: "Large", scale: 1.125 },
+  { id: "xl", label: "Extra Large", scale: 1.25 },
 ];
 
 const fontSizeOrder: FontSize[] = ["xs", "sm", "base", "lg", "xl"];

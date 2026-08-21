@@ -271,7 +271,7 @@ function RulesPanel({
                   ) : (
                     <span className="text-xs font-medium flex-1 truncate">{group.name}</span>
                   )}
-                  <span className="text-[10px] text-muted-foreground shrink-0">
+                  <span className="text-[0.625rem] text-muted-foreground shrink-0">
                     {group.rules.length} rule{group.rules.length !== 1 ? "s" : ""}
                   </span>
                   <ChevronRight
@@ -287,7 +287,7 @@ function RulesPanel({
                   <div className="px-2.5 pb-2.5 space-y-2 border-t border-border/30 pt-2">
                     {/* Color picker */}
                     <div className="flex items-center gap-1">
-                      <span className="text-[10px] text-muted-foreground mr-1">Color:</span>
+                      <span className="text-[0.625rem] text-muted-foreground mr-1">Color:</span>
                       {COLOR_NAMES.map((c) => (
                         <button
                           key={c}
@@ -313,7 +313,7 @@ function RulesPanel({
                               field: e.target.value as EmailRule["field"],
                             })
                           }
-                          className="h-6 text-[10px] rounded border border-border/50 bg-muted/30 px-1 min-w-0"
+                          className="h-6 text-[0.625rem] rounded border border-border/50 bg-muted/30 px-1 min-w-0"
                         >
                           <option value="fromAddress">From address</option>
                           <option value="from">From name</option>
@@ -326,7 +326,7 @@ function RulesPanel({
                               operator: e.target.value as EmailRule["operator"],
                             })
                           }
-                          className="h-6 text-[10px] rounded border border-border/50 bg-muted/30 px-1"
+                          className="h-6 text-[0.625rem] rounded border border-border/50 bg-muted/30 px-1"
                         >
                           <option value="contains">contains</option>
                           <option value="equals">equals</option>
@@ -338,7 +338,7 @@ function RulesPanel({
                             updateRule(group.id, rIdx, { value: e.target.value })
                           }
                           placeholder="value..."
-                          className="h-6 text-[10px] rounded border border-border/50 bg-muted/30 px-1.5 flex-1 min-w-0 focus:outline-none focus:ring-1 focus:ring-primary/30"
+                          className="h-6 text-[0.625rem] rounded border border-border/50 bg-muted/30 px-1.5 flex-1 min-w-0 focus:outline-none focus:ring-1 focus:ring-primary/30"
                         />
                         <button
                           onClick={() => removeRule(group.id, rIdx)}
@@ -351,13 +351,13 @@ function RulesPanel({
                     <div className="flex items-center gap-2">
                       <button
                         onClick={() => addRule(group.id)}
-                        className="flex items-center gap-1 text-[10px] text-primary hover:underline"
+                        className="flex items-center gap-1 text-[0.625rem] text-primary hover:underline"
                       >
                         <Plus className="h-2.5 w-2.5" /> Add rule
                       </button>
                       <button
                         onClick={() => removeGroup(group.id)}
-                        className="flex items-center gap-1 text-[10px] text-destructive hover:underline ml-auto"
+                        className="flex items-center gap-1 text-[0.625rem] text-destructive hover:underline ml-auto"
                       >
                         <Trash2 className="h-2.5 w-2.5" /> Delete group
                       </button>
@@ -393,12 +393,12 @@ function RulesPanel({
               onChange={(e) => setNewGroupName(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && addGroup()}
               placeholder="New group name..."
-              className="h-6 text-[10px] rounded border border-border/50 bg-muted/30 px-1.5 flex-1 min-w-0 focus:outline-none focus:ring-1 focus:ring-primary/30"
+              className="h-6 text-[0.625rem] rounded border border-border/50 bg-muted/30 px-1.5 flex-1 min-w-0 focus:outline-none focus:ring-1 focus:ring-primary/30"
             />
             <button
               onClick={addGroup}
               disabled={!newGroupName.trim()}
-              className="flex items-center gap-1 text-[10px] text-primary hover:underline disabled:opacity-30 disabled:no-underline shrink-0"
+              className="flex items-center gap-1 text-[0.625rem] text-primary hover:underline disabled:opacity-30 disabled:no-underline shrink-0"
             >
               <Plus className="h-3 w-3" /> Add
             </button>
@@ -454,13 +454,13 @@ function QuickRuleDialog({
         </button>
       </div>
 
-      <div className="space-y-2 text-[11px]">
+      <div className="space-y-2 text-[0.6875rem]">
         <div>
           <span className="text-muted-foreground">Group:</span>
           <select
             value={selectedGroupId}
             onChange={(e) => setSelectedGroupId(e.target.value)}
-            className="ml-2 h-6 text-[11px] rounded border border-border/50 bg-muted/30 px-1"
+            className="ml-2 h-6 text-[0.6875rem] rounded border border-border/50 bg-muted/30 px-1"
           >
             {groups.map((g) => (
               <option key={g.id} value={g.id}>
@@ -479,7 +479,7 @@ function QuickRuleDialog({
               else if (f === "from") setValue(email.from);
               else setValue("");
             }}
-            className="h-6 text-[10px] rounded border border-border/50 bg-muted/30 px-1"
+            className="h-6 text-[0.625rem] rounded border border-border/50 bg-muted/30 px-1"
           >
             <option value="fromAddress">From address</option>
             <option value="from">From name</option>
@@ -489,11 +489,11 @@ function QuickRuleDialog({
           <input
             value={value}
             onChange={(e) => setValue(e.target.value)}
-            className="h-6 text-[10px] rounded border border-border/50 bg-muted/30 px-1.5 flex-1 min-w-0 focus:outline-none focus:ring-1 focus:ring-primary/30"
+            className="h-6 text-[0.625rem] rounded border border-border/50 bg-muted/30 px-1.5 flex-1 min-w-0 focus:outline-none focus:ring-1 focus:ring-primary/30"
           />
         </div>
 
-        <div className="text-[10px] text-muted-foreground">
+        <div className="text-[0.625rem] text-muted-foreground">
           Emails where <strong>{field}</strong> contains &quot;<strong>{value}</strong>&quot;
           will go into <strong>{groups.find((g) => g.id === selectedGroupId)?.name}</strong>
         </div>
@@ -965,7 +965,7 @@ export function EmailWidget() {
             <div className="flex items-center gap-2 text-xs">
               <span className="text-muted-foreground shrink-0">From</span>
               <span className="font-medium truncate">{selectedEmail.from}</span>
-              <span className="text-muted-foreground truncate text-[10px]">
+              <span className="text-muted-foreground truncate text-[0.625rem]">
                 &lt;{selectedEmail.fromAddress}&gt;
               </span>
             </div>
@@ -981,7 +981,7 @@ export function EmailWidget() {
                 <span className="truncate">{selectedEmail.cc.join(", ")}</span>
               </div>
             )}
-            <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+            <div className="flex items-center gap-2 text-[0.625rem] text-muted-foreground">
               <span>{formatFullDate(selectedEmail.time)}</span>
               {selectedEmail.hasAttachments && (
                 <span className="inline-flex items-center gap-0.5">
@@ -990,7 +990,7 @@ export function EmailWidget() {
               )}
               {emailGroup && (
                 <span className={cn(
-                  "inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] leading-none",
+                  "inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[0.5625rem] leading-none",
                   getColor(emailGroup.color).bg,
                   getColor(emailGroup.color).text
                 )}>
@@ -1040,7 +1040,7 @@ export function EmailWidget() {
             <div className="flex flex-col gap-2 pt-2 mt-2 border-t border-border/50 shrink-0">
               {/* Reply header */}
               <div className="flex items-center justify-between">
-                <span className="text-[11px] text-muted-foreground">
+                <span className="text-[0.6875rem] text-muted-foreground">
                   {replyAll ? "Reply All" : "Reply"} to{" "}
                   <span className="text-foreground font-medium">{selectedEmail.from}</span>
                   {replyAll && selectedEmail.cc.length > 0 && (
@@ -1086,7 +1086,7 @@ export function EmailWidget() {
 
               {/* Send error */}
               {sendError && (
-                <div className="flex items-center gap-1.5 text-[10px] text-destructive">
+                <div className="flex items-center gap-1.5 text-[0.625rem] text-destructive">
                   <AlertCircle className="h-3 w-3 shrink-0" />
                   <span className="truncate">{sendError}</span>
                 </div>
@@ -1094,7 +1094,7 @@ export function EmailWidget() {
 
               {/* Send success */}
               {sendSuccess && (
-                <div className="flex items-center gap-1.5 text-[10px] text-green-600 dark:text-green-400">
+                <div className="flex items-center gap-1.5 text-[0.625rem] text-green-600 dark:text-green-400">
                   <CheckCircle2 className="h-3 w-3 shrink-0" />
                   <span>Reply sent!</span>
                 </div>
@@ -1102,7 +1102,7 @@ export function EmailWidget() {
 
               {/* Send button */}
               <div className="flex items-center justify-between">
-                <span className="text-[10px] text-muted-foreground/50">
+                <span className="text-[0.625rem] text-muted-foreground/50">
                   {navigator?.platform?.includes("Mac") ? "\u2318" : "Ctrl"}+Enter to send
                 </span>
                 <button
@@ -1148,13 +1148,13 @@ export function EmailWidget() {
                 {refreshingToken ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                    <span className="text-[11px] text-muted-foreground max-w-[200px] leading-relaxed">
+                    <span className="text-[0.6875rem] text-muted-foreground max-w-[200px] leading-relaxed">
                       {refreshStatus}
                     </span>
                   </>
                 ) : refreshStatus && !refreshingToken ? (
                   <>
-                    <span className="text-[11px] text-muted-foreground max-w-[220px] leading-relaxed">
+                    <span className="text-[0.6875rem] text-muted-foreground max-w-[220px] leading-relaxed">
                       {refreshStatus}
                     </span>
                     <div className="flex items-center gap-2">
@@ -1182,7 +1182,7 @@ export function EmailWidget() {
                     Refresh Token
                   </button>
                 )}
-                <span className="text-[10px] text-muted-foreground/60">
+                <span className="text-[0.625rem] text-muted-foreground/60">
                   Opens Outlook in Chrome to renew the session
                 </span>
               </div>
@@ -1225,7 +1225,7 @@ export function EmailWidget() {
               <button
                 onClick={() => setActiveGroupTab(null)}
                 className={cn(
-                  "shrink-0 h-6 px-2 text-[10px] rounded-md transition-colors font-medium",
+                  "shrink-0 h-6 px-2 text-[0.625rem] rounded-md transition-colors font-medium",
                   activeGroupTab === null
                     ? "bg-foreground text-background"
                     : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
@@ -1239,7 +1239,7 @@ export function EmailWidget() {
                   setActiveGroupTab(activeGroupTab === "__focused__" ? null : "__focused__")
                 }
                 className={cn(
-                  "shrink-0 h-6 px-2 text-[10px] rounded-md transition-colors font-medium",
+                  "shrink-0 h-6 px-2 text-[0.625rem] rounded-md transition-colors font-medium",
                   activeGroupTab === "__focused__"
                     ? "bg-foreground text-background"
                     : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
@@ -1289,7 +1289,7 @@ export function EmailWidget() {
                       setActiveGroupTab(activeGroupTab === group.id ? null : group.id)
                     }
                     className={cn(
-                      "shrink-0 h-6 px-2 text-[10px] rounded-md transition-colors font-medium inline-flex items-center gap-1 cursor-grab active:cursor-grabbing",
+                      "shrink-0 h-6 px-2 text-[0.625rem] rounded-md transition-colors font-medium inline-flex items-center gap-1 cursor-grab active:cursor-grabbing",
                       activeGroupTab === group.id
                         ? cn(colors.bg, colors.text)
                         : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
@@ -1310,7 +1310,7 @@ export function EmailWidget() {
 
           {/* Search results indicator */}
           {searchResults !== null && (
-            <div className="text-[10px] text-muted-foreground px-1 shrink-0">
+            <div className="text-[0.625rem] text-muted-foreground px-1 shrink-0">
               {searchResults.length} result{searchResults.length !== 1 ? "s" : ""} for &quot;{searchQuery}&quot;
             </div>
           )}
@@ -1342,7 +1342,7 @@ export function EmailWidget() {
                       <div className="flex items-center gap-1 ml-auto shrink-0">
                         {group && (
                           <span className={cn(
-                            "text-[9px] px-1.5 py-0.5 rounded-full leading-none inline-flex items-center gap-0.5",
+                            "text-[0.5625rem] px-1.5 py-0.5 rounded-full leading-none inline-flex items-center gap-0.5",
                             getColor(group.color).bg,
                             getColor(group.color).text
                           )}>
@@ -1353,7 +1353,7 @@ export function EmailWidget() {
                         {email.hasAttachments && (
                           <Paperclip className="h-3 w-3 text-muted-foreground" />
                         )}
-                        <span className="text-[10px] text-muted-foreground">
+                        <span className="text-[0.625rem] text-muted-foreground">
                           {formatTime(email.time)}
                         </span>
                       </div>

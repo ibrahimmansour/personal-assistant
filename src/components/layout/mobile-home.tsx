@@ -237,7 +237,7 @@ export function MobileHome({ visibleWidgets, widgetComponents }: MobileHomeProps
 function SectionHeader({ label }: { label: string }) {
   return (
     <div className="flex items-center gap-2 mb-2 px-1">
-      <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/60">{label}</span>
+      <span className="text-[0.6875rem] font-medium uppercase tracking-wider text-muted-foreground/60">{label}</span>
       <div className="flex-1 h-px bg-border/40" />
     </div>
   );

@@ -302,7 +302,7 @@ export function BookmarksWidget() {
             <button
               onClick={() => setActiveCategory(null)}
               className={cn(
-                "px-2 py-0.5 text-[10px] font-medium rounded-full transition-colors",
+                "px-2 py-0.5 text-[0.625rem] font-medium rounded-full transition-colors",
                 activeCategory === null
                   ? "bg-primary text-primary-foreground"
                   : "bg-muted text-muted-foreground hover:bg-muted/80"
@@ -317,7 +317,7 @@ export function BookmarksWidget() {
                   setActiveCategory(activeCategory === cat ? null : cat)
                 }
                 className={cn(
-                  "px-2 py-0.5 text-[10px] font-medium rounded-full transition-colors",
+                  "px-2 py-0.5 text-[0.625rem] font-medium rounded-full transition-colors",
                   activeCategory === cat
                     ? "bg-primary text-primary-foreground"
                     : "bg-muted text-muted-foreground hover:bg-muted/80"
@@ -427,7 +427,7 @@ export function BookmarksWidget() {
                   <div className="text-xs font-medium truncate leading-tight">
                     {item.title}
                   </div>
-                  <div className="text-[10px] text-muted-foreground truncate leading-tight">
+                  <div className="text-[0.625rem] text-muted-foreground truncate leading-tight">
                     {item.url.replace(/^https?:\/\//, "").replace(/\/$/, "")}
                   </div>
                 </div>

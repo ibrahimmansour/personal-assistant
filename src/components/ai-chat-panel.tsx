@@ -265,7 +265,7 @@ export function AIChatPanel() {
         role="dialog"
         aria-modal="true"
         aria-label="AI Assistant"
-        className="relative ml-auto w-[420px] max-w-[90vw] h-full bg-card border-l border-border shadow-2xl flex flex-col animate-in slide-in-from-right duration-200 touch-pan-y touch-pinch-zoom pt-app-top safe-area-bottom overscroll-contain"
+        className="relative ml-auto w-[420px] max-w-[90vw] h-full bg-card border-l border-border shadow-2xl flex flex-col animate-in slide-in-from-right duration-200 touch-pan-y pt-app-top safe-area-bottom overscroll-contain"
       >
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
@@ -275,7 +275,7 @@ export function AIChatPanel() {
             </div>
             <div>
               <h2 className="text-sm font-semibold leading-none">AI Assistant</h2>
-              <p className="text-[10px] text-muted-foreground mt-0.5">
+              <p className="text-[0.625rem] text-muted-foreground mt-0.5">
                 {aiAvailable === false ? "Ollama offline" : "gemma3:4b · local"}
               </p>
             </div>
@@ -317,7 +317,7 @@ export function AIChatPanel() {
               </div>
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Start a conversation</p>
-                <p className="text-[11px] text-muted-foreground/60 mt-1 max-w-[260px]">
+                <p className="text-[0.6875rem] text-muted-foreground/60 mt-1 max-w-[260px]">
                   Ask about your schedule, tasks, PRs, or anything about your dashboard. I remember context within the session.
                 </p>
               </div>
@@ -331,7 +331,7 @@ export function AIChatPanel() {
                   <button
                     key={q}
                     onClick={() => { sendMessage(q); }}
-                    className="text-[11px] min-h-9 px-3 rounded-full border border-border/50 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+                    className="text-[0.6875rem] min-h-9 px-3 rounded-full border border-border/50 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
                   >
                     {q}
                   </button>
@@ -435,7 +435,7 @@ export function AIChatPanel() {
               </button>
             )}
           </div>
-          <p className="text-[10px] text-muted-foreground/40 mt-1.5 text-center">
+          <p className="text-[0.625rem] text-muted-foreground/40 mt-1.5 text-center">
             gemma3:4b · running locally · Shift+Enter for newline
           </p>
         </div>

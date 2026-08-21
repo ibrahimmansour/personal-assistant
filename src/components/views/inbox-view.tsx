@@ -269,7 +269,7 @@ export function InboxView() {
               >
                 <Icon className="h-3 w-3" />
                 {f.label}
-                <span className="text-[10px] opacity-60">{count}</span>
+                <span className="text-[0.625rem] opacity-60">{count}</span>
               </button>
             );
           })}
@@ -315,7 +315,7 @@ export function InboxView() {
                         )}>
                           {item.title}
                         </span>
-                        <span className="text-[10px] text-muted-foreground shrink-0">
+                        <span className="text-[0.625rem] text-muted-foreground shrink-0">
                           {timeAgo(item.time)}
                         </span>
                       </div>
@@ -336,7 +336,7 @@ export function InboxView() {
         <div
           ref={detailSwipeRef}
           data-swipe-stop
-          className="flex-1 flex flex-col overflow-hidden min-h-0 touch-pan-y touch-pinch-zoom"
+          className="flex-1 flex flex-col overflow-hidden min-h-0 touch-pan-y"
         >
           {/* Detail header */}
           <div className="shrink-0 flex items-center gap-2 px-4 py-2.5 border-b border-border/50">
@@ -371,7 +371,7 @@ export function InboxView() {
                     <span className="text-muted-foreground">From</span>
                     <span className="font-medium">{selectedItem.data.from}</span>
                     {selectedItem.data.fromAddress && (
-                      <span className="text-muted-foreground text-[10px]">
+                      <span className="text-muted-foreground text-[0.625rem]">
                         &lt;{selectedItem.data.fromAddress}&gt;
                       </span>
                     )}
@@ -382,7 +382,7 @@ export function InboxView() {
                       <span className="truncate">{selectedItem.data.to.join(", ")}</span>
                     </div>
                   )}
-                  <div className="text-[10px] text-muted-foreground">
+                  <div className="text-[0.625rem] text-muted-foreground">
                     {formatFullDate(selectedItem.time)}
                     {selectedItem.data.hasAttachments && (
                       <span className="inline-flex items-center gap-0.5 ml-2">
@@ -411,7 +411,7 @@ export function InboxView() {
                   </div>
                   <div className="flex items-center gap-2 text-xs">
                     <span className={cn(
-                      "px-2 py-0.5 rounded-full text-[10px] font-medium",
+                      "px-2 py-0.5 rounded-full text-[0.625rem] font-medium",
                       selectedItem.data.status === "open" ? "bg-green-500/10 text-green-600" :
                       selectedItem.data.status === "merged" ? "bg-purple-500/10 text-purple-600" :
                       "bg-red-500/10 text-red-600"
@@ -423,13 +423,13 @@ export function InboxView() {
                   {(selectedItem.data.labels as Array<{ name: string }>)?.length > 0 && (
                     <div className="flex flex-wrap gap-1 mt-1">
                       {(selectedItem.data.labels as Array<{ name: string }>).map((l: { name: string }) => (
-                        <span key={l.name} className="px-1.5 py-0.5 bg-muted rounded text-[10px]">
+                        <span key={l.name} className="px-1.5 py-0.5 bg-muted rounded text-[0.625rem]">
                           {l.name}
                         </span>
                       ))}
                     </div>
                   )}
-                  <div className="text-[10px] text-muted-foreground mt-1">
+                  <div className="text-[0.625rem] text-muted-foreground mt-1">
                     {formatFullDate(selectedItem.time)}
                   </div>
                 </div>
@@ -445,7 +445,7 @@ export function InboxView() {
               <div className="space-y-3">
                 <div className="space-y-1.5">
                   <div className="flex items-center gap-2 text-xs">
-                    <span className="px-2 py-0.5 rounded-full bg-muted text-[10px] font-medium">
+                    <span className="px-2 py-0.5 rounded-full bg-muted text-[0.625rem] font-medium">
                       {selectedItem.data.status}
                     </span>
                     <span className="text-muted-foreground">{selectedItem.data.type}</span>
@@ -457,7 +457,7 @@ export function InboxView() {
                       <span className="text-muted-foreground">Assignee:</span> {selectedItem.data.assignee}
                     </div>
                   )}
-                  <div className="text-[10px] text-muted-foreground">
+                  <div className="text-[0.625rem] text-muted-foreground">
                     {formatFullDate(selectedItem.time)}
                   </div>
                 </div>
@@ -494,7 +494,7 @@ export function InboxView() {
                 <div className="space-y-1.5">
                   <div className="flex items-center gap-2 text-xs">
                     <span className={cn(
-                      "px-2 py-0.5 rounded-full text-[10px] font-medium",
+                      "px-2 py-0.5 rounded-full text-[0.625rem] font-medium",
                       selectedItem.data.priority === "high" ? "bg-red-500/10 text-red-600" :
                       selectedItem.data.priority === "medium" ? "bg-amber-500/10 text-amber-600" :
                       "bg-blue-500/10 text-blue-600"

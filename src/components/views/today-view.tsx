@@ -461,7 +461,7 @@ export function TodayView() {
                   >
                     <Circle className={cn("h-3.5 w-3.5 shrink-0", priorityColors[task.priority])} />
                     <span className="text-sm truncate flex-1">{task.title}</span>
-                    <span className="text-[10px] text-muted-foreground capitalize">{task.priority}</span>
+                    <span className="text-[0.625rem] text-muted-foreground capitalize">{task.priority}</span>
                   </div>
                 ))}
               </div>

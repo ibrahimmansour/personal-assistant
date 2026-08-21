@@ -19,7 +19,6 @@ import { AIChatProvider } from "@/components/ai-chat-context";
 import { AIChatPanel } from "@/components/ai-chat-panel";
 import { useKeepAlive } from "@/hooks/use-keep-alive";
 import { useSwipe } from "@/hooks/use-swipe";
-import { usePinchZoom } from "@/hooks/use-pinch-zoom";
 import { useCallback } from "react";
 
 function MainContent() {
@@ -93,22 +92,6 @@ function MainContent() {
   );
 }
 
-/**
- * Owns the app-level pinch zoom (installed PWAs only — a browser tab zooms
- * natively) and shows a live percentage while the gesture is in flight. Kept
- * out of MainContent because the zoom state ticks every frame during a pinch,
- * which would re-render the entire widget tree with it.
- */
-function PinchZoomLayer() {
-  const { zoom, pinching, active } = usePinchZoom();
-  if (!active || !pinching) return null;
-  return (
-    <div className="fixed left-1/2 top-1/2 z-100 -translate-x-1/2 -translate-y-1/2 rounded-full bg-foreground/85 px-3 py-1.5 text-sm font-medium text-background shadow-lg pointer-events-none">
-      {Math.round(zoom * 100)}%
-    </div>
-  );
-}
-
 export default function Home() {
   return (
     <DashboardProvider>
@@ -118,7 +101,6 @@ export default function Home() {
             <CommandPaletteProvider>
               <AIChatProvider>
                 <MainContent />
-                <PinchZoomLayer />
                 <CommandPalette />
                 <AIChatPanel />
               </AIChatProvider>

@@ -157,7 +157,7 @@ function SunProgress({ sunrise, sunset }: { sunrise: string; sunset: string }) {
 
   return (
     <div className="flex flex-col gap-1.5">
-      <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+      <div className="flex items-center justify-between text-[0.625rem] text-muted-foreground">
         <div className="flex items-center gap-1">
           <Sunrise className="h-3 w-3 text-amber-400" />
           <span>{rise.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false })}</span>
@@ -204,15 +204,15 @@ function HourlyScroller({ hourly }: { hourly: HourlyForecast[] }) {
             i === 0 ? "bg-primary/10" : "hover:bg-muted/50"
           )}
         >
-          <span className="text-[9px] text-muted-foreground font-medium">
+          <span className="text-[0.5625rem] text-muted-foreground font-medium">
             {i === 0 ? "Now" : `${h.hour}:00`}
           </span>
           <WeatherIcon condition={h.condition} className="h-3.5 w-3.5" isDay={h.isDay} />
-          <span className={cn("text-[10px] font-semibold tabular-nums", tempColor(h.temperature))}>
+          <span className={cn("text-[0.625rem] font-semibold tabular-nums", tempColor(h.temperature))}>
             {h.temperature}°
           </span>
           {h.precipitationProbability > 0 && (
-            <span className={cn("text-[8px] tabular-nums", precipColor(h.precipitationProbability))}>
+            <span className={cn("text-[0.5rem] tabular-nums", precipColor(h.precipitationProbability))}>
               {h.precipitationProbability}%
             </span>
           )}
@@ -235,11 +235,11 @@ function StatCard({ icon, label, value, subValue, className }: {
     <div className={cn("flex flex-col gap-0.5 rounded-xl bg-muted/40 px-2.5 py-2", className)}>
       <div className="flex items-center gap-1.5">
         {icon}
-        <span className="text-[10px] text-muted-foreground font-medium">{label}</span>
+        <span className="text-[0.625rem] text-muted-foreground font-medium">{label}</span>
       </div>
       <span className="text-sm font-semibold tabular-nums text-foreground">{value}</span>
       {subValue && (
-        <span className="text-[10px] text-muted-foreground">{subValue}</span>
+        <span className="text-[0.625rem] text-muted-foreground">{subValue}</span>
       )}
     </div>
   );
@@ -333,7 +333,7 @@ export function WeatherWidget() {
 
           {/* ── Hourly Forecast ── */}
           <div className="flex flex-col gap-1">
-            <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Next 24 hours</span>
+            <span className="text-[0.625rem] font-medium text-muted-foreground uppercase tracking-wider">Next 24 hours</span>
             <HourlyScroller hourly={weather.hourly} />
           </div>
 
@@ -383,7 +383,7 @@ export function WeatherWidget() {
 
           {/* ── 7-Day Forecast ── */}
           <div className="flex flex-col gap-1">
-            <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">7-Day Forecast</span>
+            <span className="text-[0.625rem] font-medium text-muted-foreground uppercase tracking-wider">7-Day Forecast</span>
             <div className="flex flex-col gap-0.5">
               {weather.forecast.map((day) => (
                 <div
@@ -397,28 +397,28 @@ export function WeatherWidget() {
                     {day.precipitationProbability > 0 ? (
                       <>
                         <Umbrella className={cn("h-2.5 w-2.5", precipColor(day.precipitationProbability))} />
-                        <span className={cn("text-[10px] tabular-nums", precipColor(day.precipitationProbability))}>
+                        <span className={cn("text-[0.625rem] tabular-nums", precipColor(day.precipitationProbability))}>
                           {day.precipitationProbability}%
                         </span>
                       </>
                     ) : (
-                      <span className="text-[10px] text-muted-foreground/40">--</span>
+                      <span className="text-[0.625rem] text-muted-foreground/40">--</span>
                     )}
                   </div>
                   {/* Temperature bar */}
                   <div className="flex-1 flex items-center gap-1.5">
-                    <span className={cn("text-[10px] tabular-nums font-medium w-5 text-right", tempColor(day.low))}>
+                    <span className={cn("text-[0.625rem] tabular-nums font-medium w-5 text-right", tempColor(day.low))}>
                       {day.low}°
                     </span>
                     <TemperatureBar low={day.low} high={day.high} forecast={weather.forecast} />
-                    <span className={cn("text-[10px] tabular-nums font-semibold w-5", tempColor(day.high))}>
+                    <span className={cn("text-[0.625rem] tabular-nums font-semibold w-5", tempColor(day.high))}>
                       {day.high}°
                     </span>
                   </div>
                   {/* Wind */}
                   <div className="flex items-center gap-0.5 shrink-0">
                     <WindCompass degrees={0} className="h-2.5 w-2.5 opacity-50" />
-                    <span className="text-[9px] text-muted-foreground tabular-nums">{day.windSpeedMax}</span>
+                    <span className="text-[0.5625rem] text-muted-foreground tabular-nums">{day.windSpeedMax}</span>
                   </div>
                 </div>
               ))}

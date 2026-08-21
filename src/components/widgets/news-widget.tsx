@@ -177,7 +177,7 @@ function ReaderPane({ article, onClose }: ReaderPaneProps) {
         <div className="flex items-center gap-2 min-w-0 flex-1">
           <Badge
             variant="outline"
-            className={cn("text-[10px] h-5 px-1.5 font-normal shrink-0", genreColors[article.genre])}
+            className={cn("text-[0.625rem] h-5 px-1.5 font-normal shrink-0", genreColors[article.genre])}
           >
             {article.genre}
           </Badge>
@@ -271,7 +271,7 @@ function ReaderPane({ article, onClose }: ReaderPaneProps) {
               {/* Article body — sanitized HTML */}
               <div
                 className={cn(
-                  "text-[15px] leading-7 text-foreground/90",
+                  "text-[0.9375rem] leading-7 text-foreground/90",
                   // Paragraph spacing
                   "[&_p]:my-4",
                   // Headings
@@ -288,8 +288,8 @@ function ReaderPane({ article, onClose }: ReaderPaneProps) {
                   // Blockquotes — logical inline-start border
                   "[&_blockquote]:border-s-4 [&_blockquote]:border-primary/40 [&_blockquote]:ps-4 [&_blockquote]:my-4 [&_blockquote]:italic [&_blockquote]:text-muted-foreground",
                   // Inline code & pre
-                  "[&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_code]:bg-muted [&_code]:text-[13px] [&_code]:font-mono",
-                  "[&_pre]:p-3 [&_pre]:rounded-lg [&_pre]:bg-muted [&_pre]:overflow-x-auto [&_pre]:my-4 [&_pre]:text-[13px]",
+                  "[&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_code]:bg-muted [&_code]:text-[0.8125rem] [&_code]:font-mono",
+                  "[&_pre]:p-3 [&_pre]:rounded-lg [&_pre]:bg-muted [&_pre]:overflow-x-auto [&_pre]:my-4 [&_pre]:text-[0.8125rem]",
                   "[&_pre_code]:bg-transparent [&_pre_code]:p-0",
                   // Images
                   "[&_img]:rounded-lg [&_img]:my-4 [&_img]:max-w-full [&_img]:h-auto [&_img]:mx-auto",
@@ -361,7 +361,7 @@ function SettingsPanel({
         <div className="px-1 space-y-5">
           {/* Genres */}
           <section>
-            <h4 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 mb-2">
+            <h4 className="text-[0.625rem] font-semibold uppercase tracking-wider text-muted-foreground/70 mb-2">
               Genres
             </h4>
             <div className="flex flex-wrap gap-1.5">
@@ -383,14 +383,14 @@ function SettingsPanel({
                 );
               })}
             </div>
-            <p className="text-[10px] text-muted-foreground/60 mt-2">
+            <p className="text-[0.625rem] text-muted-foreground/60 mt-2">
               Empty = all genres
             </p>
           </section>
 
           {/* Sources */}
           <section>
-            <h4 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 mb-2">
+            <h4 className="text-[0.625rem] font-semibold uppercase tracking-wider text-muted-foreground/70 mb-2">
               Sources
             </h4>
             <div className="space-y-0.5">
@@ -405,7 +405,7 @@ function SettingsPanel({
                   />
                   <div className="flex-1 min-w-0">
                     <div className="text-sm">{source.name}</div>
-                    <div className="text-[10px] text-muted-foreground">
+                    <div className="text-[0.625rem] text-muted-foreground">
                       {source.genres.join(" · ")}
                     </div>
                   </div>
@@ -727,7 +727,7 @@ export function NewsWidget() {
             <button
               onClick={() => setActiveGenreFilter("all")}
               className={cn(
-                "text-[11px] px-2 py-0.5 rounded-full border transition-colors shrink-0",
+                "text-[0.6875rem] px-2 py-0.5 rounded-full border transition-colors shrink-0",
                 activeGenreFilter === "all"
                   ? "bg-primary text-primary-foreground border-primary font-medium"
                   : "border-border text-muted-foreground hover:bg-muted"
@@ -744,7 +744,7 @@ export function NewsWidget() {
                     key={g.id}
                     onClick={() => setActiveGenreFilter(g.id)}
                     className={cn(
-                      "text-[11px] px-2 py-0.5 rounded-full border transition-colors shrink-0",
+                      "text-[0.6875rem] px-2 py-0.5 rounded-full border transition-colors shrink-0",
                       active
                         ? cn("font-medium", genreColors[g.id])
                         : "border-border text-muted-foreground hover:bg-muted"
@@ -855,15 +855,15 @@ function ArticleListItem({
         <div className="flex items-center gap-1.5 flex-wrap" dir="ltr">
           <Badge
             variant="outline"
-            className={cn("text-[9px] px-1 py-0 h-3.5 font-normal", genreColors[article.genre])}
+            className={cn("text-[0.5625rem] px-1 py-0 h-3.5 font-normal", genreColors[article.genre])}
           >
             {article.genre}
           </Badge>
-          <span className="text-[10px] text-muted-foreground truncate" dir={article.dir || "ltr"}>
+          <span className="text-[0.625rem] text-muted-foreground truncate" dir={article.dir || "ltr"}>
             {article.source}
           </span>
-          <span className="text-[10px] text-muted-foreground/60">·</span>
-          <span className="text-[10px] text-muted-foreground">
+          <span className="text-[0.625rem] text-muted-foreground/60">·</span>
+          <span className="text-[0.625rem] text-muted-foreground">
             {timeAgo(article.pubDate)}
           </span>
         </div>

@@ -636,11 +636,11 @@ export function TerminalWidget() {
               <div className="absolute right-0 top-full mt-1 z-50 bg-popover border border-border rounded-md shadow-lg py-1 min-w-[180px]">
                 {vpsConnections.map((conn) => (
                   <div key={conn.id} className="px-2 py-1">
-                    <div className="text-[10px] text-muted-foreground font-medium mb-0.5">{conn.label}</div>
+                    <div className="text-[0.625rem] text-muted-foreground font-medium mb-0.5">{conn.label}</div>
                     <div className="flex items-center gap-1">
                       <button
                         onClick={() => openVpsTerminal(conn)}
-                        className="text-[10px] px-1.5 py-0.5 rounded bg-muted hover:bg-muted/80 text-foreground transition-colors"
+                        className="text-[0.625rem] px-1.5 py-0.5 rounded bg-muted hover:bg-muted/80 text-foreground transition-colors"
                         title="Open SSH terminal"
                       >
                         <TerminalSquare className="h-3 w-3 inline mr-0.5" />
@@ -648,7 +648,7 @@ export function TerminalWidget() {
                       </button>
                       <button
                         onClick={() => openClaudeOnVps(conn)}
-                        className="text-[10px] px-1.5 py-0.5 rounded bg-muted hover:bg-muted/80 text-foreground transition-colors"
+                        className="text-[0.625rem] px-1.5 py-0.5 rounded bg-muted hover:bg-muted/80 text-foreground transition-colors"
                         title="Open Claude on VPS"
                       >
                         <ClaudeIcon className="h-3 w-3 inline mr-0.5" />
@@ -683,7 +683,7 @@ export function TerminalWidget() {
                 <div
                   key={id}
                   className={cn(
-                    "flex items-center gap-1 px-2 py-0.5 rounded text-[11px] cursor-pointer transition-colors shrink-0",
+                    "flex items-center gap-1 px-2 py-0.5 rounded text-[0.6875rem] cursor-pointer transition-colors shrink-0",
                     isActive
                       ? "bg-primary/15 text-primary"
                       : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
@@ -721,14 +721,14 @@ export function TerminalWidget() {
               <div className="flex-1" />
               <button
                 onClick={() => openClaude(undefined, false)}
-                className="text-[10px] px-2 py-0.5 rounded-md bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                className="text-[0.625rem] px-2 py-0.5 rounded-md bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
                 title="New Claude session"
               >
                 New
               </button>
               <button
                 onClick={() => openClaude(undefined, true)}
-                className="text-[10px] px-2 py-0.5 rounded-md bg-green-500/10 text-green-600 dark:text-green-400 hover:bg-green-500/20 transition-colors"
+                className="text-[0.625rem] px-2 py-0.5 rounded-md bg-green-500/10 text-green-600 dark:text-green-400 hover:bg-green-500/20 transition-colors"
                 title="New Claude session in tmux"
               >
                 + tmux
@@ -748,7 +748,7 @@ export function TerminalWidget() {
               <select
                 value={claudeSource}
                 onChange={(e) => { setClaudeSource(e.target.value); setClaudeProjectFilter(null); }}
-                className="text-[10px] bg-muted/40 border border-border rounded px-1.5 py-1 outline-none max-w-[110px] truncate"
+                className="text-[0.625rem] bg-muted/40 border border-border rounded px-1.5 py-1 outline-none max-w-[110px] truncate"
               >
                 <option value="local">Local</option>
                 {vpsConnections.map((c) => (
@@ -768,7 +768,7 @@ export function TerminalWidget() {
               <select
                 value={claudeProjectFilter || ""}
                 onChange={(e) => setClaudeProjectFilter(e.target.value || null)}
-                className="text-[10px] bg-muted/40 border border-border rounded px-1.5 py-1 outline-none max-w-[120px] truncate"
+                className="text-[0.625rem] bg-muted/40 border border-border rounded px-1.5 py-1 outline-none max-w-[120px] truncate"
               >
                 <option value="">All projects</option>
                 {claudeProjects.map((p) => (
@@ -784,7 +784,7 @@ export function TerminalWidget() {
               <div className="pb-2 mb-2 border-b border-border shrink-0">
                 <div className="flex items-center gap-1 mb-1">
                   <TerminalSquare className="h-3 w-3 text-green-500" />
-                  <span className="text-[10px] font-medium text-muted-foreground">tmux sessions</span>
+                  <span className="text-[0.625rem] font-medium text-muted-foreground">tmux sessions</span>
                 </div>
                 <div className="flex flex-wrap gap-1">
                   {tmuxSessions.map((s) => (
@@ -792,7 +792,7 @@ export function TerminalWidget() {
                       key={s.name}
                       onClick={() => attachTmuxSession(s.name)}
                       className={cn(
-                        "text-[10px] px-2 py-0.5 rounded-md border transition-colors",
+                        "text-[0.625rem] px-2 py-0.5 rounded-md border transition-colors",
                         s.attached
                           ? "border-green-500/50 bg-green-500/10 text-green-600 dark:text-green-400"
                           : "border-border bg-muted/40 text-foreground hover:bg-muted"
@@ -829,11 +829,11 @@ export function TerminalWidget() {
                           {session.summary || session.firstPrompt.slice(0, 60) || session.sessionId.slice(0, 8)}
                         </div>
                         {session.summary && session.firstPrompt && (
-                          <div className="text-[10px] text-muted-foreground truncate mt-0.5">
+                          <div className="text-[0.625rem] text-muted-foreground truncate mt-0.5">
                             {session.firstPrompt.slice(0, 80)}
                           </div>
                         )}
-                        <div className="flex items-center gap-2 mt-1 text-[9px] text-muted-foreground">
+                        <div className="flex items-center gap-2 mt-1 text-[0.5625rem] text-muted-foreground">
                           <span>{session.projectPath.split("/").pop()}</span>
                           {session.gitBranch && (
                             <span className="text-primary/70">{session.gitBranch}</span>
@@ -849,13 +849,13 @@ export function TerminalWidget() {
                         <div className="flex items-center gap-1 mt-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
                           <button
                             onClick={() => resumeClaudeSession(session, false)}
-                            className="text-[9px] px-1.5 py-0.5 rounded bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                            className="text-[0.5625rem] px-1.5 py-0.5 rounded bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
                           >
                             Resume
                           </button>
                           <button
                             onClick={() => resumeClaudeSession(session, true)}
-                            className="text-[9px] px-1.5 py-0.5 rounded bg-green-500/10 text-green-600 dark:text-green-400 hover:bg-green-500/20 transition-colors"
+                            className="text-[0.5625rem] px-1.5 py-0.5 rounded bg-green-500/10 text-green-600 dark:text-green-400 hover:bg-green-500/20 transition-colors"
                           >
                             Resume in tmux
                           </button>

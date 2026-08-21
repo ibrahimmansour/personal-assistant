@@ -389,7 +389,7 @@ export function DashboardGrid() {
                 className="absolute left-0 right-0 z-10 pointer-events-none flex items-center gap-2"
                 style={{ top: section.pixelY - 20 }}
               >
-                <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/50 shrink-0">
+                <span className="text-[0.6875rem] font-medium uppercase tracking-wider text-muted-foreground/50 shrink-0">
                   {section.label}
                 </span>
                 <div className="flex-1 h-px bg-border/40" />

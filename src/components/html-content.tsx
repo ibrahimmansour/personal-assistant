@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useTheme } from "next-themes";
+import { useAppearance, fontSizes } from "@/components/appearance-context";
 
 interface HtmlContentProps {
   html: string;
@@ -21,6 +22,17 @@ export function HtmlContent({ html, fallbackText, className }: HtmlContentProps)
   const [height, setHeight] = useState(150);
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme === "dark";
+  // The iframe is its own document, so it inherits nothing from the root
+  // font-size the text-size setting drives. Multiply the px sizes below by the
+  // active step instead, otherwise mail bodies — one of the longest reading
+  // surfaces in the app — are the one place the setting does nothing.
+  const { appearance } = useAppearance();
+  const textScale =
+    fontSizes.find((f) => f.id === appearance.fontSize)?.scale ?? 1;
+  const px = useCallback(
+    (base: number) => `${Math.round(base * textScale * 100) / 100}px`,
+    [textScale]
+  );
 
   // Read computed CSS variable values from the document root
   const getThemeColors = useCallback(() => {
@@ -61,7 +73,7 @@ export function HtmlContent({ html, fallbackText, className }: HtmlContentProps)
     background: ${bgColor};
     color: ${fgColor};
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    font-size: 12px;
+    font-size: ${px(12)};
     line-height: 1.6;
     word-wrap: break-word;
     /* anywhere, not break-word: it also shrinks min-content, so a table
@@ -78,7 +90,7 @@ export function HtmlContent({ html, fallbackText, className }: HtmlContentProps)
   td, th { padding: 2px 4px; }
   pre, code {
     font-family: ui-monospace, "SF Mono", Monaco, "Cascadia Mono", monospace;
-    font-size: 11px;
+    font-size: ${px(11)};
     background: ${isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.04)"};
     border-radius: 3px;
     padding: 1px 3px;
@@ -100,9 +112,9 @@ export function HtmlContent({ html, fallbackText, className }: HtmlContentProps)
     line-height: 1.3;
     color: ${fgColor};
   }
-  h1 { font-size: 16px; }
-  h2 { font-size: 14px; }
-  h3 { font-size: 13px; }
+  h1 { font-size: ${px(16)}; }
+  h2 { font-size: ${px(14)}; }
+  h3 { font-size: ${px(13)}; }
   p { margin: 4px 0; }
   ul, ol { padding-left: 20px; margin: 4px 0; }
   /* Hide Outlook specific junk */
@@ -137,7 +149,7 @@ export function HtmlContent({ html, fallbackText, className }: HtmlContentProps)
   });
 </script>
 </html>`;
-  }, [html, isDark, getThemeColors]);
+  }, [html, isDark, getThemeColors, px]);
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {

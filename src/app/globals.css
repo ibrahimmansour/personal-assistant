@@ -48,6 +48,16 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/* Tailwind's spacing scale, pinned to px instead of its default 0.25rem.
+   The font-size setting works by changing the root font-size (see "Text size
+   scaling" below), and every `p-*`, `h-*`, `w-*`, `gap-*` utility is
+   `calc(var(--spacing) * N)` — leaving it in rem would scale the entire
+   layout, icons and touch targets included, which is a UI zoom, not a text
+   zoom. In px the boxes hold still and only the type grows. */
+@theme {
+  --spacing: 4px;
+}
+
 :root {
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
@@ -72,7 +82,7 @@
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
+  --radius: 10px; /* px, not rem: the font-size setting must not resize corners */
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.205 0 0);
@@ -526,7 +536,7 @@
 
 .notes-editor .tiptap {
   outline: none;
-  font-size: 13px;
+  font-size: 0.8125rem;
   line-height: 1.6;
   color: var(--foreground);
 }
@@ -826,7 +836,7 @@
    tall *plus* its own safe-area-inset-bottom padding, so reserving a flat
    pb-14 left the last widget partly under the nav on notched devices. */
 .pb-mobile-nav {
-  padding-bottom: calc(3.5rem + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px));
 }
 @media (min-width: 768px) {
   .pb-mobile-nav {
@@ -891,7 +901,7 @@
 
 @media (max-width: 767px) {
   :root {
-    --app-top-inset: calc(env(safe-area-inset-top, 0px) + 0.5rem);
+    --app-top-inset: calc(env(safe-area-inset-top, 0px) + 8px);
   }
 }
 
@@ -903,45 +913,45 @@
   padding-right: env(safe-area-inset-right, 0px);
 }
 
-/* ─── App-level pinch zoom ─────────────────────────────────────────────── */
-/* Installed PWAs (Chrome WebAPK, iOS home-screen apps) disable the browser's
-   own page zoom, so `usePinchZoom` drives this variable from a two-finger
-   gesture instead. `zoom` rather than `transform: scale` so the layout reflows
-   at the new scale — content keeps fitting the viewport width and text
-   re-rasterizes crisply. The class is only on <html> while that hook is in
-   charge; in a browser tab the native gesture handles zooming and this rule
-   never applies. */
-html.app-zoom {
-  zoom: var(--app-zoom, 1);
-}
+/* ─── Text size scaling ────────────────────────────────────────────────── */
+/* The app's only zoom. Pinch/page zoom is off everywhere (viewport meta ships
+   `user-scalable=no`), so this is what a user reaches for when the type is too
+   small — five steps, reachable from the header's text-size button, the
+   appearance picker and the command palette.
 
-/* ─── Font size scaling ────────────────────────────────────────────────── */
-/* Applied via class on <html> element. Uses font-size on :root so all rem-based
-   sizing throughout the app scales proportionally. */
+   It scales *text only*: the class sets the root font-size, so every rem-sized
+   font-size in the app follows, while `--spacing` and `--radius` are pinned to
+   px (see the @theme block at the top) so padding, control heights, icons and
+   touch targets hold still. Media queries are unaffected — `rem` inside a
+   media query resolves against the initial 16px, not the root's declared
+   size — so no step can flip a phone into the desktop layout, which is exactly
+   how the old pinch zoom used to misbehave.
+
+   Arbitrary sizes are written `text-[0.625rem]`, never `text-[10px]`; a px
+   literal opts that string out of the setting entirely. */
 
 html.font-size-xs {
   font-size: 13.6px; /* 0.85 × 16 */
 }
 
 html.font-size-sm {
-  font-size: 14.72px; /* 0.92 × 16 */
+  font-size: 14.8px; /* 0.925 × 16 */
 }
 
 /* base = 16px (browser default, no class needed) */
 
 html.font-size-lg {
-  font-size: 17.28px; /* 1.08 × 16 */
+  font-size: 18px; /* 1.125 × 16 */
 }
 
 html.font-size-xl {
-  font-size: 18.88px; /* 1.18 × 16 */
+  font-size: 20px; /* 1.25 × 16 */
 }
 
-/* ─── Reflow safety under zoom / font scaling ───────────────────────────── */
-/* Both knobs that scale the UI shrink the usable line width. The app-level
-   pinch zoom divides the layout viewport by the zoom factor (a 390px phone
-   lays out at 130 CSS px at 3x), and the font-size setting widens every string
-   without handing the viewport any extra room. Anything that can only be laid
+/* ─── Reflow safety under text scaling ─────────────────────────────────── */
+/* The font-size setting widens every string without handing the viewport any
+   extra room — and since the containers are pinned in px, the text has even
+   less slack than it did when the whole layout scaled with it. Anything that can only be laid
    out at its min-content width then pushes its container past the screen edge,
    and reading one sentence costs a sideways scroll. Two defaults stop that
    globally instead of widget by widget:
@@ -976,10 +986,9 @@ iframe {
   max-width: 100%;
 }
 
-/* The header's decorative brand mark is the first thing to go when the layout
-   viewport gets narrow — which happens on a small phone *and* at any zoom
-   above ~1.05x, since media queries see the zoomed viewport. Dropping it keeps
-   the search / AI / theme controls on screen instead of clipped past the edge. */
+/* The header's decorative brand mark is the first thing to go when the viewport
+   gets narrow. Dropping it keeps the search / AI / text-size / theme controls
+   on screen instead of clipped past the edge. */
 @media (max-width: 399px) {
   .header-brand-mark {
     display: none;
@@ -1004,10 +1013,12 @@ iframe {
 /* ─── Mobile form controls ─────────────────────────────────────────────── */
 @media (max-width: 767px) {
   /* iOS Safari auto-zooms the viewport when a focused control's text is under
-     16px, then leaves the page zoomed after blur. Our controls are sized in
-     rem, so the appearance font-size setting (xs = 13.6px root) drops them
-     below that threshold and every tap on an input yanks the layout. Floor
-     the rendered size at 16px on phones; `1rem` keeps larger settings honest.
+     16px, then leaves the page zoomed after blur. `user-scalable=no` does not
+     stop it — mobile Safari has ignored that flag since iOS 10 — so the floor
+     is still needed even with zoom disabled everywhere else. Our controls are
+     sized in rem, so the text-size setting (xs = 13.6px root) drops them below
+     the threshold and every tap on an input yanks the layout. Floor the
+     rendered size at 16px on phones; `1rem` keeps larger settings honest.
      Specificity here (0,3,1 from the :not() attribute selectors) deliberately
      outranks a single Tailwind text-* utility. */
   input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
@@ -1018,9 +1029,9 @@ iframe {
 }
 
 /* ─── Touch behaviour ──────────────────────────────────────────────────── */
-/* `manipulation` drops the ~300ms double-tap-to-zoom wait on controls while
-   still allowing pan and pinch — the accessibility zoom the app deliberately
-   keeps is unaffected, only the double-tap shortcut goes. The tap highlight is
+/* `manipulation` drops the ~300ms double-tap-to-zoom wait on controls. Page
+   zoom is disabled app-wide anyway (the font-size setting replaces it), so
+   this only removes a delay, never a gesture. The tap highlight is
    set explicitly rather than left to the UA's blue-grey box: every control
    already has an `active:`/`hover:` state, and the default highlight paints a
    rectangle that ignores our rounded corners. */

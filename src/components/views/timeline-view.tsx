@@ -244,7 +244,7 @@ export function TimelineView() {
             >
               <Icon className="h-3 w-3" />
               {f.label}
-              <span className="text-[10px] opacity-60">{count}</span>
+              <span className="text-[0.625rem] opacity-60">{count}</span>
             </button>
           );
         })}
@@ -288,7 +288,7 @@ export function TimelineView() {
                         <div className="flex-1 min-w-0 pt-0.5">
                           <div className="flex items-center gap-2">
                             <span className="text-sm truncate">{entry.title}</span>
-                            <span className="text-[10px] text-muted-foreground shrink-0">
+                            <span className="text-[0.625rem] text-muted-foreground shrink-0">
                               {formatTime(entry.time)}
                             </span>
                           </div>

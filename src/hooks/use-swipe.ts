@@ -90,11 +90,10 @@ function isInsideVerticalScroller(el: EventTarget | null): boolean {
  * gesture hook always sees a second finger land before its own handlers run.
  *
  * Every hook below bails out while more than one pointer is down: a two-finger
- * gesture belongs to the browser (pinch-zoom), not to our swipe/long-press
- * handlers. Without this a pinch inside an expanded widget reads as a
- * one-finger swipe — the card drags away and the widget dismisses instead of
- * zooming — and an edge-started pinch hits `preventDefault()` in useEdgeSwipe,
- * which cancels the zoom outright.
+ * gesture is never one of ours. Page zoom is disabled app-wide, so this no
+ * longer protects a pinch — it stops the stray second finger of a two-handed
+ * grip, or a pinch reflex on a surface that no longer zooms, from reading as a
+ * one-finger swipe and dragging an expanded widget away.
  */
 const activePointers = new Set<number>();
 let pointerTrackers = 0;
@@ -186,7 +185,7 @@ export function useEdgeSwipe({
 
     function handlePointerDown(e: PointerEvent) {
       if (e.pointerType === "mouse") return; // only touch/pen
-      // Second finger down — hand the gesture back to the browser (pinch-zoom).
+      // Second finger down — not a swipe.
       if (isMultiTouch()) {
         abort();
         return;
@@ -321,7 +320,7 @@ export function useSwipe<T extends HTMLElement = HTMLDivElement>(
     function handlePointerDown(e: PointerEvent) {
       if (e.pointerType === "mouse") return;
       if (optsRef.current.disabled) return;
-      // Second finger down — the browser owns this gesture (pinch-zoom).
+      // Second finger down — not a swipe.
       if (isMultiTouch()) {
         abort();
         return;

@@ -1309,7 +1309,7 @@ function ToolUseBlock({
         <span className="font-semibold text-foreground/90">{meta.label}</span>
         {summary && (
           <span className={cn(
-            "font-mono text-[11px] text-muted-foreground min-w-0",
+            "font-mono text-[0.6875rem] text-muted-foreground min-w-0",
             expanded ? "break-all" : "truncate",
           )}>
             {summary}
@@ -1328,7 +1328,7 @@ function ToolUseBlock({
           {/* Show the output/result */}
           {hasResult && (
             <div className={cn(
-              "px-2 py-1.5 font-mono text-[11px] leading-relaxed overflow-x-auto whitespace-pre-wrap break-words max-h-64 overflow-y-auto",
+              "px-2 py-1.5 font-mono text-[0.6875rem] leading-relaxed overflow-x-auto whitespace-pre-wrap break-words max-h-64 overflow-y-auto",
               result.isError ? "bg-destructive/5 text-destructive" : "bg-muted/30 text-foreground/80",
             )}>
               {formatToolOutput(result.content)}
@@ -1336,7 +1336,7 @@ function ToolUseBlock({
           )}
           {/* If no result yet but tool has input details, show input */}
           {!hasResult && hasInput && (
-            <div className="px-2 py-1.5 font-mono text-[11px] leading-relaxed overflow-x-auto whitespace-pre-wrap break-words max-h-48 overflow-y-auto bg-muted/20 text-muted-foreground">
+            <div className="px-2 py-1.5 font-mono text-[0.6875rem] leading-relaxed overflow-x-auto whitespace-pre-wrap break-words max-h-48 overflow-y-auto bg-muted/20 text-muted-foreground">
               {(() => {
                 try { return JSON.stringify(input, null, 2); } catch { return String(input); }
               })()}
@@ -1404,7 +1404,7 @@ function ThemePicker({
               )}
             >
               <span className="text-xs font-medium">{t.label}</span>
-              <span className="text-[10px] text-muted-foreground">{t.description}</span>
+              <span className="text-[0.625rem] text-muted-foreground">{t.description}</span>
             </button>
           ))}
         </div>
@@ -1470,11 +1470,11 @@ function ModelPicker({
               )}
             >
               <span className="text-xs font-medium">{m.label}</span>
-              <span className="text-[10px] text-muted-foreground">{m.description}</span>
+              <span className="text-[0.625rem] text-muted-foreground">{m.description}</span>
             </button>
           ))}
           {!sessionAlive && (
-            <div className="px-2 pt-1 mt-1 border-t border-border text-[10px] text-muted-foreground">
+            <div className="px-2 pt-1 mt-1 border-t border-border text-[0.625rem] text-muted-foreground">
               Applies on next session start
             </div>
           )}
@@ -1512,7 +1512,7 @@ function ModeToggle({
           onClick={() => onChange(m.value)}
           title={m.description}
           className={cn(
-            "flex-1 px-2 py-0.5 text-[11px] rounded transition-colors flex items-center justify-center gap-1",
+            "flex-1 px-2 py-0.5 text-[0.6875rem] rounded transition-colors flex items-center justify-center gap-1",
             value === m.value
               ? "bg-background shadow-sm text-foreground"
               : "text-muted-foreground hover:text-foreground",
@@ -1616,7 +1616,7 @@ function renderText(text: string): React.ReactNode {
       if (i < lines.length) i++;
       blocks.push(
         <pre key={key++} className="my-2 p-2 rounded bg-muted/50 text-xs font-mono overflow-x-auto">
-          {lang && <div className="text-[10px] text-muted-foreground mb-1">{lang}</div>}
+          {lang && <div className="text-[0.625rem] text-muted-foreground mb-1">{lang}</div>}
           <code>{code.join("\n")}</code>
         </pre>
       );
@@ -2278,10 +2278,10 @@ export function ClaudeCodeWidget() {
             <ScrollArea className="flex-1 min-h-0">
               <div className="px-2 pb-2 space-y-1">
                 <div className="flex items-center justify-between pt-1 pb-0.5">
-                  <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">
+                  <span className="text-[0.625rem] font-semibold text-muted-foreground uppercase tracking-wide">
                     Sessions
                   </span>
-                  <span className="text-[10px] text-muted-foreground">
+                  <span className="text-[0.625rem] text-muted-foreground">
                     {activeFolder
                       ? `${filteredSessions.length} in folder`
                       : `${filteredSessions.length} total`}
@@ -2325,7 +2325,7 @@ export function ClaudeCodeWidget() {
                   Schedules
                 </span>
                 {schedules.filter((x) => x.enabled).length > 0 && (
-                  <span className="text-[10px] px-1 py-0 rounded bg-primary text-primary-foreground">
+                  <span className="text-[0.625rem] px-1 py-0 rounded bg-primary text-primary-foreground">
                     {schedules.filter((x) => x.enabled).length}
                   </span>
                 )}
@@ -2359,7 +2359,7 @@ export function ClaudeCodeWidget() {
                   : "No session"}
               </div>
               {active && (
-                <div className="text-[10px] text-muted-foreground truncate">
+                <div className="text-[0.625rem] text-muted-foreground truncate">
                   {active.cwd} {active.sessionId && `• ${active.sessionId.slice(0, 8)}`}
                 </div>
               )}
@@ -2604,7 +2604,7 @@ function SessionListItem({
             </span>
           )}
         </div>
-        <div className="text-[10px] text-muted-foreground truncate mt-0.5">
+        <div className="text-[0.625rem] text-muted-foreground truncate mt-0.5">
           {session.projectPath || session.projectDirName}
         </div>
       </div>
@@ -2660,9 +2660,9 @@ function FolderSection({
   return (
     <div className="space-y-1" ref={ref}>
       <div className="flex items-center justify-between">
-        <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Folder</span>
+        <span className="text-[0.625rem] font-semibold text-muted-foreground uppercase tracking-wide">Folder</span>
         <button
-          className="text-[10px] text-muted-foreground hover:text-foreground"
+          className="text-[0.625rem] text-muted-foreground hover:text-foreground"
           onClick={onBrowse}
           title="Browse for folder"
         >
@@ -2817,7 +2817,7 @@ function WorktreesSection({
     <div className="space-y-1">
       <div className="flex items-center justify-between">
         <button
-          className="flex items-center gap-0.5 text-[10px] font-semibold text-muted-foreground hover:text-foreground uppercase tracking-wide"
+          className="flex items-center gap-0.5 text-[0.625rem] font-semibold text-muted-foreground hover:text-foreground uppercase tracking-wide"
           onClick={toggleCollapsed}
           title={collapsed ? "Expand worktrees" : "Collapse worktrees"}
         >
@@ -2827,7 +2827,7 @@ function WorktreesSection({
         </button>
         {!collapsed && (
           <button
-            className="text-[10px] text-muted-foreground hover:text-foreground inline-flex items-center gap-0.5"
+            className="text-[0.625rem] text-muted-foreground hover:text-foreground inline-flex items-center gap-0.5"
             onClick={() => setShowAdd((v) => !v)}
             title="Add worktree"
           >
@@ -2844,7 +2844,7 @@ function WorktreesSection({
             <div
               key={wt.path}
               className={cn(
-                "group flex items-center gap-1.5 text-[11px] px-1.5 py-1 rounded cursor-pointer",
+                "group flex items-center gap-1.5 text-[0.6875rem] px-1.5 py-1 rounded cursor-pointer",
                 isActive ? "bg-accent text-accent-foreground" : "hover:bg-muted",
               )}
               onClick={() => onPick(wt.path)}
@@ -2891,8 +2891,8 @@ function WorktreesSection({
             placeholder="Worktree path"
             className="h-6 text-xs"
           />
-          {error && <div className="text-[10px] text-destructive">{error}</div>}
-          <Button size="sm" className="h-6 text-[10px] w-full" onClick={addWorktree} disabled={busy || !newPath.trim()}>
+          {error && <div className="text-[0.625rem] text-destructive">{error}</div>}
+          <Button size="sm" className="h-6 text-[0.625rem] w-full" onClick={addWorktree} disabled={busy || !newPath.trim()}>
             {busy ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Plus className="h-3 w-3 mr-1" />}
             Add Worktree
           </Button>
@@ -3008,9 +3008,9 @@ function FolderPickerPanel({ value, onChange, recent, onPick, onClose, mode, onM
             session being created. Hidden on mobile, which is background-only. */}
         {!isMobile && (
           <div className="flex items-center gap-2">
-            <span className="text-[10px] uppercase font-semibold text-muted-foreground">Mode</span>
+            <span className="text-[0.625rem] uppercase font-semibold text-muted-foreground">Mode</span>
             <ModeToggle value={mode} onChange={onModeChange} />
-            <span className="text-[10px] text-muted-foreground truncate">
+            <span className="text-[0.625rem] text-muted-foreground truncate">
               {mode === "background" ? "Headless · chat only" : "Live terminal"}
             </span>
           </div>
@@ -3018,7 +3018,7 @@ function FolderPickerPanel({ value, onChange, recent, onPick, onClose, mode, onM
 
         {recent.length > 0 && (
           <div>
-            <div className="text-[10px] uppercase font-semibold text-muted-foreground mb-1">Recent</div>
+            <div className="text-[0.625rem] uppercase font-semibold text-muted-foreground mb-1">Recent</div>
             <div className="space-y-0.5">
               {recent.map((p) => (
                 <button
@@ -3413,7 +3413,7 @@ function ChatView({
                 ) : (
                   <>
                     <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
-                    <span className="text-[10px] text-foreground truncate">{a.filename}</span>
+                    <span className="text-[0.625rem] text-foreground truncate">{a.filename}</span>
                   </>
                 )}
                 <button
@@ -3432,7 +3432,7 @@ function ChatView({
               </div>
             )}
             {uploadError && (
-              <div className="text-[10px] text-destructive">{uploadError}</div>
+              <div className="text-[0.625rem] text-destructive">{uploadError}</div>
             )}
           </div>
         )}
@@ -3452,7 +3452,7 @@ function ChatView({
             <div className="flex-1 min-w-0">
               <div className="font-medium">Claude needs input in the terminal</div>
               {state.terminalAwaitingHint && (
-                <div className="text-[10px] opacity-80 mt-0.5 truncate" title={state.terminalAwaitingHint}>
+                <div className="text-[0.625rem] opacity-80 mt-0.5 truncate" title={state.terminalAwaitingHint}>
                   {state.terminalAwaitingHint}
                 </div>
               )}
@@ -3460,7 +3460,7 @@ function ChatView({
             <Button
               size="sm"
               variant="outline"
-              className="h-6 px-2 text-[10px] shrink-0 border-amber-500/40 hover:bg-amber-500/20"
+              className="h-6 px-2 text-[0.625rem] shrink-0 border-amber-500/40 hover:bg-amber-500/20"
               onClick={onOpenTerminal}
             >
               <TerminalIcon className="h-3 w-3 mr-1" />
@@ -3562,7 +3562,7 @@ function ChatView({
           </div>
         </div>
         {state.ws !== null && !state.alive && !state.spawningTerminal && (
-          <div className="text-[10px] text-muted-foreground">
+          <div className="text-[0.625rem] text-muted-foreground">
             The Claude process exited. Close and start a new session.
           </div>
         )}
@@ -3677,7 +3677,7 @@ function SessionUsageBar({ messages }: { messages: ChatMessage[] }) {
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
-        className="w-full flex items-center gap-2 px-3 py-1 text-[10px] text-muted-foreground hover:bg-muted/40 transition-colors"
+        className="w-full flex items-center gap-2 px-3 py-1 text-[0.625rem] text-muted-foreground hover:bg-muted/40 transition-colors"
       >
         <Zap className="h-3 w-3 shrink-0" />
         <span className="font-medium">${cost.toFixed(4)}</span>
@@ -3696,10 +3696,10 @@ function SessionUsageBar({ messages }: { messages: ChatMessage[] }) {
         </span>
       </button>
       {expanded && (
-        <div className="px-3 pb-2 pt-0.5 space-y-1.5 text-[11px]">
+        <div className="px-3 pb-2 pt-0.5 space-y-1.5 text-[0.6875rem]">
           {/* Session summary — mirrors `/usage` output */}
           <div>
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 mb-1">
+            <div className="text-[0.625rem] font-semibold uppercase tracking-wider text-muted-foreground/70 mb-1">
               Session
             </div>
             <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-muted-foreground">
@@ -3723,7 +3723,7 @@ function SessionUsageBar({ messages }: { messages: ChatMessage[] }) {
           </div>
 
           {/* Quota windows — only available via the live CLI's `/usage` */}
-          <div className="text-[10px] text-muted-foreground/70 italic border-t border-border/40 pt-1">
+          <div className="text-[0.625rem] text-muted-foreground/70 italic border-t border-border/40 pt-1">
             Quota windows (5h / weekly) are only visible via{" "}
             <code className="font-mono bg-muted/40 px-1 rounded">/usage</code> in the terminal view —
             they require a live API call that the dashboard can&apos;t make.
@@ -3858,7 +3858,7 @@ function ChatBubble({
       title="Copy"
     >
       <Copy className="h-2.5 w-2.5" />
-      {copied && <span className="absolute -top-5 right-0 text-[9px] bg-foreground text-background px-1 rounded">Copied</span>}
+      {copied && <span className="absolute -top-5 right-0 text-[0.5625rem] bg-foreground text-background px-1 rounded">Copied</span>}
     </button>
   );
 
@@ -3922,7 +3922,7 @@ function ChatBubble({
       <div className="group relative">
         {showAvatar && (
           <div className={cn(
-            "text-[10px] font-semibold uppercase tracking-wider mb-1",
+            "text-[0.625rem] font-semibold uppercase tracking-wider mb-1",
             isUser ? "text-primary" : "text-muted-foreground"
           )}>
             {isUser ? "You" : "Claude"}
@@ -3964,7 +3964,7 @@ function ChatBubble({
         <div className={cn(
           "shrink-0",
           showAvatar
-            ? "h-7 w-7 rounded-full flex items-center justify-center text-[10px] font-semibold " + (isUser ? "bg-primary text-primary-foreground" : "bg-muted")
+            ? "h-7 w-7 rounded-full flex items-center justify-center text-[0.625rem] font-semibold " + (isUser ? "bg-primary text-primary-foreground" : "bg-muted")
             : "h-7 w-7"
         )}>
           {showAvatar && (isUser ? "U" : <Bot className="h-3.5 w-3.5" />)}
@@ -3986,7 +3986,7 @@ function ChatBubble({
   return (
     <div className={cn("flex gap-2", isUser && "flex-row-reverse")}>
       <div className={cn(
-        "h-6 w-6 shrink-0 rounded-full flex items-center justify-center text-[10px] font-semibold",
+        "h-6 w-6 shrink-0 rounded-full flex items-center justify-center text-[0.625rem] font-semibold",
         isUser ? "bg-primary text-primary-foreground" : "bg-muted"
       )}>
         {isUser ? "U" : <Bot className="h-3.5 w-3.5" />}
@@ -4084,7 +4084,7 @@ function SchedulesPanel({
                         {s.label && <div className="text-xs font-semibold truncate">{s.label}</div>}
                         <button
                           onClick={() => onOpenSession(s.sessionId)}
-                          className="text-[10px] text-muted-foreground hover:text-foreground hover:underline truncate text-left block max-w-full"
+                          className="text-[0.625rem] text-muted-foreground hover:text-foreground hover:underline truncate text-left block max-w-full"
                           title={`Session: ${sessionTitle}`}
                         >
                           {sessionTitle}
@@ -4095,7 +4095,7 @@ function SchedulesPanel({
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-3 text-[10px] text-muted-foreground flex-wrap">
+                    <div className="flex items-center gap-3 text-[0.625rem] text-muted-foreground flex-wrap">
                       <span title="Next run">
                         <CalendarIcon className="h-2.5 w-2.5 inline mr-0.5" />
                         Next: {next.toLocaleString()}
@@ -4109,7 +4109,7 @@ function SchedulesPanel({
                     </div>
 
                     {s.lastError && (
-                      <div className="text-[10px] text-destructive line-clamp-2" title={s.lastError}>
+                      <div className="text-[0.625rem] text-destructive line-clamp-2" title={s.lastError}>
                         {s.lastError}
                       </div>
                     )}
@@ -4118,7 +4118,7 @@ function SchedulesPanel({
                       <Button
                         size="sm"
                         variant="ghost"
-                        className="h-6 text-[10px] px-2"
+                        className="h-6 text-[0.625rem] px-2"
                         onClick={() => update(s.id, { action: "run-now", id: s.id })}
                         disabled={busyId === s.id}
                       >
@@ -4127,7 +4127,7 @@ function SchedulesPanel({
                       <Button
                         size="sm"
                         variant="ghost"
-                        className="h-6 text-[10px] px-2"
+                        className="h-6 text-[0.625rem] px-2"
                         onClick={() => update(s.id, { action: "update", id: s.id, patch: { enabled: !s.enabled } })}
                         disabled={busyId === s.id}
                       >
@@ -4136,7 +4136,7 @@ function SchedulesPanel({
                       <Button
                         size="sm"
                         variant="ghost"
-                        className="h-6 text-[10px] px-2 text-destructive hover:text-destructive"
+                        className="h-6 text-[0.625rem] px-2 text-destructive hover:text-destructive"
                         onClick={() => {
                           if (!confirm("Delete this schedule?")) return;
                           update(s.id, { action: "delete", id: s.id });
@@ -4271,7 +4271,7 @@ function ScheduleModal({
           </button>
         </div>
 
-        <div className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">
+        <div className="text-[0.625rem] uppercase tracking-wider font-semibold text-muted-foreground">
           Prompt
         </div>
         <div className="rounded border border-border bg-muted/40 p-2 text-xs max-h-32 overflow-y-auto whitespace-pre-wrap break-words">
@@ -4279,7 +4279,7 @@ function ScheduleModal({
         </div>
 
         <div className="space-y-1.5">
-          <label className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">
+          <label className="text-[0.625rem] uppercase tracking-wider font-semibold text-muted-foreground">
             First run
           </label>
           <Input
@@ -4291,7 +4291,7 @@ function ScheduleModal({
         </div>
 
         <div className="space-y-1.5">
-          <label className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">
+          <label className="text-[0.625rem] uppercase tracking-wider font-semibold text-muted-foreground">
             Recurrence
           </label>
           <select
@@ -4360,7 +4360,7 @@ function ScheduleModal({
                     setRecurrence({ ...recurrence, weekdays: next });
                   }}
                   className={cn(
-                    "px-2 h-7 text-[10px] rounded border",
+                    "px-2 h-7 text-[0.625rem] rounded border",
                     on ? "bg-primary text-primary-foreground border-primary" : "bg-background border-border hover:bg-muted",
                   )}
                 >
@@ -4372,7 +4372,7 @@ function ScheduleModal({
         )}
 
         <div className="space-y-1.5">
-          <label className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">
+          <label className="text-[0.625rem] uppercase tracking-wider font-semibold text-muted-foreground">
             Label (optional)
           </label>
           <Input

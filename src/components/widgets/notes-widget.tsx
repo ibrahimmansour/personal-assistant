@@ -267,7 +267,7 @@ function EditorToolbar({ editor }: { editor: ReturnType<typeof useEditor> | null
         active={editor.isActive("codeBlock")}
         title="Code block"
       >
-        <span className="text-[10px] font-mono font-bold leading-none px-0.5">{"{}"}</span>
+        <span className="text-[0.625rem] font-mono font-bold leading-none px-0.5">{"{}"}</span>
       </ToolbarButton>
       <ToolbarButton
         onClick={() => editor.chain().focus().setHorizontalRule().run()}
@@ -382,7 +382,7 @@ function NoteEditorContent({
         className="text-sm font-semibold bg-transparent border-none outline-none placeholder:text-muted-foreground mb-2 w-full"
       />
 
-      <div className="text-[10px] text-muted-foreground mb-2">
+      <div className="text-[0.625rem] text-muted-foreground mb-2">
         {formatDate(note.updatedAt)}
         {note.pinned && (
           <span className="inline-flex items-center gap-0.5 ml-2">
@@ -716,7 +716,7 @@ export function NotesWidget() {
 
           {/* Note count */}
           {!loading && !error && (
-            <p className="text-[10px] text-muted-foreground mb-2">
+            <p className="text-[0.625rem] text-muted-foreground mb-2">
               {notes.length} note{notes.length !== 1 ? "s" : ""}
               {searchQuery && ` matching "${searchQuery}"`}
             </p>
@@ -755,7 +755,7 @@ export function NotesWidget() {
                 {/* Pinned section */}
                 {pinnedNotes.length > 0 && (
                   <>
-                    <div className="text-[10px] text-muted-foreground uppercase tracking-wider px-1 pb-1 flex items-center gap-1">
+                    <div className="text-[0.625rem] text-muted-foreground uppercase tracking-wider px-1 pb-1 flex items-center gap-1">
                       <Pin className="h-2.5 w-2.5" />
                       Pinned
                     </div>
@@ -769,7 +769,7 @@ export function NotesWidget() {
                       />
                     ))}
                     {unpinnedNotes.length > 0 && (
-                      <div className="text-[10px] text-muted-foreground uppercase tracking-wider px-1 pt-2 pb-1">
+                      <div className="text-[0.625rem] text-muted-foreground uppercase tracking-wider px-1 pt-2 pb-1">
                         Notes
                       </div>
                     )}
@@ -914,7 +914,7 @@ function NoteListItem({ note, onClick, onDelete, isSynced }: { note: Note; onCli
         >
           <Trash2 className="h-3 w-3" />
         </button>
-        <span className="text-[10px] text-muted-foreground shrink-0 mt-0.5">
+        <span className="text-[0.625rem] text-muted-foreground shrink-0 mt-0.5">
           {formatDate(note.updatedAt)}
         </span>
       </div>
