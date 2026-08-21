@@ -257,12 +257,14 @@ export function WidgetWrapper({
     <button
       onClick={() => togglePinWidget(widgetType)}
       className={cn(
-        "transition-colors p-2 md:p-1 rounded-md hover:bg-muted",
+        "transition-colors inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md hover:bg-muted",
         isPinned
           ? "text-primary hover:text-primary/80"
           : "text-muted-foreground hover:text-foreground"
       )}
       title={isPinned ? "Unpin from top" : "Pin to top"}
+      aria-label={isPinned ? `Unpin ${title}` : `Pin ${title} to top`}
+      aria-pressed={isPinned}
     >
       <Pin className={cn("h-3.5 w-3.5", isPinned && "fill-current")} />
     </button>
@@ -271,8 +273,10 @@ export function WidgetWrapper({
   const expandButton = (
     <button
       onClick={toggleExpand}
-      className="text-muted-foreground hover:text-foreground transition-colors p-2 md:p-1 rounded-md hover:bg-muted"
+      className="text-muted-foreground hover:text-foreground transition-colors inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md hover:bg-muted"
       title={isExpanded ? "Collapse" : "Expand"}
+      aria-label={isExpanded ? `Collapse ${title}` : `Expand ${title}`}
+      aria-expanded={isExpanded}
     >
       {isExpanded ? (
         <Minimize2 className="h-3.5 w-3.5" />
@@ -287,23 +291,30 @@ export function WidgetWrapper({
       <button
         onClick={() => splitWidget ? setSplitWidget(null) : setShowSplitPicker(!showSplitPicker)}
         className={cn(
-          "transition-colors p-2 md:p-1 rounded-md hover:bg-muted",
+          "transition-colors inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md hover:bg-muted",
           splitWidget
             ? "text-primary hover:text-primary/80"
             : "text-muted-foreground hover:text-foreground"
         )}
         title={splitWidget ? "Close split view" : "Split with another widget"}
+        aria-label={splitWidget ? "Close split view" : "Split with another widget"}
+        aria-expanded={showSplitPicker}
+        aria-haspopup="menu"
       >
         {splitWidget ? <X className="h-3.5 w-3.5" /> : <Columns2 className="h-3.5 w-3.5" />}
       </button>
       {showSplitPicker && (
-        <div className="absolute right-0 top-full mt-1 z-50 bg-popover border border-border rounded-lg shadow-lg py-1 w-44 max-h-64 overflow-auto">
+        <div
+          role="menu"
+          className="absolute right-0 top-full mt-1 z-50 bg-popover border border-border rounded-lg shadow-lg py-1 w-44 max-h-64 overflow-y-auto overflow-x-hidden overscroll-contain"
+        >
           {(Object.keys(widgetLabels) as WidgetType[])
             .filter((wt) => wt !== widgetType && widgets.some((w) => w.type === wt && w.visible))
             .map((wt) => (
               <button
                 key={wt}
-                className="w-full text-left px-3 py-1.5 text-sm hover:bg-muted transition-colors"
+                role="menuitem"
+                className="w-full text-left px-3 py-2.5 md:py-1.5 text-sm hover:bg-muted transition-colors"
                 onClick={() => {
                   setSplitWidget(wt);
                   setShowSplitPicker(false);
@@ -409,7 +420,13 @@ export function WidgetWrapper({
         {createPortal(
           <div
             ref={fullscreenRef}
-            className="fixed inset-0 z-[200] flex items-center justify-center p-0 bg-card"
+            // The overlay covers the whole app and traps Escape, so it is a
+            // modal dialog in everything but name — without these a screen
+            // reader still reads it as part of the page behind it.
+            role="dialog"
+            aria-modal="true"
+            aria-label={title}
+            className="fixed inset-0 z-[200] flex items-center justify-center p-0 bg-card overscroll-contain"
           >
             {/* Expanded content — split view when sidePanel or splitWidget is active */}
             <div
@@ -477,8 +494,9 @@ export function WidgetWrapper({
                       </div>
                       <button
                         onClick={() => setSplitWidget(null)}
-                        className="text-muted-foreground hover:text-foreground transition-colors p-2 md:p-1 rounded-md hover:bg-muted"
+                        className="text-muted-foreground hover:text-foreground transition-colors inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md hover:bg-muted"
                         title="Close split panel"
+                        aria-label="Close split panel"
                       >
                         <X className="h-3.5 w-3.5" />
                       </button>

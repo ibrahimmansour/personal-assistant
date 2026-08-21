@@ -27,8 +27,15 @@ import {
   Newspaper,
   ArrowUp,
   ArrowDown,
+  ArrowUpDown,
   Check,
 } from "lucide-react";
+
+/** Reorder mode is global state broadcast on the window, so every mounted
+ *  WidgetWrapper and the launcher stay in step. */
+function setReorderModeGlobal(active: boolean) {
+  window.dispatchEvent(new CustomEvent("widget-reorder-mode", { detail: { active } }));
+}
 
 const widgetIcons: Record<WidgetType, React.ComponentType<{ className?: string }>> = {
   clock: Clock,
@@ -133,16 +140,20 @@ export function MobileHome({ visibleWidgets, widgetComponents }: MobileHomeProps
 
   return (
     <div className="h-full overflow-y-auto overscroll-contain p-3">
+      {/* Announces the mode flip. Entering reorder mode is otherwise signalled
+          only by the tiles starting to wiggle. */}
+      <p aria-live="polite" className="sr-only">
+        {reorderMode ? "Reorder mode on. Use the arrows on each widget to move it." : ""}
+      </p>
+
       {reorderMode && (
-        <div className="flex items-center justify-between mb-3 px-1">
+        <div className="flex items-center justify-between gap-2 mb-3 px-1">
           <span className="text-xs text-muted-foreground">Tap arrows to reorder</span>
           <button
-            onClick={() =>
-              window.dispatchEvent(new CustomEvent("widget-reorder-mode", { detail: { active: false } }))
-            }
-            className="flex items-center gap-1 text-xs font-medium text-primary p-1 -m-1"
+            onClick={() => setReorderModeGlobal(false)}
+            className="inline-flex items-center gap-1 min-h-11 px-3 -mr-2 rounded-md text-sm font-medium text-primary active:bg-primary/10"
           >
-            <Check className="h-3.5 w-3.5" /> Done
+            <Check className="h-4 w-4" /> Done
           </button>
         </div>
       )}
@@ -198,6 +209,19 @@ export function MobileHome({ visibleWidgets, widgetComponents }: MobileHomeProps
         </div>
       )}
 
+      {/* Long-press is a pointer gesture with no keyboard equivalent, so
+          reorder mode needs a plain control to reach it too. */}
+      {!reorderMode && visibleWidgets.length > 0 && (
+        <div className="flex justify-center pt-1 pb-4">
+          <button
+            onClick={() => setReorderModeGlobal(true)}
+            className="inline-flex items-center gap-1.5 min-h-11 px-4 rounded-full border border-border/50 text-xs font-medium text-muted-foreground active:bg-muted"
+          >
+            <ArrowUpDown className="h-3.5 w-3.5" /> Reorder Widgets
+          </button>
+        </div>
+      )}
+
       {/* Mounted off-screen: WidgetWrapper portals its expanded overlay to
           document.body regardless of this container's display, so hiding it
           here doesn't hide the fullscreen view. */}
@@ -238,66 +262,82 @@ function WidgetTile({ widget, Icon, reorderMode, allowReorder, onOpen, onMove, c
     },
   });
 
-  const arrows = reorderMode && allowReorder ? (
-    <div className={cn("flex items-center gap-1", compact ? "" : "absolute -top-2 -right-2 flex-col")}>
+  const showArrows = reorderMode && allowReorder;
+
+  const arrows = showArrows ? (
+    <div
+      className={cn(
+        "flex items-center gap-1",
+        // Grid tiles get a vertical pair clipped to the top-right corner; the
+        // pill-shaped Glance tiles are only 44px tall, so a stacked pair would
+        // overflow them — those sit alongside instead.
+        compact ? "shrink-0" : "absolute -top-2 -right-2 flex-col"
+      )}
+    >
       <button
         onClick={(e) => {
           e.stopPropagation();
           onMove("up");
         }}
-        className="h-6 w-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow"
+        className="h-8 w-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow"
         aria-label={`Move ${widget.title} up`}
       >
-        <ArrowUp className="h-3 w-3" />
+        <ArrowUp className="h-4 w-4" />
       </button>
       <button
         onClick={(e) => {
           e.stopPropagation();
           onMove("down");
         }}
-        className="h-6 w-6 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow"
+        className="h-8 w-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow"
         aria-label={`Move ${widget.title} down`}
       >
-        <ArrowDown className="h-3 w-3" />
+        <ArrowDown className="h-4 w-4" />
       </button>
     </div>
   ) : null;
 
   return (
+    // The tile itself is a real <button>. The reorder arrows are siblings
+    // rather than children because a <button> inside a <button> is invalid and
+    // browsers drop the inner one — which is what forced the old
+    // `div role="button"` and cost the tile its native semantics and its
+    // Enter/Space handling.
     <div
       ref={longPressRef}
-      role="button"
-      tabIndex={0}
-      onClick={() => {
-        if (!reorderMode) onOpen();
-      }}
-      onKeyDown={(e) => {
-        if (!reorderMode && (e.key === "Enter" || e.key === " ")) {
-          e.preventDefault();
-          onOpen();
-        }
-      }}
-      className={cn(
-        "select-none active:scale-95 transition-transform cursor-pointer",
-        compact
-          ? "relative flex items-center gap-2 shrink-0 rounded-full border border-border bg-muted/50 pl-2.5 pr-3.5 h-10"
-          : "relative flex flex-col items-center gap-1.5 rounded-xl border border-border/50 bg-muted/40 p-3",
-        reorderMode && allowReorder && "ring-2 ring-primary/40 animate-wiggle"
-      )}
+      className={cn("relative", compact && "flex items-center gap-1 shrink-0")}
     >
-      {compact ? (
-        <>
-          <Icon className="h-4 w-4 text-muted-foreground shrink-0" />
-          <span className="text-sm font-medium truncate max-w-[120px]">{widget.title}</span>
-        </>
-      ) : (
-        <>
-          <div className="h-10 w-10 rounded-lg bg-background flex items-center justify-center">
-            <Icon className="h-5 w-5 text-foreground" />
-          </div>
-          <span className="text-xs font-medium text-center leading-tight line-clamp-2">{widget.title}</span>
-        </>
-      )}
+      <button
+        type="button"
+        onClick={() => {
+          if (!reorderMode) onOpen();
+        }}
+        // While reordering, the tile is a drag handle, not a launcher — say so
+        // rather than leaving a button that silently does nothing on tap.
+        disabled={showArrows}
+        aria-label={`Open ${widget.title}`}
+        className={cn(
+          "select-none active:scale-95 transition-transform disabled:opacity-100",
+          compact
+            ? "flex items-center gap-2 min-w-0 rounded-full border border-border bg-muted/50 pl-3 pr-4 h-11"
+            : "w-full flex flex-col items-center justify-center gap-1.5 rounded-xl border border-border/50 bg-muted/40 p-3 min-h-[5.5rem]",
+          showArrows && "ring-2 ring-primary/40 animate-wiggle"
+        )}
+      >
+        {compact ? (
+          <>
+            <Icon className="h-4 w-4 text-muted-foreground shrink-0" />
+            <span className="text-sm font-medium truncate max-w-[120px]">{widget.title}</span>
+          </>
+        ) : (
+          <>
+            <div className="h-10 w-10 rounded-lg bg-background flex items-center justify-center shrink-0">
+              <Icon className="h-5 w-5 text-foreground" />
+            </div>
+            <span className="text-xs font-medium text-center leading-tight line-clamp-2">{widget.title}</span>
+          </>
+        )}
+      </button>
       {arrows}
     </div>
   );

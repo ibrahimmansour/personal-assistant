@@ -244,6 +244,7 @@ export function AIChatPanel() {
     <div className="fixed right-0 top-0 bottom-0 z-[100] flex">
       {/* Backdrop */}
       <div
+        aria-hidden="true"
         className="fixed inset-0 bg-background/40 backdrop-blur-sm"
         style={
           backdropOpacity !== null
@@ -261,7 +262,10 @@ export function AIChatPanel() {
             ? { transform: `translateX(${dragX}px)`, transitionDuration: "0ms" }
             : undefined
         }
-        className="relative ml-auto w-[420px] max-w-[90vw] h-full bg-card border-l border-border shadow-2xl flex flex-col animate-in slide-in-from-right duration-200 touch-pan-y touch-pinch-zoom pt-app-top"
+        role="dialog"
+        aria-modal="true"
+        aria-label="AI Assistant"
+        className="relative ml-auto w-[420px] max-w-[90vw] h-full bg-card border-l border-border shadow-2xl flex flex-col animate-in slide-in-from-right duration-200 touch-pan-y touch-pinch-zoom pt-app-top safe-area-bottom overscroll-contain"
       >
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
@@ -280,16 +284,18 @@ export function AIChatPanel() {
             {messages.length > 0 && (
               <button
                 onClick={clearSession}
-                className="text-muted-foreground hover:text-foreground transition-colors p-1.5 rounded-md hover:bg-muted"
+                className="text-muted-foreground hover:text-foreground transition-colors inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1.5 rounded-md hover:bg-muted"
                 title="Clear conversation"
+                aria-label="Clear conversation"
               >
                 <Trash2 className="h-3.5 w-3.5" />
               </button>
             )}
             <button
               onClick={close}
-              className="text-muted-foreground hover:text-foreground transition-colors p-1.5 rounded-md hover:bg-muted"
+              className="text-muted-foreground hover:text-foreground transition-colors inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1.5 rounded-md hover:bg-muted"
               title="Close (Esc)"
+              aria-label="Close AI Assistant"
             >
               <X className="h-4 w-4" />
             </button>
@@ -297,7 +303,13 @@ export function AIChatPanel() {
         </div>
 
         {/* Messages */}
-        <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
+        <div
+          ref={scrollRef}
+          role="log"
+          aria-live="polite"
+          aria-label="Conversation"
+          className="flex-1 overflow-y-auto overscroll-contain px-4 py-3 space-y-4"
+        >
           {messages.length === 0 && (
             <div className="flex flex-col items-center justify-center h-full text-center gap-3">
               <div className="h-12 w-12 rounded-full bg-primary/5 flex items-center justify-center">
@@ -319,7 +331,7 @@ export function AIChatPanel() {
                   <button
                     key={q}
                     onClick={() => { sendMessage(q); }}
-                    className="text-[11px] px-2.5 py-1 rounded-full border border-border/50 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+                    className="text-[11px] min-h-9 px-3 rounded-full border border-border/50 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
                   >
                     {q}
                   </button>
@@ -391,7 +403,8 @@ export function AIChatPanel() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Ask anything..."
+              placeholder="Ask anything…"
+              aria-label="Message"
               rows={1}
               className="flex-1 resize-none text-sm rounded-lg border border-border/50 bg-muted/30 px-3 py-2 placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/30 max-h-24"
               style={{ minHeight: "36px" }}
@@ -404,8 +417,9 @@ export function AIChatPanel() {
             {isStreaming ? (
               <button
                 onClick={abort}
-                className="shrink-0 h-9 w-9 flex items-center justify-center rounded-lg bg-destructive/10 text-destructive hover:bg-destructive/20 transition-colors"
+                className="shrink-0 h-11 w-11 md:h-9 md:w-9 flex items-center justify-center rounded-lg bg-destructive/10 text-destructive hover:bg-destructive/20 transition-colors"
                 title="Stop generating"
+                aria-label="Stop generating"
               >
                 <StopCircle className="h-4 w-4" />
               </button>
@@ -413,8 +427,9 @@ export function AIChatPanel() {
               <button
                 onClick={handleSubmit}
                 disabled={!input.trim()}
-                className="shrink-0 h-9 w-9 flex items-center justify-center rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                className="shrink-0 h-11 w-11 md:h-9 md:w-9 flex items-center justify-center rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                 title="Send (Enter)"
+                aria-label="Send message"
               >
                 <Send className="h-4 w-4" />
               </button>

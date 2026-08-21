@@ -4,6 +4,7 @@ import { Inter } from "next/font/google";
 import { ThemeProvider } from "@/components/theme-provider";
 import { AppearanceProvider } from "@/components/appearance-context";
 import { ProfileProvider } from "@/components/profile-context";
+import { ThemeColorSync } from "@/components/theme-color-sync";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -56,10 +57,13 @@ export const viewport: Viewport = {
   // get scrolled so their header (with the collapse button) ends up off
   // -screen above the keyboard on focus.
   interactiveWidget: "resizes-content",
-  themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
-    { media: "(prefers-color-scheme: dark)", color: "#0f172a" },
-  ],
+  // Single tag, kept on the real page background at runtime by
+  // <ThemeColorSync>. The media-scoped pair this replaced tracked the OS
+  // preference, which is the wrong signal: the theme is class-driven and the
+  // accent picker rewrites --background, so a dark-OS user on the light theme
+  // got a near-black status bar above a white page. This value is only the
+  // pre-hydration default.
+  themeColor: "#ffffff",
 };
 
 export default function RootLayout({
@@ -80,6 +84,7 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
+          <ThemeColorSync />
           <AppearanceProvider>
             <ProfileProvider>
               {children}

@@ -61,35 +61,59 @@ export default function SetupPage() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
+            <label htmlFor="new-password" className="sr-only">
+              Password
+            </label>
             <input
+              id="new-password"
+              name="new-password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="Password"
-              autoFocus
-              className="w-full px-3 py-2 rounded-md border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+              placeholder="Password (at least 4 characters)"
+              autoComplete="new-password"
+              spellCheck={false}
+              aria-describedby={error ? "setup-error" : undefined}
+              aria-invalid={error ? true : undefined}
+              className="w-full min-h-11 px-3 py-2 rounded-md border border-border bg-background text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             />
           </div>
           <div>
+            <label htmlFor="confirm-password" className="sr-only">
+              Confirm password
+            </label>
             <input
+              id="confirm-password"
+              name="confirm-password"
               type="password"
               value={confirm}
               onChange={(e) => setConfirm(e.target.value)}
               placeholder="Confirm password"
-              className="w-full px-3 py-2 rounded-md border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+              autoComplete="new-password"
+              spellCheck={false}
+              aria-describedby={error ? "setup-error" : undefined}
+              aria-invalid={error ? true : undefined}
+              className="w-full min-h-11 px-3 py-2 rounded-md border border-border bg-background text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             />
           </div>
 
-          {error && (
-            <p className="text-sm text-destructive">{error}</p>
-          )}
+          {/* Validation runs client-side on submit, so nothing else on the page
+              changes when it fails — the live region is the only announcement. */}
+          <p
+            id="setup-error"
+            role="alert"
+            aria-live="polite"
+            className="text-sm text-destructive empty:hidden"
+          >
+            {error}
+          </p>
 
           <button
             type="submit"
             disabled={loading || !password || !confirm}
-            className="w-full py-2 rounded-md bg-primary text-primary-foreground font-medium hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="w-full min-h-11 py-2 rounded-md bg-primary text-primary-foreground font-medium hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
-            {loading ? "Setting up..." : "Set Password"}
+            {loading ? "Setting Up…" : "Set Password"}
           </button>
         </form>
       </div>

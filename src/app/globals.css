@@ -985,3 +985,65 @@ iframe {
     display: none;
   }
 }
+
+/* ─── Native control theming ───────────────────────────────────────────── */
+/* Tells the UA which palette to render its own widgets in — scrollbars, form
+   controls, the <select> popup, spinner buttons, and the overscroll gutter.
+   Without it a dark theme still gets a white scrollbar track and a white
+   date/select popup on mobile Chrome. The theme is class-driven (next-themes),
+   not media-driven, so this has to sit on the same selectors the palette does
+   rather than in a prefers-color-scheme block. */
+:root {
+  color-scheme: light;
+}
+
+.dark {
+  color-scheme: dark;
+}
+
+/* ─── Mobile form controls ─────────────────────────────────────────────── */
+@media (max-width: 767px) {
+  /* iOS Safari auto-zooms the viewport when a focused control's text is under
+     16px, then leaves the page zoomed after blur. Our controls are sized in
+     rem, so the appearance font-size setting (xs = 13.6px root) drops them
+     below that threshold and every tap on an input yanks the layout. Floor
+     the rendered size at 16px on phones; `1rem` keeps larger settings honest.
+     Specificity here (0,3,1 from the :not() attribute selectors) deliberately
+     outranks a single Tailwind text-* utility. */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  textarea,
+  select {
+    font-size: max(16px, 1rem);
+  }
+}
+
+/* ─── Touch behaviour ──────────────────────────────────────────────────── */
+/* `manipulation` drops the ~300ms double-tap-to-zoom wait on controls while
+   still allowing pan and pinch — the accessibility zoom the app deliberately
+   keeps is unaffected, only the double-tap shortcut goes. The tap highlight is
+   set explicitly rather than left to the UA's blue-grey box: every control
+   already has an `active:`/`hover:` state, and the default highlight paints a
+   rectangle that ignores our rounded corners. */
+button,
+a,
+[role="button"],
+label,
+summary {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ─── Reduced motion ───────────────────────────────────────────────────── */
+/* Blanket opt-out for users who ask for it. Durations collapse to ~0 instead
+   of `animation: none` so animations still fire their end events and any
+   component waiting on `transitionend`/`animationend` isn't left hanging. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

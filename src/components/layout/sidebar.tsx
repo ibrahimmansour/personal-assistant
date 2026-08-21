@@ -272,6 +272,18 @@ export function Sidebar() {
     return () => window.removeEventListener("toggle-mobile-sidebar", handler);
   }, []);
 
+  // Escape closes the drawer. The expanded-widget overlay and the AI panel both
+  // do this already; the drawer was the one full-screen surface a keyboard
+  // could open (via the hamburger) and then not dismiss.
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMobileOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [mobileOpen]);
+
   // ─── Mobile gestures: edge-swipe-to-open + swipe-left-to-close ───
   // While the user drags, we set `dragX` (a negative pixel offset for the
   // closed drawer, or a non-positive offset for the open drawer being dragged
@@ -353,6 +365,7 @@ export function Sidebar() {
       {/* Mobile backdrop */}
       {(mobileOpen || dragX !== null) && (
         <div
+          aria-hidden="true"
           className="fixed inset-0 z-40 bg-background/60 backdrop-blur-sm md:hidden transition-opacity"
           style={
             backdropOpacity !== null
@@ -364,6 +377,11 @@ export function Sidebar() {
       )}
       <aside
         ref={drawerSwipeRef}
+        // Only a modal while it is the mobile overlay — on desktop this is a
+        // permanent region of the page, not a dialog.
+        role={mobileOpen ? "dialog" : undefined}
+        aria-modal={mobileOpen ? true : undefined}
+        aria-label="Navigation"
         style={
           dragX !== null
             ? { transform: `translateX(${dragX}px)`, transitionDuration: "0ms" }
@@ -385,20 +403,24 @@ export function Sidebar() {
             const isActive = ws.id === activeWorkspace.id && !activeFocusId;
             const isCustom = !ws.builtIn;
             return (
-              <div key={ws.id} className="relative group/ws">
-                <div
+              <div key={ws.id} className="relative group/ws flex items-center">
+                <button
+                  type="button"
                   onClick={() => handleWorkspaceClick(ws.id)}
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleWorkspaceClick(ws.id); } }}
+                  aria-current={isActive ? "page" : undefined}
                   className={cn(
-                    "flex items-center gap-2 w-full rounded-md transition-colors cursor-pointer",
-                    showLabels ? "px-2.5 py-1.5" : "px-0 py-1.5 justify-center",
+                    "flex items-center gap-2 w-full min-w-0 rounded-md transition-colors",
+                    showLabels ? "px-2.5 py-2.5 md:py-1.5" : "px-0 py-2.5 md:py-1.5 justify-center",
+                    // Reserve the strip the overflow button overlays, so a long
+                    // workspace name truncates before it runs underneath.
+                    showLabels && isCustom && "pr-11 md:pr-8",
                     isActive
                       ? "bg-primary/10 text-primary"
-                      : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                      : "text-muted-foreground hover:text-foreground hover:bg-muted/50 active:bg-muted"
                   )}
                   title={showLabels ? undefined : `${ws.name}${ws.shortcut ? ` (⌘${ws.shortcut})` : ""}`}
+                  // Collapsed, this is an icon with no text at all.
+                  aria-label={showLabels ? undefined : ws.name}
                 >
                   <Icon className="h-4 w-4 shrink-0" />
                   {showLabels && (
@@ -406,48 +428,60 @@ export function Sidebar() {
                       <span className="text-xs font-medium truncate flex-1 text-left">
                         {ws.name}
                       </span>
-                      {isCustom ? (
-                        <span
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setWsMenuId(wsMenuId === ws.id ? null : ws.id);
-                          }}
-                          role="button"
-                          tabIndex={0}
-                          onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); setWsMenuId(wsMenuId === ws.id ? null : ws.id); } }}
-                          className="hidden group-hover/ws:block text-muted-foreground hover:text-foreground p-0 cursor-pointer"
-                        >
-                          <MoreHorizontal className="h-3 w-3" />
-                        </span>
-                      ) : ws.shortcut ? (
+                      {!isCustom && ws.shortcut ? (
                         <kbd className="text-[9px] text-muted-foreground/60 font-mono hidden md:inline">
                           ⌘{ws.shortcut}
                         </kbd>
                       ) : null}
                     </>
                   )}
-                </div>
+                </button>
+                {showLabels && isCustom && (
+                  // Sibling of the row button, not a child: a nested button is
+                  // invalid and was previously a `span role="button"` to dodge
+                  // that. It is also always visible on touch — the old
+                  // `hidden group-hover/ws:block` meant a phone had no way at
+                  // all to rename or delete a custom workspace.
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setWsMenuId(wsMenuId === ws.id ? null : ws.id);
+                    }}
+                    aria-label={`Options for ${ws.name}`}
+                    aria-expanded={wsMenuId === ws.id}
+                    aria-haspopup="menu"
+                    className="absolute right-1 inline-flex items-center justify-center h-9 w-9 md:h-6 md:w-6 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 md:opacity-0 md:group-hover/ws:opacity-100 md:focus-visible:opacity-100"
+                  >
+                    <MoreHorizontal className="h-4 w-4 md:h-3 md:w-3" />
+                  </button>
+                )}
                 {/* Custom workspace context menu */}
                 {wsMenuId === ws.id && isCustom && (
-                  <div className="absolute left-full top-0 ml-1 z-50 bg-popover border border-border rounded-md shadow-md py-1 min-w-[100px]">
+                  <div
+                    role="menu"
+                    className="absolute right-1 top-full mt-1 md:left-full md:right-auto md:top-0 md:ml-1 md:mt-0 z-50 bg-popover border border-border rounded-md shadow-md py-1 min-w-[140px] md:min-w-[100px]"
+                  >
                     <button
+                      role="menuitem"
                       onClick={(e) => {
                         e.stopPropagation();
                         openEditWorkspace(ws);
                       }}
-                      className="w-full text-left px-3 py-1.5 text-xs hover:bg-muted transition-colors flex items-center gap-2"
+                      className="w-full text-left px-3 py-2.5 md:py-1.5 text-sm md:text-xs hover:bg-muted transition-colors flex items-center gap-2"
                     >
-                      <Pencil className="h-3 w-3" /> Edit
+                      <Pencil className="h-3.5 w-3.5 md:h-3 md:w-3" /> Edit
                     </button>
                     <button
+                      role="menuitem"
                       onClick={(e) => {
                         e.stopPropagation();
                         deleteWorkspace(ws.id);
                         setWsMenuId(null);
                       }}
-                      className="w-full text-left px-3 py-1.5 text-xs hover:bg-muted text-destructive transition-colors flex items-center gap-2"
+                      className="w-full text-left px-3 py-2.5 md:py-1.5 text-sm md:text-xs hover:bg-muted text-destructive transition-colors flex items-center gap-2"
                     >
-                      <Trash2 className="h-3 w-3" /> Delete
+                      <Trash2 className="h-3.5 w-3.5 md:h-3 md:w-3" /> Delete
                     </button>
                   </div>
                 )}
@@ -458,10 +492,11 @@ export function Sidebar() {
           <button
             onClick={openCreateWorkspace}
             className={cn(
-              "flex items-center gap-2 w-full rounded-md text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted/30 transition-colors",
-              showLabels ? "px-2.5 py-1.5" : "px-0 py-1.5 justify-center"
+              "flex items-center gap-2 w-full rounded-md text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted/30 active:bg-muted transition-colors",
+              showLabels ? "px-2.5 py-2.5 md:py-1.5" : "px-0 py-2.5 md:py-1.5 justify-center"
             )}
             title={showLabels ? undefined : "New workspace"}
+            aria-label={showLabels ? undefined : "New workspace"}
           >
             <Plus className="h-3.5 w-3.5 shrink-0" />
             {showLabels && <span className="text-xs">New workspace</span>}
@@ -536,7 +571,7 @@ export function Sidebar() {
           <button
             onClick={openCreateFocus}
             className={cn(
-              "flex items-center gap-2 w-full rounded-md text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted/30 transition-colors",
+              "flex items-center gap-2 w-full rounded-md text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted/30 active:bg-muted transition-colors",
               showLabels ? "px-2.5 py-1.5" : "px-0 py-1.5 justify-center"
             )}
             title={showLabels ? undefined : "New focus combo"}

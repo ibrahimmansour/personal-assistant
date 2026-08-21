@@ -116,12 +116,17 @@ export function Header() {
                 key={p.id}
                 onClick={() => setActiveProfile(p.id)}
                 className={cn(
-                  "flex items-center gap-1.5 px-2.5 md:px-3 py-2 md:py-1.5 rounded-md text-xs font-medium transition-all",
+                  "flex items-center justify-center gap-1.5 min-h-9 md:min-h-0 px-2.5 md:px-3 py-2 md:py-1.5 rounded-md text-xs font-medium transition-colors",
                   isActive
                     ? "bg-background text-foreground shadow-sm"
                     : "text-muted-foreground hover:text-foreground"
                 )}
                 title={p.description}
+                // The label is `hidden xs:inline`, so under 480px this is an
+                // icon-only control and `title` is the only name it has —
+                // which touch devices never surface.
+                aria-label={`${p.name} profile`}
+                aria-pressed={isActive}
               >
                 <Icon className="h-3.5 w-3.5" />
                 <span className="hidden xs:inline">{p.name}</span>
@@ -138,7 +143,7 @@ export function Header() {
             aria-label="Search"
           >
             <Search className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Search...</span>
+            <span className="hidden sm:inline">Search…</span>
             <kbd className="pointer-events-none hidden md:inline-flex h-5 items-center gap-0.5 rounded border border-border bg-muted px-1.5 font-mono text-[10px] font-medium text-muted-foreground">
               <span className="text-xs">⌘</span>P
             </kbd>
@@ -152,6 +157,9 @@ export function Header() {
                 : "text-muted-foreground bg-muted/50 border-border/50 hover:bg-muted hover:text-foreground"
             )}
             title="AI Chat (⌘I)"
+            aria-label="AI Chat"
+            aria-pressed={aiOpen}
+            aria-expanded={aiOpen}
           >
             <Sparkles className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">AI</span>
@@ -176,6 +184,7 @@ export function Header() {
               }
             }}
             title={isFullscreen ? "Exit fullscreen" : "Fullscreen"}
+            aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
           >
             {isFullscreen ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
           </button>
