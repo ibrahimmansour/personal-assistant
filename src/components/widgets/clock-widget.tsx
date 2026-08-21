@@ -112,6 +112,8 @@ function AnalogClock({ time }: { time: Date }) {
       ref={canvasRef}
       width={96}
       height={96}
+      role="img"
+      aria-label={`Analog clock showing ${time.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}`}
       className="shrink-0"
     />
   );
@@ -147,13 +149,13 @@ export function ClockWidget() {
       expandRequested={expandRequested}
       onExpandHandled={onExpandHandled}
     >
-      <div className="flex items-center justify-center h-full gap-5">
+      <div className="flex items-center justify-center h-full gap-4 sm:gap-5">
         <AnalogClock time={time} />
         <div className="flex flex-col gap-0.5">
           <p className={`text-xs font-semibold tracking-wide uppercase ${greetingColor}`}>
             {greeting}
           </p>
-          <p className="text-4xl font-bold tracking-tight tabular-nums text-foreground">
+          <p className="text-3xl sm:text-4xl font-bold tracking-tight tabular-nums text-foreground">
             {time.toLocaleTimeString("en-US", {
               hour: "2-digit",
               minute: "2-digit",

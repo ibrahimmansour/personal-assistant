@@ -118,13 +118,15 @@ function ToolbarButton({
       }}
       disabled={disabled}
       title={title}
+      aria-pressed={active}
       className={cn(
-        "p-1 rounded transition-colors",
+        "inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded transition-colors",
         active
           ? "bg-primary/15 text-primary"
           : "text-muted-foreground hover:text-foreground hover:bg-muted",
         disabled && "opacity-30 cursor-not-allowed"
       )}
+      aria-label={title}
     >
       {children}
     </button>
@@ -637,10 +639,11 @@ export function NotesWidget() {
       <button
         onClick={() => setShowSearch(!showSearch)}
         className={cn(
-          "text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted",
+          "text-muted-foreground hover:text-foreground transition-colors inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md hover:bg-muted",
           showSearch && "text-primary bg-primary/10"
         )}
         title="Search notes"
+        aria-label="Search notes"
       >
         <Search className="h-3.5 w-3.5" />
       </button>
@@ -648,10 +651,11 @@ export function NotesWidget() {
         onClick={syncPushAll}
         disabled={syncing}
         className={cn(
-          "text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted",
+          "text-muted-foreground hover:text-foreground transition-colors inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md hover:bg-muted",
           syncing && "animate-pulse"
         )}
         title="Push all notes to Google Docs"
+        aria-label="Push all notes to Google Docs"
       >
         <CloudUpload className="h-3.5 w-3.5" />
       </button>
@@ -659,17 +663,19 @@ export function NotesWidget() {
         onClick={syncPullAll}
         disabled={syncing}
         className={cn(
-          "text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted",
+          "text-muted-foreground hover:text-foreground transition-colors inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md hover:bg-muted",
           syncing && "animate-pulse"
         )}
         title="Pull changes from Google Docs"
+        aria-label="Pull changes from Google Docs"
       >
         <CloudDownload className="h-3.5 w-3.5" />
       </button>
       <button
         onClick={createNote}
-        className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted"
+        className="text-muted-foreground hover:text-foreground transition-colors inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md hover:bg-muted"
         title="New note"
+        aria-label="New note"
       >
         <Plus className="h-3.5 w-3.5" />
       </button>
@@ -828,16 +834,18 @@ function NoteEditorActions({
     <div className="flex items-center gap-1">
       <button
         onClick={onBack}
-        className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted"
+        className="text-muted-foreground hover:text-foreground transition-colors inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md hover:bg-muted"
         title="Back to notes"
+        aria-label="Back to notes"
       >
         <ArrowLeft className="h-3.5 w-3.5" />
       </button>
       <div className="relative" ref={actionsRef}>
         <button
           onClick={() => setShowActions(!showActions)}
-          className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted"
+          className="text-muted-foreground hover:text-foreground transition-colors inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md hover:bg-muted"
           title="Actions"
+          aria-label="Actions"
         >
           <MoreHorizontal className="h-3.5 w-3.5" />
         </button>
@@ -909,8 +917,9 @@ function NoteListItem({ note, onClick, onDelete, isSynced }: { note: Note; onCli
             e.stopPropagation();
             onDelete(note.id);
           }}
-          className="text-muted-foreground hover:text-destructive p-0.5 transition-all opacity-0 group-hover:opacity-100 shrink-0"
+          className="text-muted-foreground hover:text-destructive inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 transition-all opacity-100 md:opacity-0 md:group-hover:opacity-100 shrink-0"
           title="Delete note"
+          aria-label="Delete note"
         >
           <Trash2 className="h-3 w-3" />
         </button>

@@ -141,7 +141,8 @@ export function RemindersWidget() {
           <button
             onClick={fetchReminders}
             disabled={loading}
-            className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted disabled:opacity-50"
+            aria-label="Refresh reminders"
+            className="text-muted-foreground hover:text-foreground active:text-primary transition-colors inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md hover:bg-muted disabled:opacity-50"
           >
             <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
           </button>
@@ -160,7 +161,7 @@ export function RemindersWidget() {
           <div className="flex flex-col items-center gap-2 text-muted-foreground text-center px-4">
             <AlertCircle className="h-5 w-5 text-destructive" />
             <span className="text-xs">{error}</span>
-            <button onClick={fetchReminders} className="text-xs text-primary hover:underline mt-1">
+            <button onClick={fetchReminders} className="text-xs text-primary hover:underline active:opacity-70 mt-1 min-h-11 md:min-h-0 px-3">
               Try again
             </button>
           </div>
@@ -176,7 +177,7 @@ export function RemindersWidget() {
               <div
                 key={r.id}
                 className={cn(
-                  "flex items-center gap-3 p-2 rounded-lg transition-colors",
+                  "flex items-center gap-3 p-2 min-h-11 md:min-h-0 rounded-lg transition-colors",
                   r.isNow
                     ? "bg-primary/10 border border-primary/20"
                     : "hover:bg-muted/50"
@@ -214,7 +215,7 @@ export function RemindersWidget() {
                 {past.map((r) => (
                   <div
                     key={r.id}
-                    className="flex items-center gap-3 p-2 rounded-lg opacity-50"
+                    className="flex items-center gap-3 p-2 min-h-11 md:min-h-0 rounded-lg opacity-50"
                   >
                     <CheckCircle2 className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                     <p className="text-sm truncate flex-1 line-through text-muted-foreground">

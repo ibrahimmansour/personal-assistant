@@ -496,15 +496,17 @@ function OpenCodeTerminalPanel({ taskId, taskTitle, cwd, context, onClose }: Ope
         <div className="flex items-center gap-1">
           <button
             onClick={handleReset}
-            className="text-muted-foreground hover:text-foreground p-0.5 transition-colors"
+            className="text-muted-foreground hover:text-foreground inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 transition-colors"
             title="Reset session"
+            aria-label="Reset session"
           >
             <RotateCcw className="h-3 w-3" />
           </button>
           <button
             onClick={handleClose}
-            className="text-muted-foreground hover:text-foreground p-0.5 transition-colors"
+            className="text-muted-foreground hover:text-foreground inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 transition-colors"
             title="Close panel (session stays alive)"
+            aria-label="Close panel (session stays alive)"
           >
             <X className="h-3.5 w-3.5" />
           </button>
@@ -575,8 +577,9 @@ function TaskDetailView({ task, onBack, onUpdateTask }: TaskDetailViewProps) {
       {/* Header */}
       <div className="flex items-center gap-2 pb-2 border-b border-border/50 mb-3 shrink-0">
         <button
+          aria-label="Back to tasks"
           onClick={onBack}
-          className="text-muted-foreground hover:text-foreground p-1 rounded-md hover:bg-muted transition-colors"
+          className="text-muted-foreground hover:text-foreground inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md hover:bg-muted transition-colors"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
         </button>
@@ -680,6 +683,13 @@ export function TasksWidget() {
   const [editTitle, setEditTitle] = useState("");
   const [editPriority, setEditPriority] = useState<Task["priority"]>("medium");
   const [activeFolder, setActiveFolder] = useState<string | null>(null); // null = All
+  // A permanent 110px folder rail costs a third of a phone's width, so on
+  // mobile it becomes an overlay that closes as soon as a folder is picked.
+  const [showFolders, setShowFolders] = useState(false);
+  const selectFolder = useCallback((id: string | null) => {
+    setActiveFolder(id);
+    setShowFolders(false);
+  }, []);
   const [addingFolder, setAddingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
@@ -1057,7 +1067,9 @@ export function TasksWidget() {
             }}
             className="flex-1 min-w-0 text-sm bg-transparent border-none outline-none placeholder:text-muted-foreground"
           />
-          <button onClick={cyclePriority} title="Cycle priority">
+          <button onClick={cyclePriority} title="Cycle priority"
+            aria-label="Cycle priority"
+          >
             <Badge
               variant="secondary"
               className={cn("text-[0.625rem] shrink-0 cursor-pointer hover:opacity-80", priorityColors[editPriority])}
@@ -1067,15 +1079,17 @@ export function TasksWidget() {
           </button>
           <button
             onClick={saveEdit}
-            className="text-green-600 hover:text-green-500 p-0.5 transition-colors"
+            className="text-green-600 hover:text-green-500 inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 transition-colors"
             title="Save"
+            aria-label="Save"
           >
             <Check className="h-3 w-3" />
           </button>
           <button
             onClick={cancelEditing}
-            className="text-muted-foreground hover:text-foreground p-0.5 transition-colors"
+            className="text-muted-foreground hover:text-foreground inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 transition-colors"
             title="Cancel"
+            aria-label="Cancel"
           >
             <X className="h-3 w-3" />
           </button>
@@ -1105,6 +1119,7 @@ export function TasksWidget() {
         {selectMode ? (
           !isCompleted ? (
             <button
+              aria-label="Toggle task selection"
               onClick={(e) => { e.stopPropagation(); toggleTaskSelection(task.id); }}
               className="mt-0.5 shrink-0"
             >
@@ -1163,21 +1178,23 @@ export function TasksWidget() {
           <button
             onClick={() => handleImplementWithOpenCode(task)}
             className={cn(
-              "p-0.5 transition-colors",
+              "inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 transition-colors",
               sessionAlive ? "text-green-500 hover:text-green-400" : "text-muted-foreground hover:text-foreground"
             )}
             title={sessionAlive ? "Attach to running OpenCode session" : "View exited session"}
+            aria-label={sessionAlive ? "Attach to running OpenCode session" : "View exited session"}
           >
             <TerminalSquare className="h-3 w-3" />
           </button>
         )}
         {!selectMode && (
-          <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all">
+          <div className="flex items-center gap-0.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all">
             {!isCompleted && !hasSession && (
               <button
                 onClick={() => handleImplementWithOpenCode(task)}
-                className="text-muted-foreground hover:text-primary p-0.5 transition-colors"
+                className="text-muted-foreground hover:text-primary inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 transition-colors"
                 title="Implement with OpenCode"
+                aria-label="Implement with OpenCode"
               >
                 <Sparkles className="h-3 w-3" />
               </button>
@@ -1185,16 +1202,18 @@ export function TasksWidget() {
             {!isCompleted && (
               <button
                 onClick={() => startEditing(task)}
-                className="text-muted-foreground hover:text-foreground p-0.5 transition-colors"
+                className="text-muted-foreground hover:text-foreground inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 transition-colors"
                 title="Edit"
+                aria-label="Edit"
               >
                 <Pencil className="h-3 w-3" />
               </button>
             )}
             <button
               onClick={() => deleteTask(task.id)}
-              className="text-muted-foreground hover:text-destructive p-0.5 transition-colors"
+              className="text-muted-foreground hover:text-destructive inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 transition-colors"
               title="Delete"
+              aria-label="Delete"
             >
               <Trash2 className="h-3 w-3" />
             </button>
@@ -1232,19 +1251,21 @@ export function TasksWidget() {
                 onClick={handleBatchLaunch}
                 disabled={selectedTaskIds.size === 0}
                 className={cn(
-                  "transition-colors p-1 rounded-md",
+                  "transition-colors inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md",
                   selectedTaskIds.size > 0
                     ? "text-primary hover:bg-primary/10"
                     : "text-muted-foreground/40 cursor-not-allowed"
                 )}
                 title={`Run ${selectedTaskIds.size} selected with OpenCode`}
+                aria-label={`Run ${selectedTaskIds.size} selected with OpenCode`}
               >
                 <Play className="h-3.5 w-3.5" />
               </button>
               <button
                 onClick={handleExitSelectMode}
-                className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted"
+                className="text-muted-foreground hover:text-foreground transition-colors inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md hover:bg-muted"
                 title="Cancel selection"
+                aria-label="Cancel selection"
               >
                 <X className="h-3.5 w-3.5" />
               </button>
@@ -1253,23 +1274,39 @@ export function TasksWidget() {
             <>
               <button
                 onClick={() => setSelectMode(true)}
-                className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted"
+                className="text-muted-foreground hover:text-foreground transition-colors inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md hover:bg-muted"
                 title="Select tasks to run with OpenCode"
+                aria-label="Select tasks to run with OpenCode"
               >
                 <Sparkles className="h-3.5 w-3.5" />
               </button>
               <button
+                onClick={() => setShowFolders((v) => !v)}
+                className={cn(
+                  "md:hidden text-muted-foreground hover:text-foreground transition-colors inline-flex items-center justify-center h-11 w-11 rounded-md hover:bg-muted",
+                  showFolders && "text-primary bg-primary/10"
+                )}
+                aria-label={showFolders ? "Hide folders" : "Show folders"}
+                aria-expanded={showFolders}
+              >
+                <Folder className="h-3.5 w-3.5" />
+              </button>
+              <button
                 onClick={() => { setShowFilter((v) => !v); if (showFilter) setFilterQuery(""); }}
                 className={cn(
-                  "text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted",
+                  "text-muted-foreground hover:text-foreground transition-colors inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md hover:bg-muted",
                   showFilter && "text-primary bg-primary/10"
                 )}
+                aria-label="Filter tasks"
+                aria-pressed={showFilter}
               >
                 <Search className="h-3.5 w-3.5" />
               </button>
               <button
                 onClick={() => setShowAdd(!showAdd)}
-                className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted"
+                className="text-muted-foreground hover:text-foreground transition-colors inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md hover:bg-muted"
+                aria-label={showAdd ? "Close new task form" : "New task"}
+                aria-expanded={showAdd}
               >
                 <Plus className="h-3.5 w-3.5" />
               </button>
@@ -1301,7 +1338,8 @@ export function TasksWidget() {
             {filterQuery && (
               <button
                 onClick={() => setFilterQuery("")}
-                className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 inline-flex items-center justify-center h-11 w-8 md:h-auto md:w-auto text-muted-foreground hover:text-foreground"
+                aria-label="Clear filter"
               >
                 <X className="h-3 w-3" />
               </button>
@@ -1309,20 +1347,40 @@ export function TasksWidget() {
           </div>
         </div>
       )}
-      <div className="flex h-full overflow-hidden">
+      <div className="relative flex h-full overflow-hidden">
         {/* ─── Folder sidebar ─────────────────────────────── */}
-        <div className="shrink-0 w-[110px] border-r border-border/50 flex flex-col overflow-hidden mr-2">
+        <div
+          className={cn(
+            "shrink-0 border-r border-border/50 flex-col overflow-hidden",
+            "md:flex md:static md:w-[110px] md:mr-2 md:bg-transparent md:z-auto",
+            // Below md the rail is an in-widget overlay, not a column.
+            showFolders ? "absolute inset-0 z-20 w-full bg-background flex" : "hidden"
+          )}
+        >
+          {/* Overlay-only header: the rail covers the list on a phone, so it
+              needs its own way out. */}
+          <div className="md:hidden flex items-center justify-between pb-1 mb-1 border-b border-border/50">
+            <span className="text-xs font-medium text-muted-foreground px-2">Folders</span>
+            <button
+              onClick={() => setShowFolders(false)}
+              aria-label="Close folders"
+              className="inline-flex items-center justify-center h-11 w-11 rounded-md text-muted-foreground hover:text-foreground active:text-primary hover:bg-muted"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
           <ScrollArea className="flex-1">
             <div className="pr-1 py-0.5 space-y-0.5">
               {/* All */}
               <button
-                onClick={() => setActiveFolder(null)}
+                onClick={() => selectFolder(null)}
                 onDragOver={handleFolderDragOver}
                 onDragEnter={(e) => handleFolderDragEnter(e, "all")}
                 onDragLeave={handleFolderDragLeave}
                 onDrop={(e) => handleFolderDrop(e, "all")}
+                aria-current={activeFolder === null ? "true" : undefined}
                 className={cn(
-                  "w-full flex items-center gap-1.5 px-2 py-1.5 rounded-md text-xs transition-colors text-left",
+                  "w-full flex items-center gap-1.5 px-2 min-h-11 md:min-h-0 md:py-1.5 rounded-md text-xs transition-colors text-left",
                   activeFolder === null
                     ? "bg-primary/10 text-primary font-medium"
                     : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
@@ -1354,33 +1412,37 @@ export function TasksWidget() {
                     </div>
                   ) : (
                     <div
-                      onClick={() => setActiveFolder(folder.id)}
-                      role="button"
-                      tabIndex={0}
-                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setActiveFolder(folder.id); } }}
                       onDragOver={handleFolderDragOver}
                       onDragEnter={(e) => handleFolderDragEnter(e, folder.id)}
                       onDragLeave={handleFolderDragLeave}
                       onDrop={(e) => handleFolderDrop(e, folder.id)}
                       className={cn(
-                        "w-full flex items-center gap-1.5 px-2 py-1.5 rounded-md text-xs transition-colors text-left group/folder cursor-pointer",
+                        "w-full flex items-center rounded-md text-xs transition-colors group/folder",
                         activeFolder === folder.id
                           ? "bg-primary/10 text-primary font-medium"
                           : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
                         dropTargetFolder === folder.id && dragTaskId && "ring-2 ring-primary bg-primary/15"
                       )}
                     >
-                      <Folder className="h-3 w-3 shrink-0" />
-                      <span className="truncate flex-1">{folder.name}</span>
-                      {folder.cwd && (
-                        <span title={`Project: ${folder.cwd}`}>
-                          <FolderCog className="h-2.5 w-2.5 shrink-0 text-primary/50" />
+                      <button
+                        type="button"
+                        onClick={() => selectFolder(folder.id)}
+                        aria-current={activeFolder === folder.id ? "true" : undefined}
+                        className="flex-1 min-w-0 flex items-center gap-1.5 px-2 min-h-11 md:min-h-0 md:py-1.5 text-left"
+                      >
+                        <Folder className="h-3 w-3 shrink-0" />
+                        <span className="truncate flex-1">{folder.name}</span>
+                        {folder.cwd && (
+                          <span title={`Project: ${folder.cwd}`}>
+                            <FolderCog className="h-2.5 w-2.5 shrink-0 text-primary/50" />
+                          </span>
+                        )}
+                        <span className="text-[0.625rem] opacity-60 md:group-hover/folder:hidden">
+                          {folderCounts.get(folder.id) || 0}
                         </span>
-                      )}
-                      <span className="text-[0.625rem] opacity-60 group-hover/folder:hidden">
-                        {folderCounts.get(folder.id) || 0}
-                      </span>
-                      <span
+                      </button>
+                      <button
+                        type="button"
                         onClick={(e) => {
                           e.stopPropagation();
                           if (folderMenuId === folder.id) {
@@ -1392,13 +1454,12 @@ export function TasksWidget() {
                             setFolderMenuId(folder.id);
                           }
                         }}
-                        role="button"
-                        tabIndex={0}
-                        onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); setFolderMenuId(folderMenuId === folder.id ? null : folder.id); } }}
-                        className="hidden group-hover/folder:block text-muted-foreground hover:text-foreground p-0 cursor-pointer"
+                        aria-label={`Options for ${folder.name}`}
+                        aria-expanded={folderMenuId === folder.id}
+                        className="shrink-0 inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:px-1.5 md:py-1.5 text-muted-foreground hover:text-foreground active:text-primary md:hidden md:group-hover/folder:inline-flex"
                       >
                         <MoreHorizontal className="h-3 w-3" />
-                      </span>
+                      </button>
                     </div>
                    )}
 
@@ -1428,7 +1489,7 @@ export function TasksWidget() {
               ) : (
                 <button
                   onClick={() => setAddingFolder(true)}
-                  className="w-full flex items-center gap-1.5 px-2 py-1.5 rounded-md text-xs text-muted-foreground/60 hover:text-muted-foreground hover:bg-muted/30 transition-colors"
+                  className="w-full min-h-11 md:min-h-0 flex items-center gap-1.5 px-2 py-1.5 rounded-md text-xs text-muted-foreground/60 hover:text-muted-foreground hover:bg-muted/30 transition-colors"
                 >
                   <FolderPlus className="h-3 w-3 shrink-0" />
                   <span>New folder</span>
@@ -1603,7 +1664,7 @@ export function TasksWidget() {
               setFolderMenuId(null);
               setFolderMenuPos(null);
             }}
-            className="w-full text-left px-3 py-1.5 text-xs hover:bg-muted transition-colors flex items-center gap-2"
+            className="w-full min-h-11 md:min-h-0 text-left px-3 py-1.5 text-xs hover:bg-muted transition-colors flex items-center gap-2"
           >
             <Pencil className="h-3 w-3" /> Rename
           </button>
@@ -1614,7 +1675,7 @@ export function TasksWidget() {
               setFolderMenuId(null);
               setFolderMenuPos(null);
             }}
-            className="w-full text-left px-3 py-1.5 text-xs hover:bg-muted transition-colors flex items-center gap-2"
+            className="w-full min-h-11 md:min-h-0 text-left px-3 py-1.5 text-xs hover:bg-muted transition-colors flex items-center gap-2"
           >
             <FolderCog className="h-3 w-3" /> Project path
           </button>
@@ -1623,7 +1684,7 @@ export function TasksWidget() {
               deleteFolder(folder.id);
               setFolderMenuPos(null);
             }}
-            className="w-full text-left px-3 py-1.5 text-xs hover:bg-muted text-destructive transition-colors flex items-center gap-2"
+            className="w-full min-h-11 md:min-h-0 text-left px-3 py-1.5 text-xs hover:bg-muted text-destructive transition-colors flex items-center gap-2"
           >
             <Trash2 className="h-3 w-3" /> Delete
           </button>

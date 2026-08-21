@@ -1303,7 +1303,7 @@ function ToolUseBlock({
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
-        className="w-full flex items-center gap-1.5 px-2 py-1.5 hover:bg-muted/50 transition-colors text-left"
+        className="w-full min-h-11 md:min-h-0 flex items-center gap-1.5 px-2 py-1.5 hover:bg-muted/50 transition-colors text-left"
       >
         <span className={cn("shrink-0", meta.color)}>{meta.icon}</span>
         <span className="font-semibold text-foreground/90">{meta.label}</span>
@@ -1385,8 +1385,9 @@ function ThemePicker({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-1 px-2 h-7 text-xs rounded-md hover:bg-muted text-muted-foreground hover:text-foreground"
+        className="flex items-center gap-1 px-2 h-11 md:h-7 text-xs rounded-md hover:bg-muted text-muted-foreground hover:text-foreground"
         title={`Theme: ${current.label}`}
+        aria-label={`Theme: ${current.label}`}
       >
         <Palette className="h-3 w-3" />
         <ChevronDown className="h-3 w-3" />
@@ -1399,7 +1400,7 @@ function ThemePicker({
               type="button"
               onClick={() => { onChange(t.value); setOpen(false); }}
               className={cn(
-                "w-full text-left px-2 py-1.5 hover:bg-accent flex flex-col gap-0.5",
+                "w-full min-h-11 md:min-h-0 text-left px-2 py-1.5 hover:bg-accent flex flex-col gap-0.5",
                 t.value === value && "bg-accent",
               )}
             >
@@ -1450,8 +1451,9 @@ function ModelPicker({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-1 px-2 h-7 text-xs rounded-md hover:bg-muted text-muted-foreground hover:text-foreground"
+        className="flex items-center gap-1 px-2 h-11 md:h-7 text-xs rounded-md hover:bg-muted text-muted-foreground hover:text-foreground"
         title={sessionAlive ? `Model: ${current.label}` : `Model: ${current.label} — applies on next session start`}
+        aria-label={sessionAlive ? `Model: ${current.label}` : `Model: ${current.label} — applies on next session start`}
       >
         <Sparkles className="h-3 w-3" />
         <span>{current.label}</span>
@@ -1465,7 +1467,7 @@ function ModelPicker({
               type="button"
               onClick={() => { onChange(m.value); setOpen(false); }}
               className={cn(
-                "w-full text-left px-2 py-1.5 hover:bg-accent flex flex-col gap-0.5",
+                "w-full min-h-11 md:min-h-0 text-left px-2 py-1.5 hover:bg-accent flex flex-col gap-0.5",
                 m.value === value && "bg-accent",
               )}
             >
@@ -1517,6 +1519,7 @@ function ModeToggle({
               ? "bg-background shadow-sm text-foreground"
               : "text-muted-foreground hover:text-foreground",
           )}
+          aria-label={m.description}
         >
           {m.value === "background" ? <Zap className="h-3 w-3" /> : <TerminalIcon className="h-3 w-3" />}
           {m.label}
@@ -2568,9 +2571,10 @@ function SessionListItem({
           "shrink-0 mt-0.5 transition-opacity",
           starred
             ? "text-amber-500 opacity-100"
-            : "text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-amber-500",
+            : "text-muted-foreground opacity-100 md:opacity-0 md:group-hover:opacity-100 hover:text-amber-500",
         )}
         title={starred ? "Unstar session" : "Star session"}
+        aria-label={starred ? "Unstar session" : "Star session"}
       >
         <Star className={cn("h-3 w-3", starred && "fill-amber-500")} />
       </button>
@@ -2610,18 +2614,20 @@ function SessionListItem({
       </div>
 
       {!editing && (
-        <div className="shrink-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+        <div className="shrink-0 flex items-center gap-0.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
           <button
             onClick={startEdit}
-            className="text-muted-foreground hover:text-foreground p-0.5"
+            className="text-muted-foreground hover:text-foreground inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5"
             title="Rename"
+            aria-label="Rename"
           >
             <Pencil className="h-3 w-3" />
           </button>
           <button
             onClick={(e) => { e.stopPropagation(); onDelete(); }}
-            className="text-muted-foreground hover:text-destructive p-0.5"
+            className="text-muted-foreground hover:text-destructive inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5"
             title="Delete session"
+            aria-label="Delete session"
           >
             <Trash2 className="h-3 w-3" />
           </button>
@@ -2671,7 +2677,7 @@ function FolderSection({
       </div>
       <div className="relative">
         <button
-          className="w-full flex items-center gap-1.5 rounded-md border border-input bg-background px-2 h-7 text-xs hover:bg-accent"
+          className="w-full flex items-center gap-1.5 rounded-md border border-input bg-background px-2 h-11 md:h-7 text-xs hover:bg-accent"
           onClick={() => setOpen((v) => !v)}
         >
           <FolderOpen className="h-3 w-3 shrink-0 text-muted-foreground" />
@@ -2683,7 +2689,7 @@ function FolderSection({
               <button
                 key={f}
                 className={cn(
-                  "w-full text-left text-xs px-2 py-1.5 hover:bg-accent flex items-center gap-1.5",
+                  "w-full min-h-11 md:min-h-0 text-left text-xs px-2 py-1.5 hover:bg-accent flex items-center gap-1.5",
                   activeFolder === f && "bg-accent"
                 )}
                 onClick={() => { onSelect(f); setOpen(false); }}
@@ -2696,7 +2702,7 @@ function FolderSection({
               <>
                 <div className="border-t border-border my-0.5" />
                 <button
-                  className="w-full text-left text-xs px-2 py-1.5 hover:bg-accent text-muted-foreground"
+                  className="w-full min-h-11 md:min-h-0 text-left text-xs px-2 py-1.5 hover:bg-accent text-muted-foreground"
                   onClick={() => { onSelect(null); setOpen(false); }}
                 >
                   Clear
@@ -2855,8 +2861,9 @@ function WorktreesSection({
               {!wt.bare && worktrees.length > 1 && (
                 <button
                   onClick={(e) => { e.stopPropagation(); removeWorktree(wt.path); }}
-                  className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity"
+                  className="opacity-100 md:opacity-0 md:group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity"
                   title="Remove worktree"
+                  aria-label="Remove worktree"
                 >
                   <Trash2 className="h-2.5 w-2.5" />
                 </button>
@@ -3023,7 +3030,7 @@ function FolderPickerPanel({ value, onChange, recent, onPick, onClose, mode, onM
               {recent.map((p) => (
                 <button
                   key={p}
-                  className="w-full text-left text-xs px-2 py-1 rounded hover:bg-muted truncate"
+                  className="w-full min-h-11 md:min-h-0 text-left text-xs px-2 py-1 rounded hover:bg-muted truncate"
                   onClick={() => onPick(p)}
                 >
                   {p}
@@ -3051,7 +3058,7 @@ function FolderPickerPanel({ value, onChange, recent, onPick, onClose, mode, onM
                 entries.map((e) => (
                   <button
                     key={e.name}
-                    className="w-full text-left text-xs px-2 py-1 rounded hover:bg-muted flex items-center gap-1.5"
+                    className="w-full min-h-11 md:min-h-0 text-left text-xs px-2 py-1 rounded hover:bg-muted flex items-center gap-1.5"
                     onClick={() => loadDir(`${browsePath}/${e.name}`.replace(/\/+/g, "/"))}
                   >
                     <FolderOpen className="h-3 w-3 text-muted-foreground" />
@@ -3421,6 +3428,7 @@ function ChatView({
                   onClick={() => removeAttachment(a.id)}
                   className="absolute top-0 right-0 bg-foreground/70 text-background rounded-bl px-0.5 py-0 opacity-0 group-hover:opacity-100 transition-opacity"
                   title="Remove"
+                  aria-label="Remove"
                 >
                   <X className="h-2.5 w-2.5" />
                 </button>
@@ -3460,7 +3468,7 @@ function ChatView({
             <Button
               size="sm"
               variant="outline"
-              className="h-6 px-2 text-[0.625rem] shrink-0 border-amber-500/40 hover:bg-amber-500/20"
+              className="h-11 md:h-6 px-2 text-[0.625rem] shrink-0 border-amber-500/40 hover:bg-amber-500/20"
               onClick={onOpenTerminal}
             >
               <TerminalIcon className="h-3 w-3 mr-1" />
@@ -3495,6 +3503,7 @@ function ChatView({
               disabled={sending || uploading || (state.ws !== null && !state.alive)}
               className="shrink-0 h-9 w-9 rounded-md border border-border bg-background hover:bg-muted text-muted-foreground hover:text-foreground flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
               title="Attach file"
+              aria-label="Attach file"
             >
               <Paperclip className="h-3.5 w-3.5" />
             </button>
@@ -3554,7 +3563,7 @@ function ChatView({
                 onClick={() => setSchedulingPrompt(input.trim())}
                 disabled={!input.trim() || !state.sessionId}
                 title={state.sessionId ? "Schedule this prompt" : "Save the session first by sending one prompt, then schedule the next"}
-                className="h-7 px-2"
+                className="h-11 md:h-7 px-2"
               >
                 <Clock className="h-3.5 w-3.5" />
               </Button>
@@ -3677,7 +3686,7 @@ function SessionUsageBar({ messages }: { messages: ChatMessage[] }) {
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
-        className="w-full flex items-center gap-2 px-3 py-1 text-[0.625rem] text-muted-foreground hover:bg-muted/40 transition-colors"
+        className="w-full min-h-11 md:min-h-0 flex items-center gap-2 px-3 py-1 text-[0.625rem] text-muted-foreground hover:bg-muted/40 transition-colors"
       >
         <Zap className="h-3 w-3 shrink-0" />
         <span className="font-medium">${cost.toFixed(4)}</span>
@@ -3852,10 +3861,11 @@ function ChatBubble({
         } catch {}
       }}
       className={cn(
-        "absolute -top-1.5 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded bg-background border border-border shadow-sm",
+        "absolute -top-1.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded bg-background border border-border shadow-sm",
         isUser ? "-left-1.5" : "-right-1.5"
       )}
       title="Copy"
+      aria-label="Copy"
     >
       <Copy className="h-2.5 w-2.5" />
       {copied && <span className="absolute -top-5 right-0 text-[0.5625rem] bg-foreground text-background px-1 rounded">Copied</span>}
@@ -4056,7 +4066,9 @@ function SchedulesPanel({
             {schedules.filter((s) => s.enabled).length} active · {schedules.length} total
           </div>
           <div className="flex-1" />
-          <button onClick={onClose} className="p-1 rounded hover:bg-muted text-muted-foreground" title="Close">
+          <button onClick={onClose} className="inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded hover:bg-muted text-muted-foreground" title="Close"
+            aria-label="Close"
+          >
             <X className="h-3.5 w-3.5" />
           </button>
         </div>
@@ -4086,6 +4098,7 @@ function SchedulesPanel({
                           onClick={() => onOpenSession(s.sessionId)}
                           className="text-[0.625rem] text-muted-foreground hover:text-foreground hover:underline truncate text-left block max-w-full"
                           title={`Session: ${sessionTitle}`}
+                          aria-label={`Session: ${sessionTitle}`}
                         >
                           {sessionTitle}
                         </button>
@@ -4118,7 +4131,7 @@ function SchedulesPanel({
                       <Button
                         size="sm"
                         variant="ghost"
-                        className="h-6 text-[0.625rem] px-2"
+                        className="h-11 md:h-6 text-[0.625rem] px-2"
                         onClick={() => update(s.id, { action: "run-now", id: s.id })}
                         disabled={busyId === s.id}
                       >
@@ -4127,7 +4140,7 @@ function SchedulesPanel({
                       <Button
                         size="sm"
                         variant="ghost"
-                        className="h-6 text-[0.625rem] px-2"
+                        className="h-11 md:h-6 text-[0.625rem] px-2"
                         onClick={() => update(s.id, { action: "update", id: s.id, patch: { enabled: !s.enabled } })}
                         disabled={busyId === s.id}
                       >
@@ -4136,7 +4149,7 @@ function SchedulesPanel({
                       <Button
                         size="sm"
                         variant="ghost"
-                        className="h-6 text-[0.625rem] px-2 text-destructive hover:text-destructive"
+                        className="h-11 md:h-6 text-[0.625rem] px-2 text-destructive hover:text-destructive"
                         onClick={() => {
                           if (!confirm("Delete this schedule?")) return;
                           update(s.id, { action: "delete", id: s.id });
@@ -4264,8 +4277,9 @@ function ScheduleModal({
           <div className="flex-1" />
           <button
             onClick={onCancel}
-            className="p-1 rounded hover:bg-muted text-muted-foreground"
+            className="inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded hover:bg-muted text-muted-foreground"
             title="Cancel"
+            aria-label="Cancel"
           >
             <X className="h-3.5 w-3.5" />
           </button>
@@ -4360,7 +4374,7 @@ function ScheduleModal({
                     setRecurrence({ ...recurrence, weekdays: next });
                   }}
                   className={cn(
-                    "px-2 h-7 text-[0.625rem] rounded border",
+                    "px-2 h-11 md:h-7 text-[0.625rem] rounded border",
                     on ? "bg-primary text-primary-foreground border-primary" : "bg-background border-border hover:bg-muted",
                   )}
                 >

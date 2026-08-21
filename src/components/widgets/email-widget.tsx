@@ -238,8 +238,9 @@ function RulesPanel({
       <div className="flex items-center justify-between mb-3 shrink-0">
         <h3 className="text-sm font-semibold">Email Groups & Rules</h3>
         <button
+          aria-label="Close"
           onClick={onClose}
-          className="text-muted-foreground hover:text-foreground p-1 rounded-md hover:bg-muted"
+          className="text-muted-foreground hover:text-foreground inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md hover:bg-muted"
         >
           <X className="h-3.5 w-3.5" />
         </button>
@@ -305,7 +306,7 @@ function RulesPanel({
 
                     {/* Rules */}
                     {group.rules.map((rule, rIdx) => (
-                      <div key={rIdx} className="flex items-center gap-1.5">
+                      <div key={rIdx} className="flex flex-wrap md:flex-nowrap items-center gap-1.5">
                         <select
                           value={rule.field}
                           onChange={(e) =>
@@ -341,8 +342,9 @@ function RulesPanel({
                           className="h-6 text-[0.625rem] rounded border border-border/50 bg-muted/30 px-1.5 flex-1 min-w-0 focus:outline-none focus:ring-1 focus:ring-primary/30"
                         />
                         <button
+                          aria-label="Remove rule"
                           onClick={() => removeRule(group.id, rIdx)}
-                          className="text-muted-foreground hover:text-destructive p-0.5 shrink-0"
+                          className="text-muted-foreground hover:text-destructive inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 shrink-0"
                         >
                           <X className="h-3 w-3" />
                         </button>
@@ -372,14 +374,20 @@ function RulesPanel({
         {/* Add new group */}
         <div className="mt-3 space-y-2">
           <Separator />
-          <div className="flex items-center gap-1.5">
+          <div className="flex flex-wrap md:flex-nowrap items-center gap-1.5">
             <div className="flex items-center gap-1 shrink-0">
               {COLOR_NAMES.slice(0, 5).map((c) => (
                 <button
                   key={c}
                   onClick={() => setNewGroupColor(c)}
+                  aria-label={`Group colour ${c}`}
+                  aria-pressed={newGroupColor === c}
                   className={cn(
-                    "h-3.5 w-3.5 rounded-full border-2 transition-all",
+                    "rounded-full border-2 transition-all shrink-0",
+                    // A 14px swatch is far under the touch minimum, and five of
+                    // them sit too close for a padded-out hit area to stay
+                    // unambiguous — so grow the dot itself on touch instead.
+                    "h-11 w-11 md:h-3.5 md:w-3.5",
                     getColor(c).dot,
                     newGroupColor === c
                       ? "border-foreground scale-110"
@@ -410,13 +418,13 @@ function RulesPanel({
       <div className="flex items-center gap-2 mt-3 pt-2 border-t border-border/50 shrink-0">
         <button
           onClick={onClose}
-          className="flex-1 h-7 text-xs rounded-md border border-border/50 text-muted-foreground hover:bg-muted transition-colors"
+          className="flex-1 h-11 md:h-7 text-xs rounded-md border border-border/50 text-muted-foreground hover:bg-muted transition-colors"
         >
           Cancel
         </button>
         <button
           onClick={() => onSave(localGroups)}
-          className="flex-1 h-7 text-xs rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors font-medium"
+          className="flex-1 h-11 md:h-7 text-xs rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors font-medium"
         >
           Save Rules
         </button>
@@ -449,7 +457,7 @@ function QuickRuleDialog({
     <div className="absolute inset-0 z-50 bg-background/95 backdrop-blur-sm rounded-lg flex flex-col p-3">
       <div className="flex items-center justify-between mb-2">
         <h4 className="text-xs font-semibold">Add to Group</h4>
-        <button onClick={onClose} className="text-muted-foreground hover:text-foreground p-0.5">
+        <button aria-label="Close" onClick={onClose} className="text-muted-foreground hover:text-foreground inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5">
           <X className="h-3.5 w-3.5" />
         </button>
       </div>
@@ -469,7 +477,7 @@ function QuickRuleDialog({
             ))}
           </select>
         </div>
-        <div className="flex items-center gap-1.5">
+        <div className="flex flex-wrap md:flex-nowrap items-center gap-1.5">
           <select
             value={field}
             onChange={(e) => {
@@ -502,7 +510,7 @@ function QuickRuleDialog({
       <div className="flex items-center gap-2 mt-3 pt-2 border-t border-border/50">
         <button
           onClick={onClose}
-          className="flex-1 h-7 text-xs rounded-md border border-border/50 text-muted-foreground hover:bg-muted"
+          className="flex-1 h-11 md:h-7 text-xs rounded-md border border-border/50 text-muted-foreground hover:bg-muted"
         >
           Cancel
         </button>
@@ -513,7 +521,7 @@ function QuickRuleDialog({
             }
           }}
           disabled={!value.trim() || !selectedGroupId}
-          className="flex-1 h-7 text-xs rounded-md bg-primary text-primary-foreground hover:bg-primary/90 font-medium disabled:opacity-40"
+          className="flex-1 h-11 md:h-7 text-xs rounded-md bg-primary text-primary-foreground hover:bg-primary/90 font-medium disabled:opacity-40"
         >
           Add Rule
         </button>
@@ -878,8 +886,9 @@ export function EmailWidget() {
     <div className="flex items-center gap-1">
       <button
         onClick={() => { setSelectedId(null); setFetchedEmail(null); setReplyOpen(false); setReplyText(""); setSendError(null); setSendSuccess(false); }}
-        className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted"
+        className="text-muted-foreground hover:text-foreground transition-colors inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md hover:bg-muted"
         title="Back to inbox"
+        aria-label="Back to inbox"
       >
         <ArrowLeft className="h-3.5 w-3.5" />
       </button>
@@ -888,8 +897,9 @@ export function EmailWidget() {
           href={selectedEmail.webLink}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted"
+          className="text-muted-foreground hover:text-foreground transition-colors inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md hover:bg-muted"
           title="Open in Outlook"
+          aria-label="Open in Outlook"
         >
           <ExternalLink className="h-3.5 w-3.5" />
         </a>
@@ -904,15 +914,17 @@ export function EmailWidget() {
       )}
       <button
         onClick={() => setShowRulesPanel(true)}
-        className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted"
+        className="text-muted-foreground hover:text-foreground transition-colors inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md hover:bg-muted"
         title="Manage email groups & rules"
+        aria-label="Manage email groups & rules"
       >
         <Settings2 className="h-3.5 w-3.5" />
       </button>
       <button
+        aria-label="Refresh emails"
         onClick={fetchEmails}
         disabled={loading}
-        className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted disabled:opacity-50"
+        className="text-muted-foreground hover:text-foreground transition-colors inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md hover:bg-muted disabled:opacity-50"
       >
         <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
       </button>
@@ -1023,14 +1035,14 @@ export function EmailWidget() {
             <div className="flex items-center gap-1.5 pt-2 mt-2 border-t border-border/50 shrink-0">
               <button
                 onClick={() => { setReplyOpen(true); setReplyAll(false); setTimeout(() => replyTextareaRef.current?.focus(), 100); }}
-                className="flex items-center gap-1.5 h-7 px-3 text-xs rounded-md border border-border/50 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+                className="flex items-center gap-1.5 h-11 md:h-7 px-3 text-xs rounded-md border border-border/50 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
               >
                 <Reply className="h-3.5 w-3.5" />
                 Reply
               </button>
               <button
                 onClick={() => { setReplyOpen(true); setReplyAll(true); setTimeout(() => replyTextareaRef.current?.focus(), 100); }}
-                className="flex items-center gap-1.5 h-7 px-3 text-xs rounded-md border border-border/50 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+                className="flex items-center gap-1.5 h-11 md:h-7 px-3 text-xs rounded-md border border-border/50 text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
               >
                 <ReplyAll className="h-3.5 w-3.5" />
                 Reply All
@@ -1051,18 +1063,20 @@ export function EmailWidget() {
                   <button
                     onClick={() => setReplyAll(!replyAll)}
                     className={cn(
-                      "p-1 rounded-md transition-colors",
+                      "inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md transition-colors",
                       replyAll
                         ? "text-primary bg-primary/10"
                         : "text-muted-foreground hover:text-foreground hover:bg-muted"
                     )}
                     title={replyAll ? "Switch to Reply" : "Switch to Reply All"}
+                    aria-label={replyAll ? "Switch to Reply" : "Switch to Reply All"}
                   >
                     {replyAll ? <ReplyAll className="h-3 w-3" /> : <Reply className="h-3 w-3" />}
                   </button>
                   <button
+                    aria-label="Cancel reply"
                     onClick={() => { setReplyOpen(false); setReplyText(""); setSendError(null); setSendSuccess(false); }}
-                    className="text-muted-foreground hover:text-foreground p-1 rounded-md hover:bg-muted"
+                    className="text-muted-foreground hover:text-foreground inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md hover:bg-muted"
                   >
                     <X className="h-3 w-3" />
                   </button>
@@ -1108,7 +1122,7 @@ export function EmailWidget() {
                 <button
                   onClick={() => sendReply(selectedEmail.id, replyText.trim(), replyAll)}
                   disabled={!replyText.trim() || sending}
-                  className="flex items-center gap-1.5 h-7 px-3 text-xs rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors font-medium disabled:opacity-40"
+                  className="flex items-center gap-1.5 h-11 md:h-7 px-3 text-xs rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors font-medium disabled:opacity-40"
                 >
                   {sending ? (
                     <Loader2 className="h-3 w-3 animate-spin" />
@@ -1209,7 +1223,8 @@ export function EmailWidget() {
             {searchQuery && (
               <button
                 onClick={() => { setSearchQuery(""); setSearchResults(null); }}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex items-center justify-center h-11 w-8 md:h-auto md:w-auto text-muted-foreground hover:text-foreground"
+                aria-label="Clear search"
               >
                 <X className="h-3 w-3" />
               </button>
@@ -1225,7 +1240,7 @@ export function EmailWidget() {
               <button
                 onClick={() => setActiveGroupTab(null)}
                 className={cn(
-                  "shrink-0 h-6 px-2 text-[0.625rem] rounded-md transition-colors font-medium",
+                  "shrink-0 h-11 md:h-6 px-2 text-[0.625rem] rounded-md transition-colors font-medium",
                   activeGroupTab === null
                     ? "bg-foreground text-background"
                     : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
@@ -1239,7 +1254,7 @@ export function EmailWidget() {
                   setActiveGroupTab(activeGroupTab === "__focused__" ? null : "__focused__")
                 }
                 className={cn(
-                  "shrink-0 h-6 px-2 text-[0.625rem] rounded-md transition-colors font-medium",
+                  "shrink-0 h-11 md:h-6 px-2 text-[0.625rem] rounded-md transition-colors font-medium",
                   activeGroupTab === "__focused__"
                     ? "bg-foreground text-background"
                     : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
@@ -1289,7 +1304,7 @@ export function EmailWidget() {
                       setActiveGroupTab(activeGroupTab === group.id ? null : group.id)
                     }
                     className={cn(
-                      "shrink-0 h-6 px-2 text-[0.625rem] rounded-md transition-colors font-medium inline-flex items-center gap-1 cursor-grab active:cursor-grabbing",
+                      "shrink-0 h-11 md:h-6 px-2 text-[0.625rem] rounded-md transition-colors font-medium inline-flex items-center gap-1 cursor-grab active:cursor-grabbing",
                       activeGroupTab === group.id
                         ? cn(colors.bg, colors.text)
                         : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
@@ -1322,11 +1337,11 @@ export function EmailWidget() {
                 const groupId = emailClassification.get(email.id);
                 const group = groupId ? groups.find((g) => g.id === groupId) : null;
                 return (
-                  <div
+                  <button type="button"
                     key={email.id}
                     onClick={() => setSelectedId(email.id)}
                     className={cn(
-                      "p-2.5 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer group",
+                      "w-full text-left p-2.5 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer group",
                       !email.read && "bg-primary/5"
                     )}
                   >
@@ -1364,7 +1379,7 @@ export function EmailWidget() {
                     <p className="text-xs text-muted-foreground truncate ml-5 mt-0.5">
                       {email.preview}
                     </p>
-                  </div>
+                  </button>
                 );
               })}
               {filteredEmails.length === 0 && !searching && (

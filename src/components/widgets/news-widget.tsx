@@ -168,7 +168,7 @@ function ReaderPane({ article, onClose }: ReaderPaneProps) {
         <Button
           variant="ghost"
           size="icon"
-          className="h-7 w-7 shrink-0"
+          className="h-11 md:h-7 w-7 shrink-0"
           onClick={onClose}
           title="Back to list"
         >
@@ -187,15 +187,16 @@ function ReaderPane({ article, onClose }: ReaderPaneProps) {
           href={article.link}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-muted-foreground hover:text-foreground p-1 rounded-md hover:bg-muted shrink-0"
+          className="text-muted-foreground hover:text-foreground inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md hover:bg-muted shrink-0"
           title="Open original"
+          aria-label="Open original"
         >
           <ExternalLink className="h-3.5 w-3.5" />
         </a>
         <Button
           variant="ghost"
           size="icon"
-          className="h-7 w-7 shrink-0"
+          className="h-11 md:h-7 w-7 shrink-0"
           onClick={fetchFull}
           disabled={loading}
           title="Refetch"
@@ -425,7 +426,7 @@ function SettingsPanel({
           <Button
             size="sm"
             variant="ghost"
-            className="h-7 text-xs"
+            className="h-11 md:h-7 text-xs"
             onClick={onCancel}
             disabled={saving}
           >
@@ -435,7 +436,7 @@ function SettingsPanel({
             size="sm"
             onClick={onSave}
             disabled={saving || selectedSources.length === 0}
-            className="h-7 text-xs"
+            className="h-11 md:h-7 text-xs"
           >
             {saving ? (
               <Loader2 className="h-3 w-3 animate-spin mr-1" />
@@ -662,7 +663,7 @@ export function NewsWidget() {
           <Button
             variant="ghost"
             size="icon"
-            className="h-7 w-7"
+            className="h-11 md:h-7 w-7"
             onClick={handleCancelSettings}
           >
             <X className="h-3.5 w-3.5" />
@@ -703,16 +704,18 @@ export function NewsWidget() {
         <div className="flex items-center gap-0.5">
           <button
             onClick={handleOpenSettings}
-            className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted"
+            className="text-muted-foreground hover:text-foreground transition-colors inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md hover:bg-muted"
             title="Sources & genres"
+            aria-label="Sources & genres"
           >
             <Settings2 className="h-3.5 w-3.5" />
           </button>
           <button
             onClick={fetchNews}
             disabled={loading}
-            className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted disabled:opacity-50"
+            className="text-muted-foreground hover:text-foreground transition-colors inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md hover:bg-muted disabled:opacity-50"
             title="Refresh"
+            aria-label="Refresh"
           >
             <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
           </button>
@@ -778,7 +781,7 @@ export function NewsWidget() {
             <Button
               variant="outline"
               size="sm"
-              className="h-7 text-xs"
+              className="h-11 md:h-7 text-xs"
               onClick={handleOpenSettings}
             >
               Configure sources

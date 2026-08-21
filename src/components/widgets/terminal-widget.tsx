@@ -609,12 +609,13 @@ export function TerminalWidget() {
           <button
             onClick={() => setShowClaudePanel(!showClaudePanel)}
             className={cn(
-              "p-1 rounded-md transition-colors",
+              "inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md transition-colors",
               showClaudePanel
                 ? "text-primary bg-primary/10"
                 : "text-muted-foreground hover:text-foreground hover:bg-muted"
             )}
             title="Claude Sessions"
+            aria-label="Claude Sessions"
           >
             <ClaudeIcon className="h-3.5 w-3.5" />
           </button>
@@ -623,12 +624,13 @@ export function TerminalWidget() {
             <button
               onClick={() => setShowVpsMenu(!showVpsMenu)}
               className={cn(
-                "p-1 rounded-md transition-colors",
+                "inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md transition-colors",
                 vpsConnections.length > 0
                   ? "text-green-500 hover:text-green-400 hover:bg-muted"
                   : "text-muted-foreground hover:text-foreground hover:bg-muted"
               )}
               title={`VPS (${vpsConnections.length} connections)`}
+              aria-label={`VPS (${vpsConnections.length} connections)`}
             >
               <Server className="h-3.5 w-3.5" />
             </button>
@@ -664,8 +666,9 @@ export function TerminalWidget() {
           <button
             onClick={() => createTab()}
             disabled={loading}
-            className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted disabled:opacity-50"
+            className="text-muted-foreground hover:text-foreground transition-colors inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md hover:bg-muted disabled:opacity-50"
             title="New tab"
+            aria-label="New tab"
           >
             <Plus className="h-3.5 w-3.5" />
           </button>
@@ -700,8 +703,9 @@ export function TerminalWidget() {
                       e.stopPropagation();
                       closeTab(id);
                     }}
-                    className="ml-0.5 p-0.5 rounded hover:bg-muted transition-colors opacity-50 hover:opacity-100"
+                    className="ml-0.5 inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 rounded hover:bg-muted transition-colors opacity-50 hover:opacity-100"
                     title="Close tab"
+                    aria-label="Close tab"
                   >
                     <X className="h-2.5 w-2.5" />
                   </button>
@@ -735,8 +739,9 @@ export function TerminalWidget() {
               </button>
               <button
                 onClick={() => { fetchClaudeSessions(); fetchTmuxSessions(); }}
-                className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                className="inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
                 title="Refresh"
+                aria-label="Refresh"
               >
                 <RefreshCw className={cn("h-3 w-3", claudeLoading && "animate-spin")} />
               </button>
@@ -798,6 +803,7 @@ export function TerminalWidget() {
                           : "border-border bg-muted/40 text-foreground hover:bg-muted"
                       )}
                       title={`${s.windows} window${s.windows > 1 ? "s" : ""}${s.attached ? " (attached)" : ""}`}
+                      aria-label={`${s.windows} window${s.windows > 1 ? "s" : ""}${s.attached ? " (attached)" : ""}`}
                     >
                       {s.name}
                     </button>
@@ -846,7 +852,7 @@ export function TerminalWidget() {
                           </span>
                         </div>
                         {/* Action buttons */}
-                        <div className="flex items-center gap-1 mt-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="flex items-center gap-1 mt-1.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                           <button
                             onClick={() => resumeClaudeSession(session, false)}
                             className="text-[0.5625rem] px-1.5 py-0.5 rounded bg-primary/10 text-primary hover:bg-primary/20 transition-colors"

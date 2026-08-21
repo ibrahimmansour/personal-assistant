@@ -1026,14 +1026,25 @@ iframe {
   select {
     font-size: max(16px, 1rem);
   }
+
+  /* That floor is a *text* size, not a box size. Widget forms are laid out at
+     desktop density (`h-6` = 24px, `h-7` = 28px), which clips 16px text and
+     sits at half the 44px touch minimum. Floor the box on phones too.
+     `min-height` beats the utility's `height`, so no per-input edit is needed,
+     and desktop keeps its density because the rule lives inside the
+     max-width query. */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+  textarea,
+  select {
+    min-height: 44px;
+  }
 }
 
 /* ─── Touch behaviour ──────────────────────────────────────────────────── */
 /* `manipulation` drops the ~300ms double-tap-to-zoom wait on controls. Page
    zoom is disabled app-wide anyway (the font-size setting replaces it), so
    this only removes a delay, never a gesture. The tap highlight is
-   set explicitly rather than left to the UA's blue-grey box: every control
-   already has an `active:`/`hover:` state, and the default highlight paints a
+   set explicitly rather than left to the UA's blue-grey box, which paints a
    rectangle that ignores our rounded corners. */
 button,
 a,
@@ -1042,6 +1053,24 @@ label,
 summary {
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
+}
+
+/* Suppressing that highlight removes the only feedback a touch device gives
+   for free, so a control with no `active:` style of its own reads as dead on
+   tap. The shell's controls each declare one; the ~280 buttons across the
+   widgets mostly do not, so this is the floor rather than 280 edits. It is a
+   `@layer base` rule specifically so an explicit `active:*` utility still
+   wins — unlayered CSS outranks every layer, base loses to utilities.
+   Pointer-coarse only; desktop already answers with :hover. */
+@layer base {
+  @media (hover: none) {
+    button:not(:disabled):active,
+    a:active,
+    [role="button"]:not([aria-disabled="true"]):active,
+    summary:active {
+      opacity: 0.6;
+    }
+  }
 }
 
 /* ─── Reduced motion ───────────────────────────────────────────────────── */

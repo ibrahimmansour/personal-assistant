@@ -250,9 +250,10 @@ export function BookmarksWidget() {
       headerAction={loading ? undefined : (
         <div className="flex items-center gap-1">
           <button
+            aria-label="Filter bookmarks"
             onClick={() => { setShowFilter((v) => !v); if (showFilter) setFilterQuery(""); }}
             className={cn(
-              "text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted",
+              "text-muted-foreground hover:text-foreground transition-colors inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md hover:bg-muted",
               showFilter && "text-primary bg-primary/10"
             )}
           >
@@ -260,8 +261,9 @@ export function BookmarksWidget() {
           </button>
           <button
             onClick={handleAdd}
-            className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted"
+            className="text-muted-foreground hover:text-foreground transition-colors inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md hover:bg-muted"
             title="Add bookmark"
+            aria-label="Add bookmark"
           >
             <Plus className="h-3.5 w-3.5" />
           </button>
@@ -288,7 +290,8 @@ export function BookmarksWidget() {
               {filterQuery && (
                 <button
                   onClick={() => setFilterQuery("")}
-                  className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 inline-flex items-center justify-center h-11 w-8 md:h-auto md:w-auto text-muted-foreground hover:text-foreground"
+                  aria-label="Clear search"
                 >
                   <X className="h-3 w-3" />
                 </button>
@@ -374,12 +377,14 @@ export function BookmarksWidget() {
             />
             <div className="flex gap-1 justify-end">
               <button
+                aria-label="Cancel"
                 onClick={handleCancel}
                 className="text-xs text-muted-foreground hover:text-foreground px-2 py-0.5 rounded hover:bg-muted transition-colors"
               >
                 <X className="h-3 w-3" />
               </button>
               <button
+                aria-label="Save bookmark"
                 onClick={editing ? handleSaveEdit : handleSaveNew}
                 className="text-xs text-primary hover:text-primary/80 px-2 py-0.5 rounded hover:bg-primary/10 transition-colors"
               >
@@ -433,15 +438,16 @@ export function BookmarksWidget() {
                 </div>
 
                 {/* Actions (visible on hover) */}
-                <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                <div className="flex items-center gap-0.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity shrink-0">
                   <button
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
                       handleStartEdit(item);
                     }}
-                    className="p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                    className="inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
                     title="Edit"
+                    aria-label="Edit"
                   >
                     <Pencil className="h-3 w-3" />
                   </button>
@@ -451,8 +457,9 @@ export function BookmarksWidget() {
                       e.stopPropagation();
                       handleDelete(item.id);
                     }}
-                    className="p-0.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
+                    className="inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
                     title="Delete"
+                    aria-label="Delete"
                   >
                     <Trash2 className="h-3 w-3" />
                   </button>

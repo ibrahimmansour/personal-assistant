@@ -148,8 +148,9 @@ export function CalendarWidget() {
     <div className="flex items-center gap-1">
       <button
         onClick={() => setSelectedId(null)}
-        className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted"
+        className="text-muted-foreground hover:text-foreground transition-colors inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md hover:bg-muted"
         title="Back to schedule"
+        aria-label="Back to schedule"
       >
         <ArrowLeft className="h-3.5 w-3.5" />
       </button>
@@ -158,8 +159,9 @@ export function CalendarWidget() {
           href={selectedEvent.webLink}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted"
+          className="text-muted-foreground hover:text-foreground transition-colors inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md hover:bg-muted"
           title="Open in Outlook"
+          aria-label="Open in Outlook"
         >
           <ExternalLink className="h-3.5 w-3.5" />
         </a>
@@ -173,9 +175,10 @@ export function CalendarWidget() {
         </span>
       )}
       <button
+        aria-label="Refresh calendar"
         onClick={fetchEvents}
         disabled={loading}
-        className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted disabled:opacity-50"
+        className="text-muted-foreground hover:text-foreground transition-colors inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md hover:bg-muted disabled:opacity-50"
       >
         <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
       </button>
@@ -325,10 +328,11 @@ export function CalendarWidget() {
         <ScrollArea className="h-full -mx-1 px-1">
           <div className="space-y-2">
             {todayEvents.map((event, index) => (
-              <div
+              <button
                 key={event.id}
+                type="button"
                 onClick={() => setSelectedId(event.id)}
-                className="flex items-stretch gap-3 group cursor-pointer"
+                className="w-full text-left flex items-stretch gap-3 group cursor-pointer"
               >
                 <div className="flex flex-col items-end w-16 shrink-0 pt-0.5">
                   {event.isAllDay ? (
@@ -358,7 +362,7 @@ export function CalendarWidget() {
                   )}
                 </div>
                 <ChevronRight className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity mt-1 shrink-0" />
-              </div>
+              </button>
             ))}
           </div>
         </ScrollArea>

@@ -1097,7 +1097,7 @@ export function SystemMonitorWidget() {
                 <div className="flex gap-1">
                   <Button
                     size="sm"
-                    className="h-6 text-[0.625rem] px-3"
+                    className="h-11 md:h-6 text-[0.625rem] px-3"
                     onClick={handleSwapCreate}
                     disabled={swapLoading || !swapSizeMB || !swapPath}
                   >
@@ -1106,7 +1106,7 @@ export function SystemMonitorWidget() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-6 text-[0.625rem] px-2"
+                    className="h-11 md:h-6 text-[0.625rem] px-2"
                     onClick={() => setSwapAction("none")}
                   >
                     Cancel
@@ -1154,7 +1154,7 @@ export function SystemMonitorWidget() {
                 <div className="flex gap-1">
                   <Button
                     size="sm"
-                    className="h-6 text-[0.625rem] px-3"
+                    className="h-11 md:h-6 text-[0.625rem] px-3"
                     onClick={handleSwapResize}
                     disabled={swapLoading || !swapSizeMB}
                   >
@@ -1163,7 +1163,7 @@ export function SystemMonitorWidget() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-6 text-[0.625rem] px-2"
+                    className="h-11 md:h-6 text-[0.625rem] px-2"
                     onClick={() => setSwapAction("none")}
                   >
                     Cancel
@@ -1221,6 +1221,7 @@ export function SystemMonitorWidget() {
             />
             {processSearch && (
               <button
+                aria-label="Clear process search"
                 onClick={() => { setProcessSearch(""); setSearchResults(null); }}
                 className="absolute right-2 top-1/2 -translate-y-1/2"
               >
@@ -1304,14 +1305,16 @@ export function SystemMonitorWidget() {
                       <div className="flex gap-0.5">
                         <button
                           onClick={(e) => { e.stopPropagation(); handleKillProcess(proc.pid); }}
-                          className="text-destructive hover:bg-destructive/20 rounded p-0.5"
+                          className="text-destructive hover:bg-destructive/20 rounded inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5"
                           title="Confirm kill (SIGTERM)"
+                          aria-label="Confirm kill (SIGTERM)"
                         >
                           <Skull className="h-3 w-3" />
                         </button>
                         <button
+                          aria-label="Cancel"
                           onClick={(e) => { e.stopPropagation(); setKillConfirm(null); }}
-                          className="text-muted-foreground hover:bg-muted rounded p-0.5"
+                          className="text-muted-foreground hover:bg-muted rounded inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5"
                         >
                           <X className="h-3 w-3" />
                         </button>
@@ -1319,9 +1322,10 @@ export function SystemMonitorWidget() {
                     ) : (
                       <button
                         onClick={(e) => { e.stopPropagation(); setKillConfirm(proc.pid); }}
-                        className="text-muted-foreground hover:text-destructive rounded p-0.5 opacity-0 group-hover:opacity-100 hover:opacity-100 transition-opacity"
+                        className="text-muted-foreground hover:text-destructive rounded inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 hover:opacity-100 transition-opacity"
                         style={{ opacity: selectedPid === proc.pid ? 1 : undefined }}
                         title="Kill process"
+                        aria-label="Kill process"
                       >
                         <X className="h-3 w-3" />
                       </button>
@@ -1698,17 +1702,19 @@ export function SystemMonitorWidget() {
           <button
             onClick={() => setPaused((p) => !p)}
             className={cn(
-              "p-0.5 rounded hover:bg-muted/70 transition-colors",
+              "inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 rounded hover:bg-muted/70 transition-colors",
               paused && "text-amber-500"
             )}
             title={paused ? "Resume monitoring" : "Pause monitoring"}
+            aria-label={paused ? "Resume monitoring" : "Pause monitoring"}
           >
             {paused ? <Play className="h-3 w-3" /> : <Pause className="h-3 w-3" />}
           </button>
           <button
             onClick={() => { fetchMetrics(); }}
-            className="p-0.5 rounded hover:bg-muted/70 transition-colors"
+            className="inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 rounded hover:bg-muted/70 transition-colors"
             title="Refresh now"
+            aria-label="Refresh now"
           >
             <RefreshCw className="h-3 w-3" />
           </button>

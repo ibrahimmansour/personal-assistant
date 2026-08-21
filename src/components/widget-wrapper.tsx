@@ -405,12 +405,12 @@ export function WidgetWrapper({
           data-widget-type={widgetType}
         >
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 px-4 pt-3">
-            <div className="flex items-center gap-2">
-              <div className="drag-handle text-muted-foreground">
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="drag-handle text-muted-foreground shrink-0">
                 <GripVertical className="h-4 w-4" />
               </div>
-              {icon && <span className="text-muted-foreground">{icon}</span>}
-              <CardTitle className="text-sm font-semibold">{title}</CardTitle>
+              {icon && <span className="text-muted-foreground shrink-0">{icon}</span>}
+              <CardTitle className="text-sm font-semibold truncate">{title}</CardTitle>
             </div>
           </CardHeader>
           <CardContent className="flex-1 px-4 pb-3" />
@@ -454,11 +454,11 @@ export function WidgetWrapper({
                 )}
               >
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 px-4 md:px-5 pt-3 md:pt-4">
-                  <div className="flex items-center gap-2">
-                    {icon && <span className="text-muted-foreground">{icon}</span>}
-                    <CardTitle className="text-sm md:text-base font-semibold">{title}</CardTitle>
+                  <div className="flex items-center gap-2 min-w-0">
+                    {icon && <span className="text-muted-foreground shrink-0">{icon}</span>}
+                    <CardTitle className="text-sm md:text-base font-semibold truncate">{title}</CardTitle>
                   </div>
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1 shrink-0">
                     {headerAction}
                     <span className="hidden md:inline-flex">{splitButton}</span>
                     {pinButton}
@@ -489,8 +489,8 @@ export function WidgetWrapper({
                     className="hidden md:flex min-w-[280px] h-full shrink-0 flex-col overflow-hidden border-border shadow-2xl bg-card pt-app-top safe-area-bottom"
                   >
                     <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 px-5 pt-4">
-                      <div className="flex items-center gap-2">
-                        <CardTitle className="text-base font-semibold">{widgetLabels[splitWidget!]}</CardTitle>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <CardTitle className="text-base font-semibold truncate">{widgetLabels[splitWidget!]}</CardTitle>
                       </div>
                       <button
                         onClick={() => setSplitWidget(null)}

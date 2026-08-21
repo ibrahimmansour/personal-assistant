@@ -287,9 +287,10 @@ export function WeatherWidget() {
       onExpandHandled={onExpandHandled}
       headerAction={
         <button
+          aria-label="Refresh weather"
           onClick={fetchWeather}
           disabled={loading}
-          className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted disabled:opacity-50"
+          className="text-muted-foreground hover:text-foreground transition-colors inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md hover:bg-muted disabled:opacity-50"
         >
           <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
         </button>
@@ -338,7 +339,7 @@ export function WeatherWidget() {
           </div>
 
           {/* ── Stats Grid ── */}
-          <div className="grid grid-cols-3 gap-1.5">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
             <StatCard
               icon={<Droplets className="h-3 w-3 text-blue-400" />}
               label="Humidity"

@@ -214,6 +214,7 @@ function PathJump({
         onClick={open}
         title="Click to jump to a folder (type a path)"
         className="flex-1 min-w-0 text-left text-[0.625rem] text-muted-foreground hover:text-foreground truncate px-1 rounded hover:bg-muted/50 transition-colors"
+        aria-label="Click to jump to a folder (type a path)"
       >
         {shortenPath(currentPath)}
       </button>
@@ -239,7 +240,7 @@ function PathJump({
               key={s}
               onMouseDown={(e) => { e.preventDefault(); setValue(s); setSuggestions([]); }}
               className={cn(
-                "w-full text-left text-[0.625rem] px-2 py-1 font-mono truncate transition-colors",
+                "w-full min-h-11 md:min-h-0 text-left text-[0.625rem] px-2 py-1 font-mono truncate transition-colors",
                 i === suggIdx ? "bg-primary/15 text-primary" : "hover:bg-muted/60 text-foreground"
               )}
             >
@@ -323,7 +324,7 @@ function FileContextMenu({
     <button
       onClick={() => { action(); onClose(); }}
       className={cn(
-        "w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left transition-colors hover:bg-muted/70",
+        "w-full min-h-11 md:min-h-0 flex items-center gap-2 px-3 py-1.5 text-xs text-left transition-colors hover:bg-muted/70",
         danger ? "text-red-500 hover:text-red-400" : "text-foreground"
       )}
     >
@@ -414,7 +415,7 @@ function NewEntryRow({
         spellCheck={false}
         autoComplete="off"
       />
-      <button onMouseDown={(e) => { e.preventDefault(); commit(); }} className="text-primary hover:text-primary/80 text-[0.625rem] shrink-0">
+      <button aria-label="Save file" onMouseDown={(e) => { e.preventDefault(); commit(); }} className="text-primary hover:text-primary/80 text-[0.625rem] shrink-0">
         <Save className="h-3 w-3" />
       </button>
     </div>
@@ -710,7 +711,7 @@ function DiffViewer({ diff, onClose }: { diff: string; onClose: () => void }) {
         <span className="text-[0.625rem] font-medium flex items-center gap-1.5">
           <Diff className="h-3 w-3" /> Diff
         </span>
-        <button onClick={onClose} className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-muted transition-colors">
+        <button aria-label="Close" onClick={onClose} className="text-muted-foreground hover:text-foreground inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 rounded hover:bg-muted transition-colors">
           <X className="h-3 w-3" />
         </button>
       </div>
@@ -749,14 +750,14 @@ function BlameViewer({ blameLines, onClose }: { blameLines: BlameLine[]; onClose
         <span className="text-[0.625rem] font-medium flex items-center gap-1.5">
           <User className="h-3 w-3" /> Blame
         </span>
-        <button onClick={onClose} className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-muted transition-colors">
+        <button aria-label="Close" onClick={onClose} className="text-muted-foreground hover:text-foreground inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 rounded hover:bg-muted transition-colors">
           <X className="h-3 w-3" />
         </button>
       </div>
       <div className="flex-1 min-h-0 overflow-auto font-mono text-[0.625rem] leading-relaxed">
         {blameLines.map((line, i) => (
           <div key={i} className="flex hover:bg-muted/40 transition-colors group">
-            <div className="w-[180px] shrink-0 flex items-start gap-1.5 px-1.5 py-0 border-r border-border bg-muted/20 text-muted-foreground truncate">
+            <div className="w-[110px] md:w-[180px] shrink-0 flex items-start gap-1.5 px-1.5 py-0 border-r border-border bg-muted/20 text-muted-foreground truncate">
               <span className={cn("shrink-0 font-bold", uniqueHashes[line.hash])} title={line.hash}>{line.hash}</span>
               <span className="truncate" title={line.author}>{line.author.split(" ")[0]}</span>
               <span className="text-[0.5625rem] text-muted-foreground/50 shrink-0 ml-auto">{formatDate(line.date)}</span>
@@ -806,7 +807,7 @@ function SymbolOutline({ symbols, onSelect, onClose }: { symbols: SymbolInfo[]; 
         <span className="text-[0.625rem] font-medium flex items-center gap-1.5">
           <ListTree className="h-3 w-3" /> Outline ({symbols.length})
         </span>
-        <button onClick={onClose} className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-muted transition-colors">
+        <button aria-label="Close" onClick={onClose} className="text-muted-foreground hover:text-foreground inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 rounded hover:bg-muted transition-colors">
           <X className="h-3 w-3" />
         </button>
       </div>
@@ -822,7 +823,7 @@ function SymbolOutline({ symbols, onSelect, onClose }: { symbols: SymbolInfo[]; 
                 <button
                   key={`${s.name}-${s.line}`}
                   onClick={() => onSelect(s.line)}
-                  className="w-full flex items-center gap-2 px-3 py-0.5 text-xs hover:bg-muted/60 transition-colors text-left"
+                  className="w-full min-h-11 md:min-h-0 flex items-center gap-2 px-3 py-0.5 text-xs hover:bg-muted/60 transition-colors text-left"
                 >
                   <span className={cn("truncate flex-1", info.color)}>{s.name}</span>
                   <span className="text-[0.5625rem] text-muted-foreground/50 shrink-0">:{s.line}</span>
@@ -851,7 +852,7 @@ function LanguageStatsBar({ stats, onClose }: { stats: LangStat[]; onClose: () =
         <span className="text-[0.625rem] font-medium flex items-center gap-1.5">
           <BarChart3 className="h-3 w-3" /> Languages
         </span>
-        <button onClick={onClose} className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-muted transition-colors">
+        <button aria-label="Close" onClick={onClose} className="text-muted-foreground hover:text-foreground inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 rounded hover:bg-muted transition-colors">
           <X className="h-3 w-3" />
         </button>
       </div>
@@ -914,7 +915,7 @@ function ImageDiffViewer({ filePath, repoRoot, onClose }: { filePath: string; re
             onClick={() => setMode("swipe")}
             className={cn("text-[0.5625rem] px-1.5 py-0.5 rounded", mode === "swipe" ? "bg-primary/15 text-primary" : "text-muted-foreground")}
           >Swipe</button>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-muted transition-colors">
+          <button aria-label="Close" onClick={onClose} className="text-muted-foreground hover:text-foreground inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 rounded hover:bg-muted transition-colors">
             <X className="h-3 w-3" />
           </button>
         </div>
@@ -991,7 +992,7 @@ function ProjectActionsPanel({
           {project.name}
           <span className="text-[0.5625rem] text-muted-foreground/60">({project.type})</span>
         </span>
-        <button onClick={onClose} className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-muted transition-colors">
+        <button aria-label="Close" onClick={onClose} className="text-muted-foreground hover:text-foreground inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 rounded hover:bg-muted transition-colors">
           <X className="h-3 w-3" />
         </button>
       </div>
@@ -1003,6 +1004,7 @@ function ProjectActionsPanel({
               onClick={() => onRunScript(project.type === "node" ? `npm run ${name}` : cmd)}
               title={cmd}
               className="flex items-center gap-1 text-[0.625rem] px-2 py-0.5 rounded-md bg-muted/50 hover:bg-primary/10 hover:text-primary border border-border/50 transition-colors"
+              aria-label={cmd}
             >
               <Play className="h-2.5 w-2.5" />
               {name}
@@ -1175,8 +1177,9 @@ function CleanupAssistantPanel({
           <span className="truncate">Clean up: {homeShort}</span>
         </span>
         <button
+          aria-label="Close"
           onClick={onClose}
-          className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-muted transition-colors shrink-0"
+          className="text-muted-foreground hover:text-foreground inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 rounded hover:bg-muted transition-colors shrink-0"
         >
           <X className="h-3 w-3" />
         </button>
@@ -1311,8 +1314,9 @@ function FileTabs({
           <span className="truncate">{tab.name}</span>
           {tab.dirty && <span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" />}
           <button
+            aria-label="Close tab"
             onClick={(e) => { e.stopPropagation(); onClose(idx); }}
-            className="ml-auto p-0.5 rounded text-muted-foreground/0 group-hover:text-muted-foreground hover:!text-foreground hover:bg-muted transition-colors shrink-0"
+            className="ml-auto inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 rounded text-muted-foreground md:text-muted-foreground/0 md:group-hover:text-muted-foreground hover:!text-foreground hover:bg-muted transition-colors shrink-0"
           >
             <X className="h-2.5 w-2.5" />
           </button>
@@ -1416,7 +1420,7 @@ function GitActionsPanel({
           <GitBranch className="h-3 w-3" /> Git Actions
           <span className="text-muted-foreground/60">({gitStatus.branch})</span>
         </span>
-        <button onClick={onClose} className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-muted transition-colors">
+        <button aria-label="Close" onClick={onClose} className="text-muted-foreground hover:text-foreground inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 rounded hover:bg-muted transition-colors">
           <X className="h-3 w-3" />
         </button>
       </div>
@@ -1445,8 +1449,9 @@ function GitActionsPanel({
               <div key={`${f.path}-${f.staged}`} className="flex items-center gap-1 py-0.5 text-[0.625rem]">
                 <button
                   onClick={() => f.staged ? doUnstage([f.path]) : doStage([f.path])}
-                  className={cn("shrink-0 p-0.5 rounded hover:bg-muted transition-colors", f.staged ? "text-green-500" : "text-muted-foreground")}
+                  className={cn("shrink-0 inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 rounded hover:bg-muted transition-colors", f.staged ? "text-green-500" : "text-muted-foreground")}
                   title={f.staged ? "Unstage" : "Stage"}
+                  aria-label={f.staged ? "Unstage" : "Stage"}
                 >
                   {f.staged ? <Minus className="h-2.5 w-2.5" /> : <Plus className="h-2.5 w-2.5" />}
                 </button>
@@ -1510,7 +1515,7 @@ function GitActionsPanel({
                   <button
                     key={b.name}
                     onClick={() => { if (!b.current) doCheckout(b.name); }}
-                    className={cn("w-full flex items-center gap-1.5 px-1 py-0.5 text-[0.625rem] rounded hover:bg-muted/60 transition-colors text-left", b.current && "text-primary font-medium")}
+                    className={cn("w-full min-h-11 md:min-h-0 flex items-center gap-1.5 px-1 py-0.5 text-[0.625rem] rounded hover:bg-muted/60 transition-colors text-left", b.current && "text-primary font-medium")}
                   >
                     {b.current ? <Check className="h-2.5 w-2.5 shrink-0" /> : <GitBranch className="h-2.5 w-2.5 shrink-0 text-muted-foreground" />}
                     <span className="truncate flex-1">{b.name}</span>
@@ -1574,7 +1579,7 @@ function BookmarksPanel({
         <span className="text-[0.625rem] font-medium flex items-center gap-1.5">
           <Bookmark className="h-3 w-3" /> Pinned ({bookmarks.length})
         </span>
-        <button onClick={onClose} className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-muted transition-colors">
+        <button aria-label="Close" onClick={onClose} className="text-muted-foreground hover:text-foreground inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 rounded hover:bg-muted transition-colors">
           <X className="h-3 w-3" />
         </button>
       </div>
@@ -1591,8 +1596,9 @@ function BookmarksPanel({
               <span className="text-[0.5625rem] text-muted-foreground/40 truncate max-w-[100px] hidden group-hover:hidden">{shortenPath(b.path)}</span>
               <button
                 onClick={() => onRemove(b.path)}
-                className="p-0.5 rounded text-muted-foreground/0 group-hover:text-red-400/60 hover:!text-red-400 transition-colors shrink-0"
+                className="inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 rounded text-red-400/60 md:text-muted-foreground/0 md:group-hover:text-red-400/60 hover:!text-red-400 transition-colors shrink-0"
                 title="Remove pin"
+                aria-label="Remove pin"
               >
                 <X className="h-2.5 w-2.5" />
               </button>
@@ -1804,7 +1810,7 @@ function InlinePreview({ entry, onClose, className }: InlinePreviewProps) {
       {onClose && (
         <div className="flex items-center justify-between px-2 py-1 border-b border-border bg-muted/30 shrink-0">
           <span className="text-[0.625rem] font-medium truncate">{entry.name}</span>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-muted transition-colors shrink-0">
+          <button aria-label="Close" onClick={onClose} className="text-muted-foreground hover:text-foreground inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 rounded hover:bg-muted transition-colors shrink-0">
             <X className="h-3 w-3" />
           </button>
         </div>
@@ -1863,15 +1869,14 @@ function GridView({
   return (
     <div className="grid grid-cols-[repeat(auto-fill,minmax(72px,1fr))] gap-2 p-1">
       {entries.map((entry) => (
-        <div
+        <button
           key={entry.path}
-          role="button"
-          tabIndex={0}
+          type="button"
           draggable
           onDragStart={(e) => onDragStart(e, entry)}
           onClick={() => onFileClick(entry)}
-          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onFileClick(entry); }}
           onContextMenu={(e) => onContextMenu(e, entry, dirPath)}
+          aria-current={selectedPath === entry.path ? "true" : undefined}
           className={cn(
             "flex flex-col items-center gap-1 p-2 rounded-lg hover:bg-muted/70 transition-colors text-center group cursor-grab active:cursor-grabbing select-none",
             selectedPath === entry.path && "bg-primary/10 ring-1 ring-primary/30"
@@ -1884,16 +1889,12 @@ function GridView({
               <FileIcon entry={entry} className="h-10 w-10" />
             )}
           </div>
-          <a
-            href={entry.isDirectory ? undefined : rawFileUrl(entry.path)}
+          <span
             className="text-[0.625rem] leading-tight line-clamp-2 w-full break-words text-foreground/80 group-hover:text-foreground"
-            onClick={(e) => e.preventDefault()}
-            draggable={false}
-            tabIndex={-1}
           >
             {entry.name}
-          </a>
-        </div>
+          </span>
+        </button>
       ))}
     </div>
   );
@@ -2034,12 +2035,13 @@ function ColumnsView({
   const showPreview = previewEntry !== null;
 
   return (
-    <div className="flex h-full overflow-hidden gap-0">
+    <div className="flex flex-col md:flex-row h-full overflow-hidden gap-0">
       {/* Column scroller */}
       <div
         ref={scrollContainerRef}
         className={cn(
           "flex overflow-x-auto gap-0 border border-border rounded-md",
+          // Stacked on a phone: a 55/45 split leaves neither pane readable.
           showPreview ? "flex-[0_0_55%]" : "flex-1"
         )}
       >
@@ -2054,32 +2056,24 @@ function ColumnsView({
               </div>
             ) : (
               col.entries.map((entry, entryIdx) => (
-                <div
+                <button
                   key={entry.path}
-                  role="button"
-                  tabIndex={0}
+                  type="button"
                   onClick={() => handleSelect(colIdx, entry)}
                   onKeyDown={(e) => handleKeyDown(e, colIdx, entry, entryIdx, col.entries)}
                   onContextMenu={(e) => onContextMenu(e, entry, col.path)}
+                  aria-current={col.selectedPath === entry.path ? "true" : undefined}
                   className={cn(
-                    "w-full flex items-center gap-1.5 px-2 py-1 text-xs text-left hover:bg-muted/60 transition-colors focus:outline-none focus:bg-muted/50 cursor-pointer",
+                    "w-full flex items-center gap-1.5 px-2 min-h-11 md:min-h-0 md:py-1 text-xs text-left hover:bg-muted/60 transition-colors focus:outline-none focus:bg-muted/50 cursor-pointer",
                     col.selectedPath === entry.path && "bg-primary/15 text-primary"
                   )}
                 >
                   <FileIcon entry={entry} className="h-3.5 w-3.5 shrink-0 pointer-events-none" />
-                  <a
-                    href={entry.isDirectory ? undefined : rawFileUrl(entry.path)}
-                    className="truncate flex-1"
-                    onClick={(e) => e.preventDefault()}
-                    draggable={false}
-                    tabIndex={-1}
-                  >
-                    {entry.name}
-                  </a>
+                  <span className="truncate flex-1">{entry.name}</span>
                   {entry.isDirectory && (
                     <ChevronRight className="h-3 w-3 text-muted-foreground/50 shrink-0 pointer-events-none" />
                   )}
-                </div>
+                </button>
               ))
             )}
           </div>
@@ -2149,35 +2143,26 @@ function GalleryView({
   }, [entries, focusedIdx, handleSelect]);
 
   return (
-    <div className="flex h-full gap-0 overflow-hidden" onKeyDown={handleKeyDown} tabIndex={-1}>
-      {/* File list */}
-      <div ref={listRef} className="w-[45%] shrink-0 border-r border-border overflow-y-auto scrollbar-thin">
+    <div className="flex flex-col md:flex-row h-full gap-0 overflow-hidden" onKeyDown={handleKeyDown} tabIndex={-1}>
+      {/* File list — a 45% column is ~160px on a phone, so it stacks below md */}
+      <div ref={listRef} className="h-[45%] w-full md:h-full md:w-[45%] shrink-0 border-b md:border-b-0 md:border-r border-border overflow-y-auto scrollbar-thin">
         {entries.map((entry, idx) => (
-          <div
+          <button
             key={entry.path}
-            role="button"
-            tabIndex={0}
+            type="button"
             onClick={() => handleSelect(entry, idx)}
-            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") handleSelect(entry, idx); }}
             onContextMenu={(e) => onContextMenu(e, entry, dirPath)}
+            aria-current={selected?.path === entry.path ? "true" : undefined}
             className={cn(
-              "w-full flex items-center gap-2 px-2 py-1.5 text-xs text-left hover:bg-muted/60 transition-colors focus:outline-none cursor-pointer",
+              "w-full flex items-center gap-2 px-2 min-h-11 md:min-h-0 md:py-1.5 text-xs text-left hover:bg-muted/60 transition-colors focus:outline-none cursor-pointer",
               selected?.path === entry.path && "bg-primary/15",
               focusedIdx === idx && "ring-1 ring-inset ring-primary/40"
             )}
           >
             <FileIcon entry={entry} className="h-3.5 w-3.5 shrink-0 pointer-events-none" />
-            <a
-              href={entry.isDirectory ? undefined : rawFileUrl(entry.path)}
-              className={cn("truncate flex-1", entry.isDirectory && "font-medium")}
-              onClick={(e) => e.preventDefault()}
-              draggable={false}
-              tabIndex={-1}
-            >
-              {entry.name}
-            </a>
+            <span className={cn("truncate flex-1", entry.isDirectory && "font-medium")}>{entry.name}</span>
             {entry.isDirectory && <ChevronRight className="h-3 w-3 text-muted-foreground/50 shrink-0 pointer-events-none" />}
-          </div>
+          </button>
         ))}
       </div>
 
@@ -2238,7 +2223,7 @@ function TreeNodeRow({
         }}
         onContextMenu={handleContextMenu}
         className={cn(
-          "w-full flex items-center gap-1 px-1 py-0.5 text-xs text-left hover:bg-muted/60 transition-colors rounded focus:outline-none focus:bg-muted/50",
+          "w-full min-h-11 md:min-h-0 flex items-center gap-1 px-1 py-0.5 text-xs text-left hover:bg-muted/60 transition-colors rounded focus:outline-none focus:bg-muted/50",
           isSelected && "bg-primary/10 text-primary"
         )}
         style={{ paddingLeft: `${4 + depth * 14}px` }}
@@ -2440,16 +2425,19 @@ function RecentView({
                 <span className="text-[0.5625rem] text-muted-foreground/60 shrink-0 truncate max-w-[100px] hidden group-hover:hidden">
                   {shortenPath(parentDir)}
                 </span>
-                {hoveredPath === f.path && (
-                  <button
-                    onClick={() => onOpenParent(parentDir)}
-                    title={`Open ${shortenPath(parentDir)}`}
-                    className="shrink-0 flex items-center gap-1 text-[0.5625rem] text-muted-foreground hover:text-primary transition-colors px-1 py-0.5 rounded hover:bg-muted"
-                  >
-                    <FolderOpenDot className="h-3 w-3" />
-                    <span className="truncate max-w-[90px]">{shortenPath(parentDir)}</span>
-                  </button>
-                )}
+                {/* Hover-gated on desktop; always present on touch, where no hover event fires. */}
+                <button
+                  onClick={() => onOpenParent(parentDir)}
+                  title={`Open ${shortenPath(parentDir)}`}
+                  aria-label={`Open ${shortenPath(parentDir)}`}
+                  className={cn(
+                    "shrink-0 flex items-center gap-1 text-[0.5625rem] text-muted-foreground hover:text-primary active:text-primary transition-colors px-1 py-0.5 rounded hover:bg-muted",
+                    hoveredPath === f.path ? "md:flex" : "md:hidden"
+                  )}
+                >
+                  <FolderOpenDot className="h-3 w-3" />
+                  <span className="truncate max-w-[90px]">{shortenPath(parentDir)}</span>
+                </button>
               </div>
             );
           })}
@@ -2484,11 +2472,12 @@ function ViewToggle({ view, onChange }: { view: ViewMode; onChange: (v: ViewMode
           onClick={() => onChange(id)}
           title={label}
           className={cn(
-            "p-1 rounded transition-colors",
+            "inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded transition-colors",
             view === id
               ? "bg-background text-foreground shadow-sm"
               : "text-muted-foreground hover:text-foreground"
           )}
+          aria-label={label}
         >
           <Icon className="h-3 w-3" />
         </button>
@@ -2618,7 +2607,7 @@ function VpsConnectionDialog({
             <Server className="h-4 w-4" />
             {editingConn ? "Edit VPS Connection" : "New VPS Connection"}
           </span>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-muted">
+          <button aria-label="Close" onClick={onClose} className="text-muted-foreground hover:text-foreground inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 rounded hover:bg-muted">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -2892,15 +2881,17 @@ function MiniExplorerPane({
         {/* Sort toggle */}
         <button
           onClick={cycleSortField}
-          className="p-0.5 rounded text-muted-foreground hover:text-foreground shrink-0"
+          className="inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 rounded text-muted-foreground hover:text-foreground shrink-0"
           title={`Sort: ${sortField}`}
+          aria-label={`Sort: ${sortField}`}
         >
           <ArrowDownAZ className="h-3 w-3" />
         </button>
         <button
           onClick={() => setSortDir(d => d === "asc" ? "desc" : "asc")}
-          className="p-0.5 rounded text-muted-foreground hover:text-foreground shrink-0"
+          className="inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 rounded text-muted-foreground hover:text-foreground shrink-0"
           title={sortDir === "asc" ? "Ascending" : "Descending"}
+          aria-label={sortDir === "asc" ? "Ascending" : "Descending"}
         >
           {sortDir === "asc" ? <ArrowDownAZ className="h-2.5 w-2.5" /> : <ArrowUpAZ className="h-2.5 w-2.5" />}
         </button>
@@ -2908,26 +2899,29 @@ function MiniExplorerPane({
         {/* View mode toggle */}
         <button
           onClick={() => setMiniView(v => v === "list" ? "grid" : "list")}
-          className="p-0.5 rounded text-muted-foreground hover:text-foreground shrink-0"
+          className="inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 rounded text-muted-foreground hover:text-foreground shrink-0"
           title={miniView === "list" ? "Grid view" : "List view"}
+          aria-label={miniView === "list" ? "Grid view" : "List view"}
         >
           {miniView === "list" ? <LayoutGrid className="h-3 w-3" /> : <LayoutList className="h-3 w-3" />}
         </button>
 
-        <button onClick={() => setShowHidden(!showHidden)} className={cn("p-0.5 rounded shrink-0", showHidden ? "text-foreground" : "text-muted-foreground hover:text-foreground")} title="Hidden files">
+        <button onClick={() => setShowHidden(!showHidden)} className={cn("inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 rounded shrink-0", showHidden ? "text-foreground" : "text-muted-foreground hover:text-foreground")} title="Hidden files"
+          aria-label="Hidden files"
+        >
           {showHidden ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
         </button>
-        <button onClick={() => fetchDir(resolvedPath || currentPath)} className="text-muted-foreground hover:text-foreground p-0.5 rounded shrink-0">
+        <button aria-label="Refresh directory" onClick={() => fetchDir(resolvedPath || currentPath)} className="text-muted-foreground hover:text-foreground inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 rounded shrink-0">
           <RefreshCw className={cn("h-3 w-3", loading && "animate-spin")} />
         </button>
       </div>
 
       {/* Breadcrumb */}
       <div className="flex items-center gap-1 px-1.5 py-0.5 shrink-0 bg-muted/10 border-b border-border/50">
-        <button onClick={goUp} disabled={resolvedPath === "/" && source.type === "vps"} className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-muted disabled:opacity-30 shrink-0">
+        <button aria-label="Go to parent directory" onClick={goUp} disabled={resolvedPath === "/" && source.type === "vps"} className="text-muted-foreground hover:text-foreground inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 rounded hover:bg-muted disabled:opacity-30 shrink-0">
           <ArrowUp className="h-3 w-3" />
         </button>
-        <button onClick={goHome} className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-muted shrink-0">
+        <button aria-label="Go to home directory" onClick={goHome} className="text-muted-foreground hover:text-foreground inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 rounded hover:bg-muted shrink-0">
           <Home className="h-3 w-3" />
         </button>
         <span className="text-[0.5625rem] text-muted-foreground truncate flex-1" title={resolvedPath}>
@@ -2955,25 +2949,26 @@ function MiniExplorerPane({
         ) : miniView === "grid" ? (
           <div className="grid grid-cols-3 gap-1 p-1.5">
             {filteredEntries.map((entry) => (
-              <div
+              <button type="button"
                 key={entry.path}
                 draggable
                 onDragStart={(e) => { e.stopPropagation(); onDragStartEntry(e, entry, source, resolvedPath); }}
                 onClick={() => handleFileClick(entry)}
                 onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setCtxMenu({ x: e.clientX, y: e.clientY, entry }); }}
-                className="flex flex-col items-center gap-0.5 p-1.5 rounded-md hover:bg-muted/60 cursor-grab active:cursor-grabbing transition-colors"
+                className="w-full flex flex-col items-center gap-0.5 p-1.5 rounded-md hover:bg-muted/60 cursor-grab active:cursor-grabbing transition-colors"
               >
                 <FileIcon entry={entry} className="h-6 w-6 shrink-0 pointer-events-none" />
                 <span className={cn("text-[0.5625rem] text-center truncate w-full", entry.isDirectory && "font-medium")}>
                   {entry.name}
                 </span>
-              </div>
+              </button>
             ))}
           </div>
         ) : (
           <div className="space-y-0">
             {filteredEntries.map((entry) => (
-              <div
+              <button
+                type="button"
                 key={entry.path}
                 draggable
                 onDragStart={(e) => {
@@ -2982,7 +2977,7 @@ function MiniExplorerPane({
                 }}
                 onClick={() => handleFileClick(entry)}
                 onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setCtxMenu({ x: e.clientX, y: e.clientY, entry }); }}
-                className="group flex items-center gap-2 px-2 py-1 hover:bg-muted/60 transition-colors cursor-grab active:cursor-grabbing"
+                className="group w-full text-left flex items-center gap-2 px-2 min-h-11 md:min-h-0 md:py-1 hover:bg-muted/60 transition-colors cursor-grab active:cursor-grabbing"
               >
                 <FileIcon entry={entry} className="h-3.5 w-3.5 shrink-0 pointer-events-none" />
                 <span className={cn("flex-1 text-xs truncate", entry.isDirectory && "font-medium")}>
@@ -2991,7 +2986,7 @@ function MiniExplorerPane({
                 {!entry.isDirectory && (
                   <span className="text-[0.5625rem] text-muted-foreground/50 shrink-0">{formatSize(entry.size)}</span>
                 )}
-              </div>
+              </button>
             ))}
           </div>
         )}
@@ -3007,11 +3002,11 @@ function MiniExplorerPane({
           <div className="px-3 py-1 text-[0.5625rem] text-muted-foreground/60 uppercase tracking-wider truncate border-b border-border mb-1">
             {ctxMenu.entry.name}
           </div>
-          <button onClick={() => { handleCopyPath(ctxMenu.entry); setCtxMenu(null); }} className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-muted/70">
+          <button onClick={() => { handleCopyPath(ctxMenu.entry); setCtxMenu(null); }} className="w-full min-h-11 md:min-h-0 flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-muted/70">
             <ClipboardCopy className="h-3.5 w-3.5 shrink-0" /> Copy Path
           </button>
           <div className="border-t border-border my-1" />
-          <button onClick={() => { handleDelete(ctxMenu.entry); setCtxMenu(null); }} className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-red-500 hover:text-red-400 hover:bg-muted/70">
+          <button onClick={() => { handleDelete(ctxMenu.entry); setCtxMenu(null); }} className="w-full min-h-11 md:min-h-0 flex items-center gap-2 px-3 py-1.5 text-xs text-red-500 hover:text-red-400 hover:bg-muted/70">
             <Trash2 className="h-3.5 w-3.5 shrink-0" /> Delete
           </button>
         </div>,
@@ -3647,7 +3642,7 @@ function VscodeDatabasePanel({
       <div className="px-2 py-1.5 border-b border-border shrink-0">
         <button
           onClick={() => setShowAddForm(!showAddForm)}
-          className="w-full flex items-center gap-1.5 text-[0.6875rem] px-2 py-1 rounded-md bg-muted/50 hover:bg-primary/10 hover:text-primary border border-border/50 transition-colors"
+          className="w-full min-h-11 md:min-h-0 flex items-center gap-1.5 text-[0.6875rem] px-2 py-1 rounded-md bg-muted/50 hover:bg-primary/10 hover:text-primary border border-border/50 transition-colors"
         >
           <Plus className="h-3 w-3" />
           {showAddForm ? "Cancel" : "Add Connection"}
@@ -3713,18 +3708,20 @@ function VscodeDatabasePanel({
                 <span className="truncate">{conn.label}</span>
                 {loading === conn.id && <Loader2 className="h-2.5 w-2.5 animate-spin shrink-0 text-muted-foreground" />}
               </button>
-              <div className="flex items-center gap-0.5 pr-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <div className="flex items-center gap-0.5 pr-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                 <button
                   onClick={() => onOpenQueryTab(conn.id, conn.label)}
-                  className="p-0.5 rounded text-muted-foreground hover:text-primary hover:bg-muted transition-colors"
+                  className="inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 rounded text-muted-foreground hover:text-primary hover:bg-muted transition-colors"
                   title="New query"
+                  aria-label="New query"
                 >
                   <Zap className="h-3 w-3" />
                 </button>
                 <button
                   onClick={() => deleteConnection(conn.id)}
-                  className="p-0.5 rounded text-muted-foreground hover:text-red-400 hover:bg-muted transition-colors"
+                  className="inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 rounded text-muted-foreground hover:text-red-400 hover:bg-muted transition-colors"
                   title="Delete connection"
+                  aria-label="Delete connection"
                 >
                   <Trash2 className="h-3 w-3" />
                 </button>
@@ -3740,7 +3737,7 @@ function VscodeDatabasePanel({
                     <div key={schema}>
                       <button
                         onClick={() => loadTables(conn.id, schema)}
-                        className={cn("w-full flex items-center gap-1.5 py-0.5 text-[0.6875rem] hover:bg-muted/60 transition-colors text-left", expandedSchema === schemaKey && "text-primary")}
+                        className={cn("w-full min-h-11 md:min-h-0 flex items-center gap-1.5 py-0.5 text-[0.6875rem] hover:bg-muted/60 transition-colors text-left", expandedSchema === schemaKey && "text-primary")}
                         style={{ paddingLeft: "28px" }}
                       >
                         <ChevronRight className={cn("h-2.5 w-2.5 shrink-0 text-muted-foreground/60 transition-transform", expandedSchema === schemaKey && "rotate-90")} />
@@ -3770,8 +3767,9 @@ function VscodeDatabasePanel({
                                   </button>
                                   <button
                                     onClick={() => onPreviewTable(conn.id, schema, table.name)}
-                                    className="p-0.5 rounded text-muted-foreground/0 group-hover/table:text-muted-foreground hover:!text-primary hover:bg-muted transition-colors mr-1 shrink-0"
+                                    className="inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 rounded text-muted-foreground md:text-muted-foreground/0 md:group-hover/table:text-muted-foreground hover:!text-primary hover:bg-muted transition-colors mr-1 shrink-0"
                                     title="Preview data"
+                                    aria-label="Preview data"
                                   >
                                     <Eye className="h-3 w-3" />
                                   </button>
@@ -4043,6 +4041,7 @@ function VscodeLayout({
                 : "text-muted-foreground hover:text-foreground hover:bg-muted/60"
             )}
             title={item.label}
+            aria-label={item.label}
           >
             {item.icon}
             {activePanel === item.id && !sidebarCollapsed && (
@@ -4058,6 +4057,7 @@ function VscodeLayout({
           onClick={onClose}
           className="w-9 h-9 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
           title="Exit VS Code mode"
+          aria-label="Exit VS Code mode"
         >
           <X className="h-4 w-4" />
         </button>
@@ -4123,8 +4123,9 @@ function VscodeLayout({
                         <button
                           onClick={doCommit}
                           disabled={committing || !commitMsg.trim() || !(gitStatus.files?.some((f) => f.staged))}
-                          className="p-1 rounded bg-primary/10 text-primary hover:bg-primary/20 transition-colors disabled:opacity-40"
+                          className="inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded bg-primary/10 text-primary hover:bg-primary/20 transition-colors disabled:opacity-40"
                           title="Commit staged changes"
+                          aria-label="Commit staged changes"
                         >
                           {committing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
                         </button>
@@ -4148,6 +4149,7 @@ function VscodeLayout({
                                 onClick={() => doUnstage(gitStatus.files!.filter((f) => f.staged).map((f) => f.path))}
                                 className="text-[0.5625rem] text-muted-foreground hover:text-foreground"
                                 title="Unstage all"
+                                aria-label="Unstage all"
                               >
                                 <Minus className="h-3 w-3" />
                               </button>
@@ -4161,13 +4163,14 @@ function VscodeLayout({
                                   const absPath = gitStatus.repoRoot ? `${gitStatus.repoRoot}/${f.path}` : f.path;
                                   openFile({ name, path: absPath, extension: ext, isDirectory: false, size: 0, modified: "" });
                                 }}
-                                className="w-full flex items-center gap-1.5 px-3 py-0.5 text-[0.6875rem] hover:bg-muted/60 transition-colors text-left"
+                                className="w-full min-h-11 md:min-h-0 flex items-center gap-1.5 px-3 py-0.5 text-[0.6875rem] hover:bg-muted/60 transition-colors text-left"
                               >
                                 <GitStatusBadge status={f.status} />
                                 <span className="truncate flex-1 text-green-600 dark:text-green-400">{f.path}</span>
                                 <button
+                                  aria-label="Unstage file"
                                   onClick={(e) => { e.stopPropagation(); doUnstage([f.path]); }}
-                                  className="p-0.5 text-muted-foreground hover:text-foreground shrink-0"
+                                  className="inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 text-muted-foreground hover:text-foreground shrink-0"
                                 >
                                   <Minus className="h-2.5 w-2.5" />
                                 </button>
@@ -4186,6 +4189,7 @@ function VscodeLayout({
                                 onClick={() => doStage(gitStatus.files!.filter((f) => f.working && !f.staged).map((f) => f.path))}
                                 className="text-[0.5625rem] text-muted-foreground hover:text-foreground"
                                 title="Stage all"
+                                aria-label="Stage all"
                               >
                                 <Plus className="h-3 w-3" />
                               </button>
@@ -4199,13 +4203,14 @@ function VscodeLayout({
                                   const absPath = gitStatus.repoRoot ? `${gitStatus.repoRoot}/${f.path}` : f.path;
                                   openFile({ name, path: absPath, extension: ext, isDirectory: false, size: 0, modified: "" });
                                 }}
-                                className="w-full flex items-center gap-1.5 px-3 py-0.5 text-[0.6875rem] hover:bg-muted/60 transition-colors text-left"
+                                className="w-full min-h-11 md:min-h-0 flex items-center gap-1.5 px-3 py-0.5 text-[0.6875rem] hover:bg-muted/60 transition-colors text-left"
                               >
                                 <GitStatusBadge status={f.status} />
                                 <span className={cn("truncate flex-1", f.status === "D" ? "text-red-500 line-through" : "text-yellow-600 dark:text-yellow-400")}>{f.path}</span>
                                 <button
+                                  aria-label="Stage file"
                                   onClick={(e) => { e.stopPropagation(); doStage([f.path]); }}
-                                  className="p-0.5 text-muted-foreground hover:text-foreground shrink-0"
+                                  className="inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 text-muted-foreground hover:text-foreground shrink-0"
                                 >
                                   <Plus className="h-2.5 w-2.5" />
                                 </button>
@@ -4238,8 +4243,9 @@ function VscodeLayout({
                       <button
                         key={name}
                         onClick={() => runScript(name, cmd)}
-                        className="w-full flex items-center gap-1.5 px-3 py-1.5 text-[0.6875rem] hover:bg-muted/60 transition-colors group text-left"
+                        className="w-full flex items-center gap-1.5 px-3 min-h-11 md:min-h-0 md:py-1.5 text-[0.6875rem] hover:bg-muted/60 active:bg-muted transition-colors group text-left"
                         title={`Run: ${cmd}`}
+                        aria-label={`Run: ${cmd}`}
                       >
                         <Play className="h-3 w-3 text-green-500 shrink-0 group-hover:scale-110 transition-transform" />
                         <span className="truncate flex-1 font-medium">{name}</span>
@@ -4319,8 +4325,9 @@ function VscodeLayout({
                 <span className="truncate">{file.name}</span>
                 {file.dirty && <span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" />}
                 <button
+                  aria-label="Close tab"
                   onClick={(e) => { e.stopPropagation(); closeFile(idx); }}
-                  className="ml-auto p-0.5 rounded text-muted-foreground/0 group-hover:text-muted-foreground hover:!text-foreground hover:bg-muted transition-colors shrink-0"
+                  className="ml-auto inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 rounded text-muted-foreground md:text-muted-foreground/0 md:group-hover:text-muted-foreground hover:!text-foreground hover:bg-muted transition-colors shrink-0"
                 >
                   <X className="h-2.5 w-2.5" />
                 </button>
@@ -4338,24 +4345,26 @@ function VscodeLayout({
                 <button
                   onClick={() => setMdPreview((p) => (p === "side" ? "off" : "side"))}
                   className={cn(
-                    "p-1 rounded transition-colors",
+                    "inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded transition-colors",
                     mdPreview === "side"
                       ? "text-primary bg-primary/10"
                       : "text-muted-foreground hover:text-foreground hover:bg-muted"
                   )}
                   title="Open preview to the side"
+                  aria-label="Open preview to the side"
                 >
                   <Columns2 className="h-3.5 w-3.5" />
                 </button>
                 <button
                   onClick={() => setMdPreview((p) => (p === "preview" ? "off" : "preview"))}
                   className={cn(
-                    "p-1 rounded transition-colors",
+                    "inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded transition-colors",
                     mdPreview === "preview"
                       ? "text-primary bg-primary/10"
                       : "text-muted-foreground hover:text-foreground hover:bg-muted"
                   )}
                   title="Open preview"
+                  aria-label="Open preview"
                 >
                   <Eye className="h-3.5 w-3.5" />
                 </button>
@@ -4557,7 +4566,7 @@ function VscodeSearchPanel({
           <button
             key={r.path + (r.matchLineNumber || "")}
             onClick={() => onOpenFile(r)}
-            className="w-full flex flex-col px-3 py-1 text-left hover:bg-muted/60 transition-colors"
+            className="w-full min-h-11 md:min-h-0 flex flex-col px-3 py-1 text-left hover:bg-muted/60 transition-colors"
           >
             <div className="flex items-center gap-1.5 text-[0.6875rem]">
               <FileIcon entry={r} className="h-3 w-3 shrink-0" />
@@ -5542,10 +5551,11 @@ export function FilesWidget() {
           <button
             onClick={() => setSearchOpen(!searchOpen)}
             className={cn(
-              "p-1 rounded-md transition-colors",
+              "inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md transition-colors",
               searchOpen ? "text-foreground bg-muted" : "text-muted-foreground hover:text-foreground hover:bg-muted"
             )}
             title="Search files"
+            aria-label="Search files"
           >
             <Search className="h-3.5 w-3.5" />
           </button>
@@ -5553,10 +5563,11 @@ export function FilesWidget() {
           <button
             onClick={() => setShowToolbar(!showToolbar)}
             className={cn(
-              "p-1 rounded-md transition-colors",
+              "inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md transition-colors",
               showToolbar ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground hover:bg-muted"
             )}
             title={showToolbar ? "Hide toolbar" : "Show toolbar"}
+            aria-label={showToolbar ? "Hide toolbar" : "Show toolbar"}
           >
             <LayoutList className="h-3.5 w-3.5" />
           </button>
@@ -5661,8 +5672,9 @@ export function FilesWidget() {
             </select>
             <button
               onClick={() => setMainSortDir(d => d === "asc" ? "desc" : "asc")}
-              className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              className="inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
               title={mainSortDir === "asc" ? "Sort ascending" : "Sort descending"}
+              aria-label={mainSortDir === "asc" ? "Sort ascending" : "Sort descending"}
             >
               {mainSortDir === "asc" ? <ArrowDownAZ className="h-3.5 w-3.5" /> : <ArrowUpAZ className="h-3.5 w-3.5" />}
             </button>
@@ -5670,10 +5682,11 @@ export function FilesWidget() {
             <button
               onClick={() => setDualPaneMode(!dualPaneMode)}
               className={cn(
-                "p-1 rounded-md transition-colors",
+                "inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md transition-colors",
                 dualPaneMode ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground hover:bg-muted"
               )}
               title={dualPaneMode ? "Exit dual-pane mode" : "Dual-pane mode (side-by-side)"}
+              aria-label={dualPaneMode ? "Exit dual-pane mode" : "Dual-pane mode (side-by-side)"}
             >
               {dualPaneMode ? <PanelLeftClose className="h-3.5 w-3.5" /> : <PanelLeftOpen className="h-3.5 w-3.5" />}
             </button>
@@ -5681,10 +5694,11 @@ export function FilesWidget() {
             <button
               onClick={() => { setShowVpsDialog(true); setEditingVpsConn(null); }}
               className={cn(
-                "p-1 rounded-md transition-colors",
+                "inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md transition-colors",
                 vpsConnections.length > 0 ? "text-green-500 hover:text-green-400 hover:bg-muted" : "text-muted-foreground hover:text-foreground hover:bg-muted"
               )}
               title={`VPS Connections (${vpsConnections.length})`}
+              aria-label={`VPS Connections (${vpsConnections.length})`}
             >
               <Server className="h-3.5 w-3.5" />
             </button>
@@ -5693,15 +5707,17 @@ export function FilesWidget() {
               <>
                 <button
                   onClick={() => startNewEntry("file", resolvedPath)}
-                  className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                  className="inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
                   title="New file in current folder"
+                  aria-label="New file in current folder"
                 >
                   <FilePlus className="h-3.5 w-3.5" />
                 </button>
                 <button
                   onClick={() => startNewEntry("folder", resolvedPath)}
-                  className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                  className="inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
                   title="New folder in current folder"
+                  aria-label="New folder in current folder"
                 >
                   <FolderPlus className="h-3.5 w-3.5" />
                 </button>
@@ -5710,16 +5726,18 @@ export function FilesWidget() {
             {/* Claude Code */}
             <button
               onClick={() => openInTool("claude")}
-              className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              className="inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
               title={`Open Claude Code in ${shortenPath(resolvedPath)}`}
+              aria-label={`Open Claude Code in ${shortenPath(resolvedPath)}`}
             >
               <ClaudeIcon className="h-3.5 w-3.5" />
             </button>
             {/* OpenCode */}
             <button
               onClick={() => openInTool("opencode")}
-              className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              className="inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
               title={`Open OpenCode in ${shortenPath(resolvedPath)}`}
+              aria-label={`Open OpenCode in ${shortenPath(resolvedPath)}`}
             >
               <OpenCodeIcon className="h-3.5 w-3.5" />
             </button>
@@ -5728,10 +5746,11 @@ export function FilesWidget() {
               <button
                 onClick={() => setGitOpen(!gitOpen)}
                 className={cn(
-                  "p-1 rounded-md transition-colors flex items-center gap-1",
+                  "inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md transition-colors flex items-center gap-1",
                   gitOpen ? "text-foreground bg-muted" : "text-muted-foreground hover:text-foreground hover:bg-muted"
                 )}
                 title={`Git: ${gitStatus.branch || "unknown"}`}
+                aria-label={`Git: ${gitStatus.branch || "unknown"}`}
               >
                 <GitBranch className="h-3.5 w-3.5" />
                 {gitChangedCount > 0 && (
@@ -5744,10 +5763,11 @@ export function FilesWidget() {
               <button
                 onClick={() => setShowGitActions(!showGitActions)}
                 className={cn(
-                  "p-1 rounded-md transition-colors",
+                  "inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md transition-colors",
                   showGitActions ? "text-foreground bg-muted" : "text-muted-foreground hover:text-foreground hover:bg-muted"
                 )}
                 title="Git Actions (commit, stash, branch)"
+                aria-label="Git Actions (commit, stash, branch)"
               >
                 <GitCommit className="h-3.5 w-3.5" />
               </button>
@@ -5756,10 +5776,11 @@ export function FilesWidget() {
             <button
               onClick={() => setShowBookmarks(!showBookmarks)}
               className={cn(
-                "p-1 rounded-md transition-colors",
+                "inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md transition-colors",
                 showBookmarks ? "text-foreground bg-muted" : "text-muted-foreground hover:text-foreground hover:bg-muted"
               )}
               title="Pinned files"
+              aria-label="Pinned files"
             >
               <Bookmark className="h-3.5 w-3.5" />
             </button>
@@ -5768,10 +5789,11 @@ export function FilesWidget() {
               <button
                 onClick={() => { if (showLangStats) setShowLangStats(false); else fetchLangStats(); }}
                 className={cn(
-                  "p-1 rounded-md transition-colors",
+                  "inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md transition-colors",
                   showLangStats ? "text-foreground bg-muted" : "text-muted-foreground hover:text-foreground hover:bg-muted"
                 )}
                 title="Language statistics"
+                aria-label="Language statistics"
               >
                 <BarChart3 className="h-3.5 w-3.5" />
               </button>
@@ -5780,10 +5802,11 @@ export function FilesWidget() {
             <button
               onClick={() => setShowHidden(!showHidden)}
               className={cn(
-                "p-1 rounded-md transition-colors",
+                "inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md transition-colors",
                 showHidden ? "text-foreground bg-muted" : "text-muted-foreground hover:text-foreground hover:bg-muted"
               )}
               title={showHidden ? "Hide hidden files" : "Show hidden files"}
+              aria-label={showHidden ? "Hide hidden files" : "Show hidden files"}
             >
               {showHidden ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
             </button>
@@ -5792,10 +5815,11 @@ export function FilesWidget() {
               <button
                 onClick={() => setHideGitignored(!hideGitignored)}
                 className={cn(
-                  "p-1 rounded-md transition-colors",
+                  "inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md transition-colors",
                   hideGitignored ? "text-foreground bg-muted" : "text-muted-foreground hover:text-foreground hover:bg-muted"
                 )}
                 title={hideGitignored ? "Show gitignored files" : "Hide gitignored files"}
+                aria-label={hideGitignored ? "Show gitignored files" : "Hide gitignored files"}
               >
                 <Ban className="h-3.5 w-3.5" />
               </button>
@@ -5804,18 +5828,20 @@ export function FilesWidget() {
             <button
               onClick={() => setAutoRefresh(!autoRefresh)}
               className={cn(
-                "p-1 rounded-md transition-colors",
+                "inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md transition-colors",
                 autoRefresh ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground hover:bg-muted"
               )}
               title={autoRefresh ? "Stop auto-refresh" : "Auto-refresh (watch for changes)"}
+              aria-label={autoRefresh ? "Stop auto-refresh" : "Auto-refresh (watch for changes)"}
             >
               <RotateCcw className="h-3.5 w-3.5" />
             </button>
             {/* Refresh */}
             <button
               onClick={refresh}
-              className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted"
+              className="text-muted-foreground hover:text-foreground transition-colors inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md hover:bg-muted"
               title="Refresh"
+              aria-label="Refresh"
             >
               <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
             </button>
@@ -5850,7 +5876,7 @@ export function FilesWidget() {
                   <div className="absolute right-2 top-1/2 -translate-y-1/2 h-3 w-3 border-[1.5px] border-muted-foreground/30 border-t-primary rounded-full animate-spin" />
                 )}
               </div>
-              <button onClick={() => setSearchOpen(false)} className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0">
+              <button aria-label="Close search" onClick={() => setSearchOpen(false)} className="inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0">
                 <X className="h-3.5 w-3.5" />
               </button>
             </div>
@@ -5870,6 +5896,7 @@ export function FilesWidget() {
                       : "text-muted-foreground hover:text-foreground hover:bg-muted"
                 )}
                 title="Cycle search mode (filename → content → AI)"
+                aria-label="Cycle search mode (filename → content → AI)"
               >
                 {searchMode === "ai" ? (
                   <><Sparkles className="h-2.5 w-2.5" /> AI</>
@@ -5909,10 +5936,12 @@ export function FilesWidget() {
                 {(gitStatus.behind || 0) > 0 && <span className="text-[0.5625rem] text-orange-500 shrink-0">↓{gitStatus.behind}</span>}
               </div>
               <div className="flex items-center gap-1 shrink-0">
-                <button onClick={() => fetchGitStatus(resolvedPath)} className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-muted transition-colors" title="Refresh git status">
+                <button onClick={() => fetchGitStatus(resolvedPath)} className="text-muted-foreground hover:text-foreground inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 rounded hover:bg-muted transition-colors" title="Refresh git status"
+                  aria-label="Refresh git status"
+                >
                   <RefreshCw className={cn("h-3 w-3", gitLoading && "animate-spin")} />
                 </button>
-                <button onClick={() => setGitOpen(false)} className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-muted transition-colors">
+                <button aria-label="Close git panel" onClick={() => setGitOpen(false)} className="text-muted-foreground hover:text-foreground inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 rounded hover:bg-muted transition-colors">
                   <X className="h-3 w-3" />
                 </button>
               </div>
@@ -5930,7 +5959,7 @@ export function FilesWidget() {
                         <Plus className="h-2.5 w-2.5" /> Staged ({gitStagedFiles.length})
                       </div>
                       {gitStagedFiles.map((f) => (
-                        <button key={`staged-${f.path}`} onClick={() => { handleGitFileClick(f.path); fetchDiff(f.path, true); }} className="w-full flex items-center gap-2 px-3 py-1 text-xs hover:bg-muted/50 transition-colors text-left">
+                        <button key={`staged-${f.path}`} onClick={() => { handleGitFileClick(f.path); fetchDiff(f.path, true); }} className="w-full min-h-11 md:min-h-0 flex items-center gap-2 px-3 py-1 text-xs hover:bg-muted/50 transition-colors text-left">
                           <GitStatusBadge status={f.status} />
                           <span className="truncate flex-1 text-green-700 dark:text-green-300">{f.path}</span>
                           <Diff className="h-3 w-3 text-muted-foreground/50 shrink-0" />
@@ -5944,7 +5973,7 @@ export function FilesWidget() {
                         <Pencil className="h-2.5 w-2.5" /> Changes ({gitWorkingFiles.length})
                       </div>
                       {gitWorkingFiles.map((f) => (
-                        <button key={`working-${f.path}`} onClick={() => { handleGitFileClick(f.path); fetchDiff(f.path, false); }} className="w-full flex items-center gap-2 px-3 py-1 text-xs hover:bg-muted/50 transition-colors text-left">
+                        <button key={`working-${f.path}`} onClick={() => { handleGitFileClick(f.path); fetchDiff(f.path, false); }} className="w-full min-h-11 md:min-h-0 flex items-center gap-2 px-3 py-1 text-xs hover:bg-muted/50 transition-colors text-left">
                           <GitStatusBadge status={f.status} />
                           <span className={cn("truncate flex-1", f.status === "?" ? "text-muted-foreground" : f.status === "D" ? "text-red-500 line-through" : "text-yellow-700 dark:text-yellow-300")}>{f.path}</span>
                           {f.status !== "?" && <Diff className="h-3 w-3 text-muted-foreground/50 shrink-0" />}
@@ -6080,10 +6109,14 @@ export function FilesWidget() {
               </select>
             )}
             {isVpsMode && <Wifi className="h-3 w-3 text-green-500 shrink-0" />}
-            <button onClick={goUp} disabled={!parentPath && resolvedPath === "/" && !isVpsMode} className="text-muted-foreground hover:text-foreground transition-colors p-0.5 rounded hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed shrink-0" title="Go up">
+            <button onClick={goUp} disabled={!parentPath && resolvedPath === "/" && !isVpsMode} className="text-muted-foreground hover:text-foreground transition-colors inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 rounded hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed shrink-0" title="Go up"
+              aria-label="Go up"
+            >
               <ArrowUp className="h-3.5 w-3.5" />
             </button>
-            <button onClick={goHome} className="text-muted-foreground hover:text-foreground transition-colors p-0.5 rounded hover:bg-muted shrink-0" title="Home">
+            <button onClick={goHome} className="text-muted-foreground hover:text-foreground transition-colors inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 rounded hover:bg-muted shrink-0" title="Home"
+              aria-label="Home"
+            >
               <Home className="h-3.5 w-3.5" />
             </button>
             <PathJump currentPath={resolvedPath || "~"} onNavigate={fetchDir} />
@@ -6092,10 +6125,11 @@ export function FilesWidget() {
               <button
                 onClick={() => setShowProject(!showProject)}
                 className={cn(
-                  "p-0.5 rounded transition-colors shrink-0",
+                  "inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 rounded transition-colors shrink-0",
                   showProject ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground hover:bg-muted"
                 )}
                 title={`${projectInfo.type} project: ${projectInfo.name}`}
+                aria-label={`${projectInfo.type} project: ${projectInfo.name}`}
               >
                 <FolderCode className="h-3.5 w-3.5" />
               </button>
@@ -6119,8 +6153,9 @@ export function FilesWidget() {
                 {!editing && !monacoMode && gitStatus?.isGitRepo && preview.filePath && isTextFile(preview.extension) && (
                   <button
                     onClick={() => { if (blameLines) setBlameLines(null); else if (preview.filePath) fetchBlame(preview.filePath); }}
-                    className={cn("p-0.5 rounded hover:bg-muted transition-colors", blameLines ? "text-primary" : "text-muted-foreground hover:text-foreground")}
+                    className={cn("inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 rounded hover:bg-muted transition-colors", blameLines ? "text-primary" : "text-muted-foreground hover:text-foreground")}
                     title="Toggle git blame"
+                    aria-label="Toggle git blame"
                   >
                     <User className="h-3 w-3" />
                   </button>
@@ -6129,8 +6164,9 @@ export function FilesWidget() {
                 {!editing && !monacoMode && preview.filePath && isTextFile(preview.extension) && (
                   <button
                     onClick={() => { if (showSymbols) { setShowSymbols(false); setSymbols(null); } else if (preview.filePath) fetchSymbols(preview.filePath); }}
-                    className={cn("p-0.5 rounded hover:bg-muted transition-colors", showSymbols ? "text-primary" : "text-muted-foreground hover:text-foreground")}
+                    className={cn("inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 rounded hover:bg-muted transition-colors", showSymbols ? "text-primary" : "text-muted-foreground hover:text-foreground")}
                     title="Toggle symbol outline"
+                    aria-label="Toggle symbol outline"
                   >
                     <ListTree className="h-3 w-3" />
                   </button>
@@ -6150,10 +6186,11 @@ export function FilesWidget() {
                     }}
                     disabled={aiSummaryLoading}
                     className={cn(
-                      "p-0.5 rounded hover:bg-muted transition-colors disabled:opacity-50",
+                      "inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 rounded hover:bg-muted transition-colors disabled:opacity-50",
                       (aiSummary || aiSummaryError) ? "text-primary" : "text-muted-foreground hover:text-foreground"
                     )}
                     title={aiSummary ? "Hide AI summary" : "Summarize with AI"}
+                    aria-label={aiSummary ? "Hide AI summary" : "Summarize with AI"}
                   >
                     {aiSummaryLoading ? (
                       <div className="h-3 w-3 border-[1.5px] border-muted-foreground/30 border-t-primary rounded-full animate-spin" />
@@ -6163,30 +6200,38 @@ export function FilesWidget() {
                   </button>
                 )}
                 {!editing && !monacoMode && !preview.truncated && isTextFile(preview.extension) && (
-                  <button onClick={startEditing} className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-muted transition-colors" title="Edit file">
+                  <button onClick={startEditing} className="text-muted-foreground hover:text-foreground inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 rounded hover:bg-muted transition-colors" title="Edit file"
+                    aria-label="Edit file"
+                  >
                     <Pencil className="h-3 w-3" />
                   </button>
                 )}
                 {editing && !monacoMode && (
                   <>
-                    <button onClick={saveFile} disabled={saving} className="text-green-600 hover:text-green-500 p-0.5 rounded hover:bg-muted transition-colors disabled:opacity-50" title="Save (Cmd+S)">
+                    <button onClick={saveFile} disabled={saving} className="text-green-600 hover:text-green-500 inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 rounded hover:bg-muted transition-colors disabled:opacity-50" title="Save (Cmd+S)"
+                      aria-label="Save (Cmd+S)"
+                    >
                       <Save className={cn("h-3 w-3", saving && "animate-pulse")} />
                     </button>
-                    <button onClick={cancelEditing} className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-muted transition-colors" title="Cancel editing">
+                    <button onClick={cancelEditing} className="text-muted-foreground hover:text-foreground inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 rounded hover:bg-muted transition-colors" title="Cancel editing"
+                      aria-label="Cancel editing"
+                    >
                       <Undo2 className="h-3 w-3" />
                     </button>
                   </>
                 )}
                 {/* Copy path */}
                 {preview.filePath && (
-                  <button onClick={() => navigator.clipboard.writeText(preview.filePath || "")} className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-muted transition-colors" title="Copy path">
+                  <button onClick={() => navigator.clipboard.writeText(preview.filePath || "")} className="text-muted-foreground hover:text-foreground inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 rounded hover:bg-muted transition-colors" title="Copy path"
+                    aria-label="Copy path"
+                  >
                     <ClipboardCopy className="h-3 w-3" />
                   </button>
                 )}
-                <button onClick={() => { if (preview.filePath) window.open(rawFileUrl(preview.filePath), "_blank", "noopener,noreferrer"); }} className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-muted transition-colors" title="Open in new tab">
+                <button onClick={() => { if (preview.filePath) window.open(rawFileUrl(preview.filePath), "_blank", "noopener,noreferrer"); }} className="text-muted-foreground hover:text-foreground inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 rounded hover:bg-muted transition-colors" title="Open in new tab" aria-label="Open in new tab">
                   <ExternalLink className="h-3 w-3" />
                 </button>
-                <button onClick={() => { setPreview(null); setEditing(false); setMonacoMode(false); setDiffContent(null); setBlameLines(null); setShowSymbols(false); setSymbols(null); }} className="text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-muted transition-colors">
+                <button aria-label="Close preview" onClick={() => { setPreview(null); setEditing(false); setMonacoMode(false); setDiffContent(null); setBlameLines(null); setShowSymbols(false); setSymbols(null); }} className="text-muted-foreground hover:text-foreground inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 rounded hover:bg-muted transition-colors">
                   <X className="h-3 w-3" />
                 </button>
               </div>
@@ -6203,8 +6248,9 @@ export function FilesWidget() {
                   {!aiSummaryLoading && (
                     <button
                       onClick={() => { setAiSummary(null); setAiSummaryError(null); setAiSummaryFor(null); }}
-                      className="ml-auto text-muted-foreground hover:text-foreground p-0.5 rounded hover:bg-muted transition-colors"
+                      className="ml-auto text-muted-foreground hover:text-foreground inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 rounded hover:bg-muted transition-colors"
                       title="Hide summary"
+                      aria-label="Hide summary"
                     >
                       <X className="h-2.5 w-2.5" />
                     </button>
@@ -6352,7 +6398,7 @@ export function FilesWidget() {
                       )}
                     </div>
                     {!result.isDirectory && (
-                      <button onClick={(e) => { e.stopPropagation(); window.open(rawFileUrl(result.path), "_blank", "noopener,noreferrer"); }} className="p-0.5 rounded hover:bg-muted text-muted-foreground/0 group-hover:text-muted-foreground hover:!text-foreground transition-colors shrink-0 mt-0.5" title="Open in new tab">
+                      <button onClick={(e) => { e.stopPropagation(); window.open(rawFileUrl(result.path), "_blank", "noopener,noreferrer"); }} className="inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 rounded hover:bg-muted text-muted-foreground md:text-muted-foreground/0 md:group-hover:text-muted-foreground hover:!text-foreground transition-colors shrink-0 mt-0.5" title="Open in new tab" aria-label="Open in new tab">
                         <ExternalLink className="h-3 w-3" />
                       </button>
                     )}
@@ -6488,14 +6534,15 @@ export function FilesWidget() {
                         {entry.name}
                       </a>
                       {!entry.isDirectory && (
-                        <button onClick={(e) => { e.stopPropagation(); window.open(rawFileUrl(entry.path), "_blank", "noopener,noreferrer"); }} className="p-0.5 rounded hover:bg-muted text-muted-foreground/0 group-hover:text-muted-foreground hover:!text-foreground transition-colors shrink-0" title="Open in new tab">
+                        <button onClick={(e) => { e.stopPropagation(); window.open(rawFileUrl(entry.path), "_blank", "noopener,noreferrer"); }} className="inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 rounded hover:bg-muted text-muted-foreground md:text-muted-foreground/0 md:group-hover:text-muted-foreground hover:!text-foreground transition-colors shrink-0" title="Open in new tab" aria-label="Open in new tab">
                           <ExternalLink className="h-3 w-3" />
                         </button>
                       )}
                       <button
                         onClick={(e) => { e.stopPropagation(); deleteEntry(entry); }}
-                        className="p-0.5 rounded hover:bg-muted text-muted-foreground/0 group-hover:text-red-400/60 hover:!text-red-400 transition-colors shrink-0"
+                        className="inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-0.5 rounded hover:bg-muted text-red-400/60 md:text-muted-foreground/0 md:group-hover:text-red-400/60 hover:!text-red-400 active:!text-red-400 transition-colors shrink-0"
                         title="Delete"
+                        aria-label="Delete"
                       >
                         <Trash2 className="h-3 w-3" />
                       </button>

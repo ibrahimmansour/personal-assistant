@@ -339,8 +339,9 @@ export function JiraWidget() {
     <div className="flex items-center gap-1">
       <button
         onClick={closeDetail}
-        className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted"
+        className="text-muted-foreground hover:text-foreground transition-colors inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md hover:bg-muted"
         title="Back to list"
+        aria-label="Back to list"
       >
         <ArrowLeft className="h-3.5 w-3.5" />
       </button>
@@ -348,8 +349,9 @@ export function JiraWidget() {
         href={issueUrl}
         target="_blank"
         rel="noopener noreferrer"
-        className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted"
+        className="text-muted-foreground hover:text-foreground transition-colors inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md hover:bg-muted"
         title="Open in Jira"
+        aria-label="Open in Jira"
       >
         <ExternalLink className="h-3.5 w-3.5" />
       </a>
@@ -362,18 +364,20 @@ export function JiraWidget() {
         </span>
       )}
       <button
+        aria-label="Filter issues"
         onClick={() => { setShowFilter((v) => !v); if (showFilter) setFilterQuery(""); }}
         className={cn(
-          "text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted",
+          "text-muted-foreground hover:text-foreground transition-colors inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md hover:bg-muted",
           showFilter && "text-primary bg-primary/10"
         )}
       >
         <Search className="h-3.5 w-3.5" />
       </button>
       <button
+        aria-label="Refresh issues"
         onClick={fetchIssues}
         disabled={loading}
-        className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted disabled:opacity-50"
+        className="text-muted-foreground hover:text-foreground transition-colors inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md hover:bg-muted disabled:opacity-50"
       >
         <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
       </button>
@@ -607,7 +611,7 @@ export function JiraWidget() {
                   <div className="flex gap-1.5">
                     <Button
                       size="sm"
-                      className="flex-1 text-xs h-7"
+                      className="flex-1 text-xs h-11 md:h-7"
                       onClick={submitCookies}
                       disabled={authLoading || !cookieInput.trim()}
                     >
@@ -620,7 +624,7 @@ export function JiraWidget() {
                     <Button
                       size="sm"
                       variant="ghost"
-                      className="text-xs h-7"
+                      className="text-xs h-11 md:h-7"
                       onClick={() => {
                         setShowCookieInput(false);
                         setCookieInput("");
@@ -671,7 +675,8 @@ export function JiraWidget() {
                 {filterQuery && (
                   <button
                     onClick={() => setFilterQuery("")}
-                    className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 inline-flex items-center justify-center h-11 w-8 md:h-auto md:w-auto text-muted-foreground hover:text-foreground"
+                    aria-label="Clear search"
                   >
                     <X className="h-3 w-3" />
                   </button>
@@ -689,10 +694,11 @@ export function JiraWidget() {
               const PriorityIcon = priorityCfg.icon;
 
               return (
-                <div
+                <button
                   key={issue.key}
+                  type="button"
                   onClick={() => fetchDetail(issue.key)}
-                  className="block p-2.5 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer group"
+                  className="w-full text-left block p-2.5 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer group"
                 >
                   <div className="flex items-start gap-2.5">
                     <TypeIcon className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
@@ -726,7 +732,7 @@ export function JiraWidget() {
                       </div>
                     </div>
                   </div>
-                </div>
+                </button>
               );
             })}
           </div>

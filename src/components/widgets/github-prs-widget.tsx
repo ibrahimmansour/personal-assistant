@@ -201,18 +201,20 @@ export function GitHubPRsWidget() {
             </span>
           )}
           <button
+            aria-label="Filter pull requests"
             onClick={() => { setShowFilter((v) => !v); if (showFilter) setFilterQuery(""); }}
             className={cn(
-              "text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted",
+              "text-muted-foreground hover:text-foreground transition-colors inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md hover:bg-muted",
               showFilter && "text-primary bg-primary/10"
             )}
           >
             <Search className="h-3.5 w-3.5" />
           </button>
           <button
+            aria-label="Refresh pull requests"
             onClick={fetchPRs}
             disabled={loading}
-            className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-muted disabled:opacity-50"
+            className="text-muted-foreground hover:text-foreground transition-colors inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md hover:bg-muted disabled:opacity-50"
           >
             <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
           </button>
@@ -259,7 +261,8 @@ export function GitHubPRsWidget() {
                 {filterQuery && (
                   <button
                     onClick={() => setFilterQuery("")}
-                    className="absolute right-1.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 inline-flex items-center justify-center h-11 w-8 md:h-auto md:w-auto text-muted-foreground hover:text-foreground"
+                    aria-label="Clear search"
                   >
                     <X className="h-3 w-3" />
                   </button>
