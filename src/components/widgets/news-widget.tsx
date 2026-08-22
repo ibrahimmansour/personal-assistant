@@ -24,6 +24,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useRefreshOnVisible } from "@/hooks/use-refresh-on-visible";
 import { useIsMobile } from "@/hooks/use-swipe";
 import { useBackHandler } from "@/hooks/use-back-handler";
+import { useWidgetNavFor } from "@/components/widget-nav-context";
 
 // ─── Types (mirror the API) ──────────────────────────────────────────────────
 
@@ -501,6 +502,10 @@ function SettingsPanel({
 
 export function NewsWidget() {
   const isMobile = useIsMobile();
+  // Without this the widget ignores navigateTo("news") entirely: the mobile
+  // launcher mounts the tapped widget inside a hidden container and relies on
+  // the nav request to expand it, so a news tile tap opened nothing at all.
+  const { expandRequested, onExpandHandled } = useWidgetNavFor("news");
   const [articles, setArticles] = useState<NewsArticle[]>([]);
   const [settings, setSettings] = useState<NewsSettings>({ sources: [], genres: [] });
   const [failedSources, setFailedSources] = useState<FailedSource[]>([]);
@@ -765,6 +770,8 @@ export function NewsWidget() {
         title="News Settings"
         icon={<Settings2 className="h-4 w-4" />}
         widgetType="news"
+        expandRequested={expandRequested}
+        onExpandHandled={onExpandHandled}
         headerAction={
           <Button
             variant="ghost"
@@ -797,6 +804,8 @@ export function NewsWidget() {
       title="News"
       icon={<Newspaper className="h-4 w-4" />}
       widgetType="news"
+      expandRequested={expandRequested}
+      onExpandHandled={onExpandHandled}
       forceExpand={!!selectedArticle}
       onExpandChange={(expanded) => {
         // When user collapses the widget, clear the selected article
