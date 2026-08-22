@@ -5,7 +5,6 @@ import { cn } from "@/lib/utils";
 import { useEdgeSwipe, useSwipe } from "@/hooks/use-swipe";
 import {
   LayoutDashboard,
-  Code,
   Mail,
   StickyNote,
   Clock,
@@ -22,17 +21,15 @@ import {
   Focus,
   PanelLeftClose,
   PanelLeft,
-  Sunrise,
-  Inbox,
   Activity,
   MoreHorizontal,
   Pencil,
   Trash2,
   X,
   Layers,
-  Monitor,
   Bot,
   Newspaper,
+  LayoutPanelTop,
 } from "lucide-react";
 import {
   useWorkspace,
@@ -53,6 +50,9 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { workspaceIcons } from "@/components/layout/workspace-icons";
+import { openNavCustomizer } from "@/components/layout/nav-customizer";
+import { useBackHandler } from "@/hooks/use-back-handler";
 
 // ─── Icon registry ──────────────────────────────────────────────────────────
 
@@ -72,24 +72,6 @@ const widgetIcons: Record<WidgetType, React.ComponentType<{ className?: string }
   "claude-code": Bot,
   "system-monitor": Activity,
   news: Newspaper,
-};
-
-const workspaceIcons: Record<string, React.ComponentType<{ className?: string }>> = {
-  monitor: Monitor,
-  "layout-dashboard": LayoutDashboard,
-  code: Code,
-  mail: Mail,
-  "sticky-note": StickyNote,
-  sunrise: Sunrise,
-  inbox: Inbox,
-  activity: Activity,
-  layers: Layers,
-  focus: Focus,
-  bookmark: Bookmark,
-  "list-todo": ListTodo,
-  calendar: Calendar,
-  "terminal-square": TerminalSquare,
-  "git-pull-request": GitPullRequest,
 };
 
 /** Icons available for custom workspace creation */
@@ -283,6 +265,10 @@ export function Sidebar() {
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [mobileOpen]);
+
+  // ...and so does the system back gesture, which otherwise walked out of the
+  // app with the drawer still covering the screen.
+  useBackHandler(mobileOpen, () => setMobileOpen(false));
 
   // ─── Mobile gestures: edge-swipe-to-open + swipe-left-to-close ───
   // While the user drags, we set `dragX` (a negative pixel offset for the
@@ -500,6 +486,22 @@ export function Sidebar() {
           >
             <Plus className="h-3.5 w-3.5 shrink-0" />
             {showLabels && <span className="text-xs">New workspace</span>}
+          </button>
+          {/* Mobile-only: the bottom nav's long-press is a pointer gesture, so
+              the customiser needs a plain control to reach it too. */}
+          <button
+            onClick={() => {
+              setMobileOpen(false);
+              openNavCustomizer();
+            }}
+            className={cn(
+              "md:hidden flex items-center gap-2 w-full rounded-md text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted/30 active:bg-muted transition-colors",
+              showLabels ? "px-2.5 py-2.5" : "px-0 py-2.5 justify-center"
+            )}
+            aria-label={showLabels ? undefined : "Customize bottom nav"}
+          >
+            <LayoutPanelTop className="h-3.5 w-3.5 shrink-0" />
+            {showLabels && <span className="text-xs">Customize bottom nav</span>}
           </button>
         </div>
 

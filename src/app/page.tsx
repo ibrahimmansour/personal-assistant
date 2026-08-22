@@ -19,7 +19,9 @@ import { AIChatProvider } from "@/components/ai-chat-context";
 import { AIChatPanel } from "@/components/ai-chat-panel";
 import { useKeepAlive } from "@/hooks/use-keep-alive";
 import { useSwipe } from "@/hooks/use-swipe";
-import { useCallback } from "react";
+import { pushBackLayer } from "@/hooks/use-back-handler";
+import { useProfile } from "@/components/profile-context";
+import { useCallback, useEffect, useRef } from "react";
 
 function MainContent() {
   const {
@@ -49,6 +51,44 @@ function MainContent() {
     },
     [workspaces, activeWorkspace.id, activeFocusId, exitFocusMode, setActiveWorkspace]
   );
+
+  // ─── Back gesture: unwind workspace switches ───
+  // Switching workspace is the app's page navigation, so it earns a history
+  // entry — otherwise back from a workspace the user tapped into on the bottom
+  // nav walks straight out of the PWA. Layers are shared with the overlay
+  // surfaces (expanded widget, AI panel, drawer), so back unwinds whichever
+  // happened most recently.
+  const { activeProfile } = useProfile();
+  const prevWorkspaceRef = useRef(activeWorkspace.id);
+  const prevProfileRef = useRef(activeProfile);
+  const returningRef = useRef(false);
+  // WorkspaceProvider restores the saved workspace in a mount effect, which
+  // runs after this component's — that first swap is hydration, not something
+  // the user navigated to, so it must not leave a history entry behind.
+  const mountedAtRef = useRef(0);
+  useEffect(() => {
+    mountedAtRef.current = Date.now();
+  }, []);
+
+  useEffect(() => {
+    const prev = prevWorkspaceRef.current;
+    const prevProfile = prevProfileRef.current;
+    prevWorkspaceRef.current = activeWorkspace.id;
+    prevProfileRef.current = activeProfile;
+    if (prev === activeWorkspace.id) return;
+    // A profile switch loads that profile's own saved workspace; going "back"
+    // into the other profile's workspace would be nonsense.
+    if (prevProfile !== activeProfile) return;
+    if (Date.now() - mountedAtRef.current < 1000) return;
+    if (returningRef.current) {
+      returningRef.current = false;
+      return;
+    }
+    pushBackLayer(() => {
+      returningRef.current = true;
+      setActiveWorkspace(prev);
+    });
+  }, [activeWorkspace.id, activeProfile, setActiveWorkspace]);
 
   const mainSwipeRef = useSwipe<HTMLElement>({
     axis: "horizontal",

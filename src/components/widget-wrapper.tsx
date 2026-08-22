@@ -9,6 +9,7 @@ import { useCommandPalette } from "@/components/command-palette-context";
 import { useWorkspace } from "@/components/workspace-context";
 import { useDashboard } from "@/components/dashboard-context";
 import { useSwipe, useLongPress, useIsMobile } from "@/hooks/use-swipe";
+import { useBackHandler } from "@/hooks/use-back-handler";
 import type { WidgetType } from "@/types/widget";
 
 // Lazy widget component map for split view
@@ -232,6 +233,11 @@ export function WidgetWrapper({
     document.addEventListener("fullscreenchange", handler);
     return () => document.removeEventListener("fullscreenchange", handler);
   }, []);
+
+  // The system back gesture collapses the overlay instead of leaving the app.
+  // On a phone the expanded widget *is* the screen — MobileHome opens every
+  // widget through it — so back had nothing to return to.
+  useBackHandler(isExpanded, collapse);
 
   // Close on Escape (but not when focused inside a terminal)
   useEffect(() => {

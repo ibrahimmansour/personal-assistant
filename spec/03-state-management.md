@@ -209,6 +209,8 @@ interface WorkspaceContextType {
   toggleSection: (category: WidgetCategory) => void;
   pinnedWidgetIds: string[];
   togglePinWidget: (widgetId: string) => void;
+  navWorkspaceIds: string[];
+  setNavWorkspaceIds: (ids: string[]) => void;
   sidebarExpanded: boolean;
   toggleSidebar: () => void;
   setSidebarExpanded: (expanded: boolean) => void;
@@ -266,8 +268,14 @@ type ViewType = "today" | "inbox" | "timeline";
 | development | github-prs, jira, notes |
 | tools | terminal, bookmarks, files |
 
-**State (7 pieces):**
-- `workspaces`, `activeWorkspaceId`, `focusCombos`, `activeFocusId`, `collapsedSections`, `pinnedWidgetIds`, `sidebarExpanded`
+**State (8 pieces):**
+- `workspaces`, `activeWorkspaceId`, `focusCombos`, `activeFocusId`, `collapsedSections`, `pinnedWidgetIds`, `sidebarExpanded`, `navWorkspaceIds`
+
+`navWorkspaceIds` holds the workspaces shown in the mobile bottom nav, in
+order, capped at `NAV_SLOTS` (5). It defaults to
+`["status-board", "dashboard", "today", "inbox", "timeline"]` and is edited
+through `NavCustomizer` (`src/components/layout/nav-customizer.tsx`), reached by
+long-pressing the nav, from the mobile launcher, or from the sidebar drawer.
 
 **Keyboard shortcuts:**
 - `Cmd+1` through `Cmd+9` → switch workspace (skips input/textarea/contentEditable)
@@ -277,7 +285,10 @@ type ViewType = "today" | "inbox" | "timeline";
 - **localStorage:** `workspace-state-{profile}` with version `WORKSPACE_VERSION = 3`
 - **Server:** `POST /api/dashboard` with `{ workspaceState, workspaceVersion }`
 
-**Repair logic:** On load, ensures Dashboard workspace always contains all widget IDs for the current profile.
+**Repair logic:** On load, ensures the Dashboard workspace always contains all
+widget IDs for the current profile, that the `status-board` workspace exists,
+and that `navWorkspaceIds` is present and references only live workspaces
+(deleting a workspace also drops it from the nav).
 
 **Dependencies:** Consumes `ProfileProvider`
 

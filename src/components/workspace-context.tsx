@@ -95,6 +95,8 @@ export interface WorkspaceState {
   pinnedWidgetIds: string[];
   /** Whether sidebar is expanded */
   sidebarExpanded: boolean;
+  /** Workspace IDs shown in the mobile bottom nav, in order (max NAV_SLOTS) */
+  navWorkspaceIds: string[];
 }
 
 // ─── Defaults ────────────────────────────────────────────────────────────────
@@ -183,6 +185,18 @@ function getDefaultWorkspaces(profile: ProfileId): Workspace[] {
     },
   ];
 }
+
+/** How many workspaces fit across the bottom nav before labels start colliding. */
+export const NAV_SLOTS = 5;
+
+/** Bottom-nav default: the launcher plus the three digest views. */
+const DEFAULT_NAV_WORKSPACE_IDS = [
+  "status-board",
+  "dashboard",
+  "today",
+  "inbox",
+  "timeline",
+];
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 function getDefaultFocusCombos(_profile: ProfileId): FocusCombo[] {
@@ -300,6 +314,11 @@ interface WorkspaceContextType {
   /** Toggle pin for a widget */
   togglePinWidget: (widgetId: string) => void;
 
+  /** Workspace IDs shown in the mobile bottom nav, in order */
+  navWorkspaceIds: string[];
+  /** Replace the bottom-nav workspace list (trimmed to NAV_SLOTS) */
+  setNavWorkspaceIds: (ids: string[]) => void;
+
   /** Sidebar expanded state */
   sidebarExpanded: boolean;
   /** Toggle sidebar */
@@ -331,6 +350,9 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const [collapsedSections, setCollapsedSections] = useState<CollapsedSections>(defaultCollapsed);
   const [pinnedWidgetIds, setPinnedWidgetIds] = useState<string[]>([]);
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
+  const [navWorkspaceIds, setNavWorkspaceIdsState] = useState<string[]>(
+    DEFAULT_NAV_WORKSPACE_IDS
+  );
   const profileRef = useRef(activeProfile);
 
   // Load state on profile change
@@ -366,6 +388,14 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       setCollapsedSections(saved.collapsedSections);
       setPinnedWidgetIds(saved.pinnedWidgetIds);
       setSidebarExpanded(saved.sidebarExpanded);
+      // Migrate: state saved before the nav was customisable has no list, and
+      // a workspace the user has since deleted must not leave a dead tab.
+      const savedNav = (saved.navWorkspaceIds || []).filter((id) =>
+        repairedWorkspaces.some((ws) => ws.id === id)
+      );
+      setNavWorkspaceIdsState(
+        savedNav.length > 0 ? savedNav.slice(0, NAV_SLOTS) : DEFAULT_NAV_WORKSPACE_IDS
+      );
     } else {
       setWorkspaces(getDefaultWorkspaces(activeProfile));
       setActiveWorkspaceId("status-board");
@@ -374,6 +404,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
       setCollapsedSections(defaultCollapsed);
       setPinnedWidgetIds([]);
       setSidebarExpanded(false);
+      setNavWorkspaceIdsState(DEFAULT_NAV_WORKSPACE_IDS);
     }
   }, [activeProfile]);
 
@@ -388,11 +419,12 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         collapsedSections,
         pinnedWidgetIds,
         sidebarExpanded,
+        navWorkspaceIds,
         ...overrides,
       };
       saveWorkspaceState(profileRef.current, state);
     },
-    [workspaces, activeWorkspaceId, focusCombos, activeFocusId, collapsedSections, pinnedWidgetIds, sidebarExpanded]
+    [workspaces, activeWorkspaceId, focusCombos, activeFocusId, collapsedSections, pinnedWidgetIds, sidebarExpanded, navWorkspaceIds]
   );
 
   // ─── Workspace actions ────────────────────────────────────────────────
@@ -432,14 +464,20 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     (id: string) => {
       const next = workspaces.filter((ws) => ws.id !== id || ws.builtIn);
       setWorkspaces(next);
+      // A deleted workspace must leave the bottom nav with it, or the tab
+      // renders as a dead slot that switches to nothing.
+      const nextNav = navWorkspaceIds.filter((navId) =>
+        next.some((ws) => ws.id === navId)
+      );
+      setNavWorkspaceIdsState(nextNav);
       if (activeWorkspaceId === id) {
         setActiveWorkspaceId("dashboard");
-        persist({ workspaces: next, activeWorkspaceId: "status-board" });
+        persist({ workspaces: next, activeWorkspaceId: "status-board", navWorkspaceIds: nextNav });
       } else {
-        persist({ workspaces: next });
+        persist({ workspaces: next, navWorkspaceIds: nextNav });
       }
     },
-    [workspaces, activeWorkspaceId, persist]
+    [workspaces, activeWorkspaceId, navWorkspaceIds, persist]
   );
 
   // ─── Focus mode actions ───────────────────────────────────────────────
@@ -520,6 +558,17 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     [persist]
   );
 
+  // ─── Bottom-nav actions ───────────────────────────────────────────────
+
+  const setNavWorkspaceIds = useCallback(
+    (ids: string[]) => {
+      const next = ids.slice(0, NAV_SLOTS);
+      setNavWorkspaceIdsState(next);
+      persist({ navWorkspaceIds: next });
+    },
+    [persist]
+  );
+
   // ─── Sidebar actions ─────────────────────────────────────────────────
 
   const toggleSidebar = useCallback(() => {
@@ -591,6 +640,8 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
         toggleSection,
         pinnedWidgetIds,
         togglePinWidget,
+        navWorkspaceIds,
+        setNavWorkspaceIds,
         sidebarExpanded,
         toggleSidebar,
         setSidebarExpanded: setSidebarExpandedCb,

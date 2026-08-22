@@ -7,6 +7,7 @@ import { useCommandPalette } from "@/components/command-palette-context";
 import { useDashboard } from "@/components/dashboard-context";
 import { useProfile } from "@/components/profile-context";
 import { useLongPress } from "@/hooks/use-swipe";
+import { openNavCustomizer } from "@/components/layout/nav-customizer";
 import { widgetSections, sectionMeta, type WidgetSection } from "@/lib/dashboard-config";
 import { cn } from "@/lib/utils";
 import {
@@ -28,6 +29,7 @@ import {
   ArrowUp,
   ArrowDown,
   ArrowUpDown,
+  LayoutPanelTop,
   Check,
 } from "lucide-react";
 
@@ -209,15 +211,23 @@ export function MobileHome({ visibleWidgets, widgetComponents }: MobileHomeProps
         </div>
       )}
 
-      {/* Long-press is a pointer gesture with no keyboard equivalent, so
-          reorder mode needs a plain control to reach it too. */}
-      {!reorderMode && visibleWidgets.length > 0 && (
-        <div className="flex justify-center pt-1 pb-4">
+      {/* Long-press is a pointer gesture with no keyboard equivalent, so both
+          reorder mode and the nav customiser need a plain control too. */}
+      {!reorderMode && (
+        <div className="flex flex-wrap justify-center gap-2 pt-1 pb-4">
+          {visibleWidgets.length > 0 && (
+            <button
+              onClick={() => setReorderModeGlobal(true)}
+              className="inline-flex items-center gap-1.5 min-h-11 px-4 rounded-full border border-border/50 text-xs font-medium text-muted-foreground active:bg-muted"
+            >
+              <ArrowUpDown className="h-3.5 w-3.5" /> Reorder Widgets
+            </button>
+          )}
           <button
-            onClick={() => setReorderModeGlobal(true)}
+            onClick={openNavCustomizer}
             className="inline-flex items-center gap-1.5 min-h-11 px-4 rounded-full border border-border/50 text-xs font-medium text-muted-foreground active:bg-muted"
           >
-            <ArrowUpDown className="h-3.5 w-3.5" /> Reorder Widgets
+            <LayoutPanelTop className="h-3.5 w-3.5" /> Customize Nav Bar
           </button>
         </div>
       )}

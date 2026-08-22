@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useProfile } from "@/components/profile-context";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
+import { ItemDetail, type DetailItem, type DetailItemType } from "@/components/views/item-detail";
 import {
   Mail,
   MailOpen,
@@ -28,7 +29,30 @@ interface TimelineEntry {
   time: string;
   icon: React.ComponentType<{ className?: string }>;
   iconColor: string;
-  data?: Record<string, unknown>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  data?: Record<string, any>;
+}
+
+/** The timeline's singular type names vs. the detail pane's plural ones. */
+const detailTypes: Record<TimelineEntry["type"], DetailItemType> = {
+  email: "email",
+  pr: "prs",
+  jira: "jira",
+  calendar: "calendar",
+  task: "tasks",
+};
+
+/** An entry only opens if we kept the source record it came from. */
+function toDetailItem(entry: TimelineEntry): DetailItem | null {
+  if (!entry.data) return null;
+  return {
+    id: entry.id,
+    type: detailTypes[entry.type],
+    title: entry.title,
+    subtitle: entry.subtitle,
+    time: entry.time,
+    data: entry.data,
+  };
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -74,6 +98,7 @@ export function TimelineView() {
   const [entries, setEntries] = useState<TimelineEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [typeFilter, setTypeFilter] = useState<string | null>(null);
+  const [selected, setSelected] = useState<DetailItem | null>(null);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -224,10 +249,20 @@ export function TimelineView() {
     );
   }
 
+  // The timeline is a single centred column, so the detail takes the whole
+  // pane rather than splitting it the way the inbox does.
+  if (selected) {
+    return (
+      <div className="flex flex-col h-full overflow-hidden">
+        <ItemDetail item={selected} onBack={() => setSelected(null)} />
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* ─── Filter bar ──────────────────────────────────────── */}
-      <div className="shrink-0 flex items-center gap-1 px-4 py-2 border-b border-border/50">
+      <div className="shrink-0 flex items-center gap-1 px-4 py-2 border-b border-border/50 overflow-x-auto">
         {filterButtons.map((f) => {
           const Icon = f.icon;
           const count = f.id ? (typeCounts[f.id] || 0) : entries.length;
@@ -270,10 +305,14 @@ export function TimelineView() {
                 <div className="space-y-0.5">
                   {dayEntries.map((entry) => {
                     const Icon = entry.icon;
+                    const detail = toDetailItem(entry);
                     return (
-                      <div
+                      <button
+                        type="button"
                         key={entry.id}
-                        className="flex items-start gap-3 py-1.5 pl-0 pr-2 rounded-lg hover:bg-muted/20 transition-colors group"
+                        onClick={() => detail && setSelected(detail)}
+                        disabled={!detail}
+                        className="w-full text-left flex items-start gap-3 min-h-11 md:min-h-0 py-1.5 pl-0 pr-2 rounded-lg hover:bg-muted/20 active:bg-muted/40 transition-colors group disabled:opacity-100"
                       >
                         {/* Icon dot */}
                         <div className="relative z-[1] shrink-0 mt-0.5">
@@ -297,7 +336,7 @@ export function TimelineView() {
                             {entry.subtitle && ` · ${entry.subtitle}`}
                           </div>
                         </div>
-                      </div>
+                      </button>
                     );
                   })}
                 </div>

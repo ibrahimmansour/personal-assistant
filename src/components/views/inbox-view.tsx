@@ -2,11 +2,9 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useProfile } from "@/components/profile-context";
-import { HtmlContent } from "@/components/html-content";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
-import { useSwipe } from "@/hooks/use-swipe";
+import { ItemDetail, type DetailItem } from "@/components/views/item-detail";
 import {
   Mail,
   GitPullRequest,
@@ -14,9 +12,6 @@ import {
   Calendar,
   ListTodo,
   Loader2,
-  ArrowLeft,
-  ExternalLink,
-  Paperclip,
   Inbox,
 } from "lucide-react";
 
@@ -24,17 +19,10 @@ import {
 
 type InboxFilter = "all" | "email" | "prs" | "jira" | "calendar" | "tasks";
 
-interface InboxItem {
-  id: string;
-  type: InboxFilter;
-  title: string;
-  subtitle: string;
-  time: string;
+/** Adds the two list-only flags on top of the shared detail shape. */
+interface InboxItem extends DetailItem {
   read?: boolean;
   priority?: string;
-  /** Type-specific data for detail view */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  data: Record<string, any>;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -50,18 +38,6 @@ function timeAgo(isoStr: string): string {
   if (days === 1) return "yesterday";
   if (days < 7) return `${days}d ago`;
   return new Date(isoStr).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-}
-
-function formatFullDate(isoStr: string): string {
-  return new Date(isoStr).toLocaleDateString("en-US", {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  });
 }
 
 const filterConfig: { id: InboxFilter; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
@@ -89,8 +65,6 @@ export function InboxView() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<InboxFilter>("all");
   const [selectedItem, setSelectedItem] = useState<InboxItem | null>(null);
-  const [detailHtml, setDetailHtml] = useState<string | null>(null);
-  const [detailLoading, setDetailLoading] = useState(false);
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -197,31 +171,6 @@ export function InboxView() {
     return () => clearInterval(interval);
   }, [fetchAll]);
 
-  // Fetch email detail when selecting an email
-  const selectItem = useCallback(async (item: InboxItem) => {
-    setSelectedItem(item);
-    setDetailHtml(null);
-
-    if (item.type === "email" && item.data?.id) {
-      setDetailLoading(true);
-      try {
-        const endpoint = activeProfile === "work"
-          ? `/api/outlook/emails/${encodeURIComponent(item.data.id)}`
-          : `/api/google/emails/${encodeURIComponent(item.data.id)}`;
-        const res = await fetch(endpoint);
-        const data = await res.json();
-        if (data.email) {
-          setDetailHtml(data.email.bodyHtml || data.email.bodyText || item.data.preview || "");
-          // Update the item data with full content
-          setSelectedItem((prev) => prev ? { ...prev, data: { ...prev.data, ...data.email } } : null);
-        }
-      } catch {
-        // keep preview
-      }
-      setDetailLoading(false);
-    }
-  }, [activeProfile]);
-
   const filteredItems = filter === "all" ? items : items.filter((i) => i.type === filter);
   const availableFilters = filterConfig.filter(
     (f) => f.id === "all" || items.some((i) => i.type === f.id)
@@ -232,17 +181,6 @@ export function InboxView() {
   for (const item of items) {
     counts[item.type] = (counts[item.type] || 0) + 1;
   }
-
-  // ─── Mobile gesture: swipe-right anywhere on detail pane returns to list ───
-  // We accept swipes that begin within 60px of the left edge to mimic iOS back.
-  const detailSwipeRef = useSwipe<HTMLDivElement>({
-    disabled: !selectedItem,
-    axis: "horizontal",
-    threshold: 70,
-    velocityThreshold: 0.4,
-    ignoreOnScrollers: true,
-    onSwipeRight: () => setSelectedItem(null),
-  });
 
   return (
     <div className="flex h-full overflow-hidden">
@@ -293,7 +231,7 @@ export function InboxView() {
                 return (
                   <button
                     key={item.id}
-                    onClick={() => selectItem(item)}
+                    onClick={() => setSelectedItem(item)}
                     className={cn(
                       "w-full text-left px-4 py-3 hover:bg-muted/30 transition-colors flex items-start gap-3",
                       isSelected && "bg-primary/5 border-l-2 border-primary",
@@ -332,193 +270,11 @@ export function InboxView() {
       </div>
 
       {/* ─── Right: Detail Pane ──────────────────────────────── */}
+      {/* Deliberately unkeyed: ItemDetail re-fetches on an item change by
+          itself, and remounting it would churn the history entry that backs
+          the pane's back-gesture layer. */}
       {selectedItem && (
-        <div
-          ref={detailSwipeRef}
-          data-swipe-stop
-          className="flex-1 flex flex-col overflow-hidden min-h-0 touch-pan-y"
-        >
-          {/* Detail header */}
-          <div className="shrink-0 flex items-center gap-2 px-4 py-2.5 border-b border-border/50">
-            <button
-              onClick={() => setSelectedItem(null)}
-              className="text-muted-foreground hover:text-foreground p-1 rounded-md hover:bg-muted transition-colors"
-            >
-              <ArrowLeft className="h-4 w-4" />
-            </button>
-            <div className="flex-1 min-w-0">
-              <div className="text-sm font-semibold truncate">{selectedItem.title}</div>
-              <div className="text-xs text-muted-foreground truncate">{selectedItem.subtitle}</div>
-            </div>
-            {selectedItem.data?.webLink && (
-              <a
-                href={selectedItem.data.webLink}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-muted-foreground hover:text-foreground p-1 rounded-md hover:bg-muted transition-colors"
-              >
-                <ExternalLink className="h-4 w-4" />
-              </a>
-            )}
-          </div>
-
-          {/* Detail content */}
-          <ScrollArea className="flex-1 min-h-0 overflow-hidden px-5 py-4">
-            {selectedItem.type === "email" ? (
-              <div className="space-y-3">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2 text-xs">
-                    <span className="text-muted-foreground">From</span>
-                    <span className="font-medium">{selectedItem.data.from}</span>
-                    {selectedItem.data.fromAddress && (
-                      <span className="text-muted-foreground text-[0.625rem]">
-                        &lt;{selectedItem.data.fromAddress}&gt;
-                      </span>
-                    )}
-                  </div>
-                  {selectedItem.data.to?.length > 0 && (
-                    <div className="flex items-center gap-2 text-xs">
-                      <span className="text-muted-foreground">To</span>
-                      <span className="truncate">{selectedItem.data.to.join(", ")}</span>
-                    </div>
-                  )}
-                  <div className="text-[0.625rem] text-muted-foreground">
-                    {formatFullDate(selectedItem.time)}
-                    {selectedItem.data.hasAttachments && (
-                      <span className="inline-flex items-center gap-0.5 ml-2">
-                        <Paperclip className="h-2.5 w-2.5" /> Attachments
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <Separator />
-                {detailLoading ? (
-                  <div className="flex items-center justify-center py-8">
-                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                  </div>
-                ) : (
-                  <HtmlContent
-                    html={detailHtml || selectedItem.data.bodyHtml || ""}
-                    fallbackText={selectedItem.data.bodyText || selectedItem.data.preview || ""}
-                  />
-                )}
-              </div>
-            ) : selectedItem.type === "prs" ? (
-              <div className="space-y-3">
-                <div className="space-y-1.5">
-                  <div className="text-xs text-muted-foreground">
-                    {selectedItem.data.repoShort} #{selectedItem.data.number}
-                  </div>
-                  <div className="flex items-center gap-2 text-xs">
-                    <span className={cn(
-                      "px-2 py-0.5 rounded-full text-[0.625rem] font-medium",
-                      selectedItem.data.status === "open" ? "bg-green-500/10 text-green-600" :
-                      selectedItem.data.status === "merged" ? "bg-purple-500/10 text-purple-600" :
-                      "bg-red-500/10 text-red-600"
-                    )}>
-                      {selectedItem.data.status}
-                    </span>
-                    <span className="text-muted-foreground">{selectedItem.data.headBranch}</span>
-                  </div>
-                  {(selectedItem.data.labels as Array<{ name: string }>)?.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mt-1">
-                      {(selectedItem.data.labels as Array<{ name: string }>).map((l: { name: string }) => (
-                        <span key={l.name} className="px-1.5 py-0.5 bg-muted rounded text-[0.625rem]">
-                          {l.name}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                  <div className="text-[0.625rem] text-muted-foreground mt-1">
-                    {formatFullDate(selectedItem.time)}
-                  </div>
-                </div>
-                <Separator />
-                <div className="text-xs text-muted-foreground flex items-center gap-4">
-                  <span className="text-green-600">+{selectedItem.data.additions ?? 0}</span>
-                  <span className="text-red-600">-{selectedItem.data.deletions ?? 0}</span>
-                  <span>{selectedItem.data.comments ?? 0} comments</span>
-                  <span>{selectedItem.data.files ?? 0} files</span>
-                </div>
-              </div>
-            ) : selectedItem.type === "jira" ? (
-              <div className="space-y-3">
-                <div className="space-y-1.5">
-                  <div className="flex items-center gap-2 text-xs">
-                    <span className="px-2 py-0.5 rounded-full bg-muted text-[0.625rem] font-medium">
-                      {selectedItem.data.status}
-                    </span>
-                    <span className="text-muted-foreground">{selectedItem.data.type}</span>
-                    <span className="text-muted-foreground">·</span>
-                    <span className="text-muted-foreground">{selectedItem.data.priority}</span>
-                  </div>
-                  {selectedItem.data.assignee && (
-                    <div className="text-xs">
-                      <span className="text-muted-foreground">Assignee:</span> {selectedItem.data.assignee}
-                    </div>
-                  )}
-                  <div className="text-[0.625rem] text-muted-foreground">
-                    {formatFullDate(selectedItem.time)}
-                  </div>
-                </div>
-                {selectedItem.data.description && (
-                  <>
-                    <Separator />
-                    <div className="text-sm whitespace-pre-wrap">{selectedItem.data.description}</div>
-                  </>
-                )}
-              </div>
-            ) : selectedItem.type === "calendar" ? (
-              <div className="space-y-3">
-                <div className="space-y-1.5">
-                  <div className="text-xs text-muted-foreground">
-                    {formatFullDate(selectedItem.data.start)}
-                    {selectedItem.data.end && ` – ${new Date(selectedItem.data.end).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}`}
-                  </div>
-                  {selectedItem.data.location && (
-                    <div className="text-xs"><span className="text-muted-foreground">Location:</span> {selectedItem.data.location}</div>
-                  )}
-                  {selectedItem.data.organizer && (
-                    <div className="text-xs"><span className="text-muted-foreground">Organizer:</span> {selectedItem.data.organizer}</div>
-                  )}
-                </div>
-                {selectedItem.data.body && (
-                  <>
-                    <Separator />
-                    <div className="text-sm whitespace-pre-wrap">{selectedItem.data.body}</div>
-                  </>
-                )}
-              </div>
-            ) : selectedItem.type === "tasks" ? (
-              <div className="space-y-3">
-                <div className="space-y-1.5">
-                  <div className="flex items-center gap-2 text-xs">
-                    <span className={cn(
-                      "px-2 py-0.5 rounded-full text-[0.625rem] font-medium",
-                      selectedItem.data.priority === "high" ? "bg-red-500/10 text-red-600" :
-                      selectedItem.data.priority === "medium" ? "bg-amber-500/10 text-amber-600" :
-                      "bg-blue-500/10 text-blue-600"
-                    )}>
-                      {selectedItem.data.priority}
-                    </span>
-                    <span className="text-muted-foreground">
-                      {selectedItem.data.completed ? "Completed" : "Pending"}
-                    </span>
-                  </div>
-                  {selectedItem.data.dueDate && (
-                    <div className="text-xs"><span className="text-muted-foreground">Due:</span> {formatFullDate(selectedItem.data.dueDate)}</div>
-                  )}
-                </div>
-                {selectedItem.data.description && (
-                  <>
-                    <Separator />
-                    <div className="text-sm whitespace-pre-wrap">{selectedItem.data.description}</div>
-                  </>
-                )}
-              </div>
-            ) : null}
-          </ScrollArea>
-        </div>
+        <ItemDetail item={selectedItem} onBack={() => setSelectedItem(null)} />
       )}
     </div>
   );

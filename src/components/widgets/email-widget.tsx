@@ -773,30 +773,54 @@ export function EmailWidget() {
     };
   }, [searchQuery, activeProfile, emails]);
 
+  // Open an email, pulling its full record when the list row has no body.
+  //
+  // The widget lists with `limit=500`, and above 50 both mail routes switch to
+  // a light projection that drops Body entirely — so a row straight out of the
+  // list has no `bodyHtml` at all and the detail view fell back to rendering
+  // the plain-text preview. Anything without a body gets fetched by ID, which
+  // is the only shape that carries the HTML.
+  const selectEmail = useCallback(
+    (id: string) => {
+      setSelectedId(id);
+      setReplyOpen(false);
+      setReplyText("");
+      setSendError(null);
+      setSendSuccess(false);
+
+      const listed = emails.find((e) => e.id === id);
+      const hasBody = !!listed?.bodyHtml || (!!listed?.bodyText && listed.bodyText !== listed.preview);
+      if (hasBody) {
+        setFetchedEmail(null);
+        return;
+      }
+
+      setFetchedEmail(null);
+      setFetchingEmail(true);
+      const endpoint =
+        activeProfile === "private"
+          ? `/api/google/emails/${encodeURIComponent(id)}`
+          : `/api/outlook/emails/${encodeURIComponent(id)}`;
+      fetch(endpoint)
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.email) setFetchedEmail(data.email);
+        })
+        .catch(() => {
+          // Fall back to whatever the list row carried.
+        })
+        .finally(() => setFetchingEmail(false));
+    },
+    [emails, activeProfile]
+  );
+
   // Handle navigation from command palette
   useEffect(() => {
     if (pendingItemId) {
-      setSelectedId(pendingItemId);
-      const exists = emails.some((e) => e.id === pendingItemId);
-      if (!exists) {
-        setFetchingEmail(true);
-        const endpoint =
-          activeProfile === "private"
-            ? `/api/google/emails/${encodeURIComponent(pendingItemId)}`
-            : `/api/outlook/emails/${encodeURIComponent(pendingItemId)}`;
-        fetch(endpoint)
-          .then((res) => res.json())
-          .then((data) => {
-            if (data.email) {
-              setFetchedEmail(data.email);
-            }
-          })
-          .catch(() => {})
-          .finally(() => setFetchingEmail(false));
-      }
+      selectEmail(pendingItemId);
       clearPendingItem();
     }
-  }, [pendingItemId, clearPendingItem, emails, activeProfile]);
+  }, [pendingItemId, clearPendingItem, selectEmail]);
 
   const fetchEmails = useCallback(async () => {
     try {
@@ -871,9 +895,12 @@ export function EmailWidget() {
   useRefreshOnVisible(fetchEmails);
 
   const unreadCount = emails.filter((e) => !e.read).length;
+  // The fetched record wins: it is the one with the body, and the list row it
+  // shadows is the light projection that lacks it.
   const selectedEmail = selectedId
-    ? emails.find((e) => e.id === selectedId) ||
-      (fetchedEmail?.id === selectedId ? fetchedEmail : null)
+    ? (fetchedEmail?.id === selectedId
+        ? fetchedEmail
+        : emails.find((e) => e.id === selectedId) ?? null)
     : null;
 
   // Determine which view we're in for header actions
@@ -1339,7 +1366,7 @@ export function EmailWidget() {
                 return (
                   <button type="button"
                     key={email.id}
-                    onClick={() => setSelectedId(email.id)}
+                    onClick={() => selectEmail(email.id)}
                     className={cn(
                       "w-full text-left p-2.5 rounded-lg hover:bg-muted/50 transition-colors cursor-pointer group",
                       !email.read && "bg-primary/5"

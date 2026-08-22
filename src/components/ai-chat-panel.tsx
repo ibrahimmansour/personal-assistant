@@ -28,6 +28,7 @@ import { useWidgetNav } from "@/components/widget-nav-context";
 import { useWorkspace } from "@/components/workspace-context";
 import { useTheme } from "next-themes";
 import { useEdgeSwipe, useSwipe } from "@/hooks/use-swipe";
+import { useBackHandler } from "@/hooks/use-back-handler";
 
 export function AIChatPanel() {
   const {
@@ -71,6 +72,10 @@ export function AIChatPanel() {
       setTimeout(() => inputRef.current?.focus(), 100);
     }
   }, [isOpen]);
+
+  // Same for the system back gesture — the panel covers the whole screen on a
+  // phone, so back should dismiss it rather than leave the app.
+  useBackHandler(isOpen, close);
 
   // Keyboard shortcut: Escape to close
   useEffect(() => {

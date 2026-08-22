@@ -26,6 +26,7 @@ import {
 } from "@/components/appearance-context";
 import { useWidgetNav } from "@/components/widget-nav-context";
 import { useCommandPalette } from "@/components/command-palette-context";
+import { useBackHandler } from "@/hooks/use-back-handler";
 import { useWorkspace } from "@/components/workspace-context";
 import {
   ListTodo,
@@ -512,6 +513,9 @@ function actionLabel(action: AIAction): string {
 
 export function CommandPalette() {
   const { open, filterWidget, setOpen, closeSearch, clearFilter, collapseAllWidgets } = useCommandPalette();
+
+  // Back dismisses the palette rather than leaving the app.
+  useBackHandler(open, () => setOpen(false));
   const [search, setSearch] = useState("");
   const [widgetData, setWidgetData] = useState<SearchResult[]>([]);
   const [fileResults, setFileResults] = useState<SearchResult[]>([]);
