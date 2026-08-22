@@ -107,8 +107,9 @@ const AVAILABLE_SOURCES: NewsSource[] = [
       science: "https://feeds.bbci.co.uk/news/science_and_environment/rss.xml",
       health: "https://feeds.bbci.co.uk/news/health/rss.xml",
       entertainment: "https://feeds.bbci.co.uk/news/entertainment_and_arts/rss.xml",
+      sports: "https://feeds.bbci.co.uk/sport/rss.xml",
     },
-    genres: ["world", "politics", "business", "technology", "science", "health", "entertainment"],
+    genres: ["world", "politics", "business", "technology", "science", "health", "entertainment", "sports"],
     locale: "en",
   },
   {
@@ -136,20 +137,23 @@ const AVAILABLE_SOURCES: NewsSource[] = [
       business: "https://rss.nytimes.com/services/xml/rss/nyt/Business.xml",
       technology: "https://rss.nytimes.com/services/xml/rss/nyt/Technology.xml",
       science: "https://rss.nytimes.com/services/xml/rss/nyt/Science.xml",
-      sports: "https://rss.nytimes.com/services/xml/rss/nyt/Sports.xml",
+      // NYT retired its general Sports feed (still 200s, but the channel is
+      // empty) and the Soccer one it left behind stopped updating in 2023.
       health: "https://rss.nytimes.com/services/xml/rss/nyt/Health.xml",
       opinion: "https://rss.nytimes.com/services/xml/rss/nyt/Opinion.xml",
     },
-    genres: ["world", "politics", "business", "technology", "science", "sports", "health", "opinion"],
+    genres: ["world", "politics", "business", "technology", "science", "health", "opinion"],
     locale: "en",
   },
   {
-    id: "reuters",
-    name: "Reuters",
+    // Replaces Reuters: reutersagency.com/feed/ 404s and Reuters no longer
+    // publishes a free public RSS feed.
+    id: "npr",
+    name: "NPR",
     feeds: {
-      all: "https://www.reutersagency.com/feed/",
+      all: "https://feeds.npr.org/1001/rss.xml",
     },
-    genres: ["world", "business"],
+    genres: ["world", "politics", "business", "science", "health"],
     locale: "en",
   },
   {
@@ -236,10 +240,12 @@ const AVAILABLE_SOURCES: NewsSource[] = [
     locale: "en",
   },
   {
-    id: "espn",
-    name: "ESPN",
+    // Replaces ESPN: every espn.com/espn/rss/* endpoint now answers 202 with an
+    // empty body (bot-blocked), so the feed silently produced zero articles.
+    id: "skysports",
+    name: "Sky Sports",
     feeds: {
-      sports: "https://www.espn.com/espn/rss/news",
+      sports: "https://www.skysports.com/rss/12040",
     },
     genres: ["sports"],
     locale: "en",
@@ -523,17 +529,30 @@ function parseFeed(xml: string, source: NewsSource, genre: Genre): NewsArticle[]
   return articles;
 }
 
-async function fetchFeed(source: NewsSource, genre: Genre, url: string): Promise<NewsArticle[]> {
+interface FeedResult {
+  articles: NewsArticle[];
+  /** Set when the feed could not be read, or read but yielded nothing. */
+  error?: string;
+}
+
+async function fetchFeed(source: NewsSource, genre: Genre, url: string): Promise<FeedResult> {
   try {
     const res = await fetch(url, {
       headers: { "User-Agent": "Mozilla/5.0 (PersonalAssistant/1.0)" },
-      signal: AbortSignal.timeout(8000),
+      // 8s was too tight for the slower feeds (hnrss in particular), and a
+      // timeout here is indistinguishable from an empty feed downstream.
+      signal: AbortSignal.timeout(12000),
     });
-    if (!res.ok) return [];
+    if (!res.ok) return { articles: [], error: `HTTP ${res.status}` };
     const xml = await res.text();
-    return parseFeed(xml, source, genre);
-  } catch {
-    return [];
+    const articles = parseFeed(xml, source, genre);
+    // A 200 with no parseable items means the feed was retired but the host
+    // still answers — worth reporting rather than showing an empty widget.
+    if (articles.length === 0) return { articles, error: "no items" };
+    return { articles };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "fetch failed";
+    return { articles: [], error: /timeout|abort/i.test(message) ? "timed out" : message };
   }
 }
 
@@ -1010,11 +1029,31 @@ export async function GET(request: NextRequest) {
     return Response.json({
       articles: [],
       settings,
+      failedSources: [],
     });
   }
 
   const results = await Promise.all(tasks.map((t) => fetchFeed(t.source, t.genre, t.url)));
-  const allArticles = results.flat();
+  const allArticles = results.flatMap((r) => r.articles);
+
+  // Report which feeds came back empty so the widget can say *why* it has
+  // nothing to show. One entry per source, not per feed, since a source with
+  // eight per-genre feeds shouldn't produce eight lines of noise.
+  const failuresBySource = new Map<string, { name: string; reason: string }>();
+  results.forEach((r, i) => {
+    if (!r.error) return;
+    const { source } = tasks[i];
+    if (!failuresBySource.has(source.id)) {
+      failuresBySource.set(source.id, { name: source.name, reason: r.error });
+    }
+  });
+  // A source only counts as failed if none of its feeds produced anything.
+  for (const article of allArticles) failuresBySource.delete(article.sourceId);
+  const failedSources = Array.from(failuresBySource.entries()).map(([id, v]) => ({
+    id,
+    name: v.name,
+    reason: v.reason,
+  }));
 
   // De-duplicate by link
   const seen = new Set<string>();
@@ -1042,6 +1081,7 @@ export async function GET(request: NextRequest) {
   return Response.json({
     articles: genreFiltered.slice(0, 60),
     settings,
+    failedSources,
     fetchedAt: new Date().toISOString(),
   });
 }

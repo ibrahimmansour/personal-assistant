@@ -22,6 +22,8 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useRefreshOnVisible } from "@/hooks/use-refresh-on-visible";
+import { useIsMobile } from "@/hooks/use-swipe";
+import { useBackHandler } from "@/hooks/use-back-handler";
 
 // ─── Types (mirror the API) ──────────────────────────────────────────────────
 
@@ -71,6 +73,12 @@ interface NewsSettings {
   genres: Genre[];
 }
 
+interface FailedSource {
+  id: string;
+  name: string;
+  reason: string;
+}
+
 interface FullArticle {
   url: string;
   title: string;
@@ -82,6 +90,22 @@ interface FullArticle {
 }
 
 // ─── Constants & helpers ─────────────────────────────────────────────────────
+
+// Local labels so the genre chips still render when /api/news?action=settings
+// hasn't answered (or failed) — the chips used to disappear entirely in that
+// case even though the articles themselves had loaded.
+const GENRE_LABELS: Record<Genre, string> = {
+  world: "World",
+  politics: "Politics",
+  business: "Business",
+  technology: "Technology",
+  science: "Science",
+  sports: "Sports",
+  entertainment: "Entertainment",
+  health: "Health",
+  opinion: "Opinion",
+  lifestyle: "Lifestyle",
+};
 
 const genreColors: Record<Genre, string> = {
   world: "text-rose-500 bg-rose-500/10 border-rose-500/20",
@@ -127,9 +151,15 @@ function formatFullDate(dateStr: string): string {
 interface ReaderPaneProps {
   article: NewsArticle;
   onClose: () => void;
+  /**
+   * Below `md` the reader replaces the list inside the expanded card instead of
+   * sitting beside it, so it drops the border/rounding that make it read as a
+   * separate pane.
+   */
+  fullWidth?: boolean;
 }
 
-function ReaderPane({ article, onClose }: ReaderPaneProps) {
+function ReaderPane({ article, onClose, fullWidth }: ReaderPaneProps) {
   const [data, setData] = useState<FullArticle | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -141,6 +171,9 @@ function ReaderPane({ article, onClose }: ReaderPaneProps) {
       setLoading(true);
       setError(null);
       setData(null);
+      // ReaderPane isn't remounted between articles in the desktop side panel,
+      // so a hero image that 404'd once would suppress every later one.
+      setImagesFailed(false);
       const res = await fetch(`/api/news?action=article&url=${encodeURIComponent(article.link)}`);
       const json = await res.json();
       if (!res.ok || json.error) {
@@ -157,22 +190,33 @@ function ReaderPane({ article, onClose }: ReaderPaneProps) {
 
   useEffect(() => {
     fetchFull();
-    // Scroll to top when article changes
-    if (scrollRef.current) scrollRef.current.scrollTop = 0;
+    // Scroll to top when the article changes. The ref lands on ScrollArea's
+    // Root, which never scrolls — the Viewport inside it is the scroller, so
+    // setting scrollTop on the root was a no-op and a second article opened
+    // mid-way down the previous one's scroll position.
+    scrollRef.current
+      ?.querySelector<HTMLElement>('[data-slot="scroll-area-viewport"]')
+      ?.scrollTo({ top: 0 });
   }, [fetchFull]);
 
   return (
-    <div className="flex flex-col h-full bg-card border rounded-lg overflow-hidden">
+    <div
+      className={cn(
+        "flex flex-col h-full bg-card overflow-hidden",
+        !fullWidth && "border rounded-lg"
+      )}
+    >
       {/* Reader header */}
-      <div className="flex items-center gap-2 px-3 py-2 border-b bg-muted/30 shrink-0">
+      <div className="flex items-center gap-2 px-1 md:px-3 py-2 border-b bg-muted/30 shrink-0">
         <Button
           variant="ghost"
           size="icon"
-          className="h-11 md:h-7 w-7 shrink-0"
+          className="h-11 w-11 md:h-7 md:w-7 shrink-0"
           onClick={onClose}
           title="Back to list"
+          aria-label="Back to list"
         >
-          <ArrowLeft className="h-3.5 w-3.5" />
+          <ArrowLeft className="h-4 w-4 md:h-3.5 md:w-3.5" />
         </Button>
         <div className="flex items-center gap-2 min-w-0 flex-1">
           <Badge
@@ -196,19 +240,20 @@ function ReaderPane({ article, onClose }: ReaderPaneProps) {
         <Button
           variant="ghost"
           size="icon"
-          className="h-11 md:h-7 w-7 shrink-0"
+          className="h-11 w-11 md:h-7 md:w-7 shrink-0"
           onClick={fetchFull}
           disabled={loading}
           title="Refetch"
+          aria-label="Refetch article"
         >
-          <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
+          <RefreshCw className={cn("h-4 w-4 md:h-3.5 md:w-3.5", loading && "animate-spin")} />
         </Button>
       </div>
 
       {/* Reader body */}
       <ScrollArea className="flex-1 min-h-0" ref={scrollRef}>
         <div
-          className="px-6 py-5 max-w-3xl mx-auto"
+          className="px-1 py-4 md:px-6 md:py-5 max-w-3xl mx-auto"
           dir={article.dir || "ltr"}
         >
           {loading ? (
@@ -224,7 +269,7 @@ function ReaderPane({ article, onClose }: ReaderPaneProps) {
                 href={article.link}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="mt-2 inline-flex items-center gap-1 h-7 px-2.5 text-[0.8rem] rounded-md border border-border bg-background hover:bg-muted hover:text-foreground transition-colors"
+                className="mt-2 inline-flex items-center gap-1 h-11 md:h-7 px-3 md:px-2.5 text-[0.8rem] rounded-md border border-border bg-background hover:bg-muted hover:text-foreground transition-colors"
               >
                 Open in browser
                 <ExternalLink className="h-3 w-3" />
@@ -372,8 +417,9 @@ function SettingsPanel({
                   <button
                     key={g.id}
                     onClick={() => onToggleGenre(g.id)}
+                    aria-pressed={active}
                     className={cn(
-                      "text-xs px-2.5 py-1 rounded-full border transition-colors",
+                      "text-xs px-3 md:px-2.5 min-h-11 md:min-h-0 md:py-1 rounded-full border transition-colors",
                       active
                         ? cn("font-medium", genreColors[g.id])
                         : "border-border text-muted-foreground hover:bg-muted"
@@ -398,7 +444,7 @@ function SettingsPanel({
               {availableSources.map((source) => (
                 <label
                   key={source.id}
-                  className="flex items-center gap-2.5 py-1.5 px-2 rounded-md hover:bg-muted/50 cursor-pointer transition-colors"
+                  className="flex items-center gap-2.5 min-h-11 md:min-h-0 md:py-1.5 px-2 rounded-md hover:bg-muted/50 cursor-pointer transition-colors"
                 >
                   <Checkbox
                     checked={selectedSources.includes(source.id)}
@@ -418,11 +464,11 @@ function SettingsPanel({
       </ScrollArea>
 
       {/* Footer */}
-      <div className="flex items-center justify-between pt-2 border-t">
+      <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t">
         <span className="text-xs text-muted-foreground">
           {selectedSources.length} sources · {selectedGenres.length || "all"} genres
         </span>
-        <div className="flex gap-1.5">
+        <div className="flex gap-1.5 ms-auto">
           <Button
             size="sm"
             variant="ghost"
@@ -454,8 +500,10 @@ function SettingsPanel({
 // ─── Main widget ─────────────────────────────────────────────────────────────
 
 export function NewsWidget() {
+  const isMobile = useIsMobile();
   const [articles, setArticles] = useState<NewsArticle[]>([]);
   const [settings, setSettings] = useState<NewsSettings>({ sources: [], genres: [] });
+  const [failedSources, setFailedSources] = useState<FailedSource[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -475,6 +523,23 @@ export function NewsWidget() {
 
   // ─── Data fetching ────────────────────────────────────────────────────────
 
+  // Thumbnails resolved by the lazy og:image backfill below, keyed by article
+  // link. The five-minute auto-refresh returns the same thumbnail-less RSS rows,
+  // so without replaying this map every backfilled image disappeared on the
+  // first refresh and never came back (the "already fetched" guard suppressed a
+  // second lookup for the rest of the session).
+  const thumbnailCacheRef = useRef<Map<string, string | null>>(new Map());
+
+  const applyCachedThumbnails = useCallback((list: NewsArticle[]): NewsArticle[] => {
+    const cache = thumbnailCacheRef.current;
+    if (cache.size === 0) return list;
+    return list.map((a) => {
+      if (a.thumbnail) return a;
+      const cached = cache.get(a.link);
+      return cached ? { ...a, thumbnail: cached } : a;
+    });
+  }, []);
+
   const fetchNews = useCallback(async () => {
     try {
       setLoading(true);
@@ -482,14 +547,15 @@ export function NewsWidget() {
       const res = await fetch("/api/news");
       if (!res.ok) throw new Error("Failed to fetch news");
       const data = await res.json();
-      setArticles(data.articles || []);
+      setArticles(applyCachedThumbnails(data.articles || []));
+      setFailedSources(data.failedSources || []);
       if (data.settings) setSettings(data.settings);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to fetch news");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [applyCachedThumbnails]);
 
   const fetchSettingsMeta = useCallback(async () => {
     try {
@@ -519,17 +585,18 @@ export function NewsWidget() {
   // Some sources (Al Jazeera Arabic, Filgoal via Google News, sparse RSS feeds)
   // ship articles without thumbnails. We fetch og:image for those in batches
   // after the list loads. Server caches results for 7 days.
-  const thumbnailFetchedRef = useRef<Set<string>>(new Set());
-
   useEffect(() => {
+    const cache = thumbnailCacheRef.current;
     const missing = articles
-      .filter((a) => !a.thumbnail && !thumbnailFetchedRef.current.has(a.link))
+      .filter((a) => !a.thumbnail && !cache.has(a.link))
       .map((a) => a.link);
 
     if (missing.length === 0) return;
 
-    // Mark as in-flight so we don't refetch on re-render
-    for (const link of missing) thumbnailFetchedRef.current.add(link);
+    // Mark as in-flight so we don't refetch on re-render. A null entry means
+    // "looked up, no image" — it still counts as known, so the lookup isn't
+    // repeated, and applyCachedThumbnails treats it as no-op.
+    for (const link of missing) cache.set(link, null);
 
     let cancelled = false;
 
@@ -548,13 +615,23 @@ export function NewsWidget() {
           if (!res.ok) continue;
           const data = (await res.json()) as { results: Record<string, string | null> };
           if (cancelled) return;
-          setArticles((prev) =>
-            prev.map((a) => {
+          for (const [link, thumb] of Object.entries(data.results || {})) {
+            if (thumb) cache.set(link, thumb);
+          }
+          setArticles((prev) => {
+            let changed = false;
+            const next = prev.map((a) => {
               if (a.thumbnail) return a;
               const t = data.results?.[a.link];
-              return t ? { ...a, thumbnail: t } : a;
-            })
-          );
+              if (!t) return a;
+              changed = true;
+              return { ...a, thumbnail: t };
+            });
+            // Returning `prev` unchanged matters: this effect keys off
+            // `articles`, so handing back a fresh array every chunk would
+            // re-run it once per batch for no reason.
+            return changed ? next : prev;
+          });
         } catch {
           // ignore — try next chunk
         }
@@ -635,6 +712,16 @@ export function NewsWidget() {
     }
   }, [activeGenreFilter, genresInResults]);
 
+  // Chip order follows the server's genre list when we have it, but falls back
+  // to the local labels so the filter row survives a failed settings fetch.
+  const genreFilterOptions = useMemo<GenreOption[]>(() => {
+    const source: GenreOption[] =
+      availableGenres.length > 0
+        ? availableGenres
+        : (Object.entries(GENRE_LABELS) as [Genre, string][]).map(([id, label]) => ({ id, label }));
+    return source.filter((g) => genresInResults.includes(g.id));
+  }, [availableGenres, genresInResults]);
+
   const filteredArticles = useMemo(() => {
     if (activeGenreFilter === "all") return articles;
     return articles.filter((a) => a.genre === activeGenreFilter);
@@ -650,6 +737,25 @@ export function NewsWidget() {
     setSelectedArticle(null);
   }, []);
 
+  // Below `md` the reader takes over the whole expanded card rather than
+  // docking beside the list, so it is a dismissible full-viewport surface and
+  // needs its own back layer. It stacks above the WidgetWrapper's layer, so the
+  // first back closes the article and the second closes the widget.
+  const readerIsOverlay = isMobile && !!selectedArticle;
+  useBackHandler(readerIsOverlay, handleCloseReader);
+
+  useEffect(() => {
+    if (!readerIsOverlay) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        handleCloseReader();
+      }
+    };
+    document.addEventListener("keydown", handleKey, true);
+    return () => document.removeEventListener("keydown", handleKey, true);
+  }, [readerIsOverlay, handleCloseReader]);
+
   // ─── Render ───────────────────────────────────────────────────────────────
 
   // Settings view replaces the whole widget body when open (no expand needed)
@@ -663,10 +769,11 @@ export function NewsWidget() {
           <Button
             variant="ghost"
             size="icon"
-            className="h-11 md:h-7 w-7"
+            className="h-11 w-11 md:h-7 md:w-7"
             onClick={handleCancelSettings}
+            aria-label="Close news settings"
           >
-            <X className="h-3.5 w-3.5" />
+            <X className="h-4 w-4 md:h-3.5 md:w-3.5" />
           </Button>
         }
       >
@@ -695,13 +802,17 @@ export function NewsWidget() {
         // When user collapses the widget, clear the selected article
         if (!expanded) setSelectedArticle(null);
       }}
+      // WidgetWrapper renders sidePanel as `hidden md:block`, so on a phone the
+      // reader never appeared at all — tapping an article expanded the widget
+      // and left the same list on screen. Below `md` the reader is rendered as
+      // the widget body instead (see below).
       sidePanel={
-        selectedArticle ? (
+        selectedArticle && !isMobile ? (
           <ReaderPane article={selectedArticle} onClose={handleCloseReader} />
         ) : undefined
       }
       headerAction={
-        <div className="flex items-center gap-0.5">
+        <div className={cn("flex items-center gap-0.5", readerIsOverlay && "hidden")}>
           <button
             onClick={handleOpenSettings}
             className="text-muted-foreground hover:text-foreground transition-colors inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md hover:bg-muted"
@@ -722,32 +833,37 @@ export function NewsWidget() {
         </div>
       }
     >
-      <div className="flex flex-col h-full gap-2">
-        {/* Genre filter chips */}
-        {articles.length > 0 && genresInResults.length > 1 && (
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 -mx-1 px-1 shrink-0 scrollbar-thin">
-            <Filter className="h-3 w-3 text-muted-foreground shrink-0" />
-            <button
-              onClick={() => setActiveGenreFilter("all")}
-              className={cn(
-                "text-[0.6875rem] px-2 py-0.5 rounded-full border transition-colors shrink-0",
-                activeGenreFilter === "all"
-                  ? "bg-primary text-primary-foreground border-primary font-medium"
-                  : "border-border text-muted-foreground hover:bg-muted"
-              )}
-            >
-              All
-            </button>
-            {availableGenres
-              .filter((g) => genresInResults.includes(g.id))
-              .map((g) => {
+      {readerIsOverlay ? (
+        <div className="h-full -mx-1">
+          <ReaderPane article={selectedArticle} onClose={handleCloseReader} fullWidth />
+        </div>
+      ) : (
+        <div className="flex flex-col h-full gap-2">
+          {/* Genre filter chips */}
+          {articles.length > 0 && genresInResults.length > 1 && (
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 -mx-1 px-1 shrink-0 scrollbar-thin">
+              <Filter className="h-3 w-3 text-muted-foreground shrink-0" />
+              <button
+                onClick={() => setActiveGenreFilter("all")}
+                aria-pressed={activeGenreFilter === "all"}
+                className={cn(
+                  "text-[0.6875rem] px-3 md:px-2 min-h-11 md:min-h-0 md:py-0.5 rounded-full border transition-colors shrink-0",
+                  activeGenreFilter === "all"
+                    ? "bg-primary text-primary-foreground border-primary font-medium"
+                    : "border-border text-muted-foreground hover:bg-muted"
+                )}
+              >
+                All
+              </button>
+              {genreFilterOptions.map((g) => {
                 const active = activeGenreFilter === g.id;
                 return (
                   <button
                     key={g.id}
                     onClick={() => setActiveGenreFilter(g.id)}
+                    aria-pressed={active}
                     className={cn(
-                      "text-[0.6875rem] px-2 py-0.5 rounded-full border transition-colors shrink-0",
+                      "text-[0.6875rem] px-3 md:px-2 min-h-11 md:min-h-0 md:py-0.5 rounded-full border transition-colors shrink-0",
                       active
                         ? cn("font-medium", genreColors[g.id])
                         : "border-border text-muted-foreground hover:bg-muted"
@@ -757,51 +873,65 @@ export function NewsWidget() {
                   </button>
                 );
               })}
-          </div>
-        )}
+            </div>
+          )}
 
-        {/* Article list */}
-        {loading && articles.length === 0 ? (
-          <div className="flex items-center justify-center flex-1">
-            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-          </div>
-        ) : error ? (
-          <div className="flex items-center justify-center flex-1">
-            <div className="flex flex-col items-center gap-2 text-muted-foreground text-center">
-              <AlertCircle className="h-5 w-5 text-destructive" />
-              <span className="text-xs">{error}</span>
+          {/* Partial-failure notice — a source that returns nothing used to leave
+              no trace, so a half-empty (or empty) list looked like a broken widget. */}
+          {failedSources.length > 0 && (
+            <div className="flex items-start gap-1.5 shrink-0 text-[0.6875rem] text-muted-foreground">
+              <AlertCircle className="h-3 w-3 mt-0.5 shrink-0 text-amber-500" />
+              <span>
+                No articles from {failedSources.map((f) => f.name).join(", ")} (
+                {failedSources[0].reason}
+                {failedSources.length > 1 ? ", …" : ""})
+              </span>
             </div>
-          </div>
-        ) : filteredArticles.length === 0 ? (
-          <div className="flex flex-col items-center justify-center flex-1 gap-2 text-muted-foreground">
-            <Newspaper className="h-8 w-8 opacity-40" />
-            <p className="text-xs">
-              {articles.length === 0 ? "No articles." : "No articles in this genre."}
-            </p>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-11 md:h-7 text-xs"
-              onClick={handleOpenSettings}
-            >
-              Configure sources
-            </Button>
-          </div>
-        ) : (
-          <ScrollArea className="flex-1 min-h-0 -mx-1">
-            <div className="space-y-0.5 px-1">
-              {filteredArticles.map((article) => (
-                <ArticleListItem
-                  key={article.id}
-                  article={article}
-                  active={selectedArticle?.id === article.id}
-                  onClick={() => handleArticleClick(article)}
-                />
-              ))}
+          )}
+
+          {/* Article list */}
+          {loading && articles.length === 0 ? (
+            <div className="flex items-center justify-center flex-1">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
             </div>
-          </ScrollArea>
-        )}
-      </div>
+          ) : error ? (
+            <div className="flex items-center justify-center flex-1">
+              <div className="flex flex-col items-center gap-2 text-muted-foreground text-center">
+                <AlertCircle className="h-5 w-5 text-destructive" />
+                <span className="text-xs">{error}</span>
+              </div>
+            </div>
+          ) : filteredArticles.length === 0 ? (
+            <div className="flex flex-col items-center justify-center flex-1 gap-2 text-muted-foreground">
+              <Newspaper className="h-8 w-8 opacity-40" />
+              <p className="text-xs">
+                {articles.length === 0 ? "No articles." : "No articles in this genre."}
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-11 md:h-7 text-xs"
+                onClick={handleOpenSettings}
+              >
+                Configure sources
+              </Button>
+            </div>
+          ) : (
+            <ScrollArea className="flex-1 min-h-0 -mx-1">
+              <div className="space-y-0.5 px-1">
+                {filteredArticles.map((article) => (
+                  <ArticleListItem
+                    key={article.id}
+                    article={article}
+                    active={selectedArticle?.id === article.id}
+                    onClick={() => handleArticleClick(article)}
+                  />
+                ))}
+              </div>
+            </ScrollArea>
+          )}
+        </div>
+      )}
     </WidgetWrapper>
   );
 }
@@ -825,10 +955,10 @@ function ArticleListItem({
       onClick={onClick}
       dir={article.dir || "ltr"}
       className={cn(
-        "w-full text-start flex gap-2.5 p-2 rounded-lg transition-colors group",
+        "w-full text-start flex items-center gap-2.5 p-2 min-h-11 md:min-h-0 rounded-lg transition-colors group",
         active
           ? "bg-primary/10 ring-1 ring-primary/30"
-          : "hover:bg-muted/60"
+          : "hover:bg-muted/60 active:bg-muted"
       )}
     >
       {/* Thumbnail */}
