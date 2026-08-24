@@ -219,6 +219,43 @@ A trend name explains nothing on its own, so each is paired with news coverage s
 
 The trend detail pane follows the same rules as the article reader: `sidePanel` on desktop, widget body below `md`, its own `useBackHandler` layer. Opening a coverage link reuses `ReaderPane` (the article is adapted to a `NewsArticle`), so back walks reader → trend → widget.
 
+### Headlines: genre and language axes (news widget)
+
+Headlines mode filters on two independent axes, and they are persisted the same
+way — `~/.personal-assistant/news-sources.json` via `/api/news`
+(`action: "update-settings"`).
+
+**Genre** is per *article*. A source's `genres` list governs which of its feeds
+get fetched, **not** how its articles are classified — clamping classification
+to the advertised list is what made an Al Jazeera technology story impossible to
+tag as technology, so it fell through to `world`. `detectGenre()` therefore
+scores every genre and takes the highest: categories and title count double, the
+link contributes **decoded path segments only** (the raw URL put `news.google.com`
+into the haystack, which scored `technology` for every Google-News proxy
+article). An item with no evidence becomes `general` — an honest bucket rather
+than `sourceGenres[0]`, which turned `world` into a junk drawer. `general` always
+survives the server-side genre drop, otherwise a narrow subscription would empty
+the mixed feeds; the chip row still filters it strictly. Per-genre feeds (BBC
+Sports, Guardian Technology) are never re-classified — detection runs only for a
+source whose sole feed is `all`.
+
+**Language** (`en` | `ar` | `de`) is per *source*, so it gates whole sources
+server-side before any fetch. It replaced the old free-form `locale` hint with a
+typed, required `NewsSource.language`, mirrored onto `NewsArticle.language` and
+rendered as `lang` on the list row and reader (RTL still comes from `dir`).
+Empty selection = all languages, which is also what a settings file written
+before the field resolves to. Unlike the genre chips — a view-level narrowing of
+what already arrived — the language chips edit the *saved* selection and refetch.
+
+Arabic sources are `aljazeera-ar`, `kooora` and `filgoal`. They are not in
+`DEFAULT_SETTINGS.sources`, and kooora/filgoal are sports-only while the default
+genres are not — which is why they looked absent. Ticking a source in the
+settings panel now also ticks its genres when none were selected, so a
+sports-only source can't be enabled into silence. FilGoal has no usable native
+RSS (`/rss*` answers 403, other paths serve an HTML 404), so it goes through a
+Google News search feed whose links are opaque redirects the reader can't
+extract — the reader labels that, as the trends pane does.
+
 ### Service Health (system monitor)
 
 The system monitor's **Services** tab answers "is everything that should be

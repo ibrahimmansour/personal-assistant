@@ -19,6 +19,7 @@ import {
   Clock,
   Trophy,
   Sparkles,
+  Languages as LanguagesIcon,
 } from "lucide-react";
 import { WidgetWrapper } from "@/components/widget-wrapper";
 import { cn } from "@/lib/utils";
@@ -43,7 +44,11 @@ type Genre =
   | "entertainment"
   | "health"
   | "opinion"
-  | "lifestyle";
+  | "lifestyle"
+  /** Mixed-feed items no keyword evidence could classify */
+  | "general";
+
+type Language = "en" | "ar" | "de";
 
 interface NewsArticle {
   id: string;
@@ -57,7 +62,7 @@ interface NewsArticle {
   thumbnail?: string;
   author?: string;
   dir?: "ltr" | "rtl";
-  locale?: string;
+  language?: Language;
 }
 
 interface NewsSource {
@@ -65,7 +70,7 @@ interface NewsSource {
   name: string;
   feeds: Partial<Record<Genre | "all", string>>;
   genres: Genre[];
-  locale?: string;
+  language: Language;
   dir?: "ltr" | "rtl";
 }
 
@@ -74,9 +79,15 @@ interface GenreOption {
   label: string;
 }
 
+interface LanguageOption {
+  id: Language;
+  label: string;
+}
+
 interface NewsSettings {
   sources: string[];
   genres: Genre[];
+  languages?: Language[];
 }
 
 interface FailedSource {
@@ -162,7 +173,15 @@ const GENRE_LABELS: Record<Genre, string> = {
   health: "Health",
   opinion: "Opinion",
   lifestyle: "Lifestyle",
+  general: "General",
 };
+
+/** Fallback so the language chips render before /api/news?action=settings answers. */
+const LANGUAGE_OPTIONS: LanguageOption[] = [
+  { id: "en", label: "English" },
+  { id: "ar", label: "العربية" },
+  { id: "de", label: "Deutsch" },
+];
 
 const genreColors: Record<Genre, string> = {
   world: "text-rose-500 bg-rose-500/10 border-rose-500/20",
@@ -175,7 +194,12 @@ const genreColors: Record<Genre, string> = {
   health: "text-teal-500 bg-teal-500/10 border-teal-500/20",
   opinion: "text-indigo-500 bg-indigo-500/10 border-indigo-500/20",
   lifestyle: "text-fuchsia-500 bg-fuchsia-500/10 border-fuchsia-500/20",
+  general: "text-slate-500 bg-slate-500/10 border-slate-500/20",
 };
+
+function languageLabel(id: Language): string {
+  return LANGUAGE_OPTIONS.find((l) => l.id === id)?.label || id;
+}
 
 function timeAgo(dateStr: string): string {
   const date = new Date(dateStr);
@@ -307,11 +331,21 @@ function ReaderPane({ article, onClose, fullWidth }: ReaderPaneProps) {
         </Button>
       </div>
 
+      {/* Google-News proxy links are opaque redirects the extractor cannot
+          follow — same limitation the trends pane labels for its fallbacks. */}
+      {/news\.google\./.test(article.link) && (
+        <p className="px-2 md:px-3 pt-1.5 text-[0.625rem] text-muted-foreground shrink-0">
+          Via Google News — this link redirects, so the reader may fail. Use
+          &quot;Open original&quot; if it does.
+        </p>
+      )}
+
       {/* Reader body */}
       <ScrollArea className="flex-1 min-h-0" ref={scrollRef}>
         <div
           className="px-1 py-4 md:px-6 md:py-5 max-w-3xl mx-auto"
           dir={article.dir || "ltr"}
+          lang={article.language}
         >
           {loading ? (
             <div className="flex flex-col items-center justify-center py-16 gap-3 text-muted-foreground">
@@ -858,10 +892,13 @@ function TrendDetailPane({
 interface SettingsPanelProps {
   availableSources: NewsSource[];
   availableGenres: GenreOption[];
+  availableLanguages: LanguageOption[];
   selectedSources: string[];
   selectedGenres: Genre[];
+  selectedLanguages: Language[];
   onToggleSource: (id: string) => void;
   onToggleGenre: (id: Genre) => void;
+  onToggleLanguage: (id: Language) => void;
   onSave: () => void;
   onCancel: () => void;
   saving: boolean;
@@ -870,10 +907,13 @@ interface SettingsPanelProps {
 function SettingsPanel({
   availableSources,
   availableGenres,
+  availableLanguages,
   selectedSources,
   selectedGenres,
+  selectedLanguages,
   onToggleSource,
   onToggleGenre,
+  onToggleLanguage,
   onSave,
   onCancel,
   saving,
@@ -912,6 +952,36 @@ function SettingsPanel({
             </p>
           </section>
 
+          {/* Languages */}
+          <section>
+            <h4 className="text-[0.625rem] font-semibold uppercase tracking-wider text-muted-foreground/70 mb-2">
+              Languages
+            </h4>
+            <div className="flex flex-wrap gap-1.5">
+              {availableLanguages.map((l) => {
+                const active = selectedLanguages.includes(l.id);
+                return (
+                  <button
+                    key={l.id}
+                    onClick={() => onToggleLanguage(l.id)}
+                    aria-pressed={active}
+                    className={cn(
+                      "text-xs px-3 md:px-2.5 min-h-11 md:min-h-0 md:py-1 rounded-full border transition-colors",
+                      active
+                        ? "font-medium bg-primary text-primary-foreground border-primary"
+                        : "border-border text-muted-foreground hover:bg-muted"
+                    )}
+                  >
+                    {l.label}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-[0.625rem] text-muted-foreground/60 mt-2">
+              Empty = all languages
+            </p>
+          </section>
+
           {/* Sources */}
           <section>
             <h4 className="text-[0.625rem] font-semibold uppercase tracking-wider text-muted-foreground/70 mb-2">
@@ -928,7 +998,14 @@ function SettingsPanel({
                     onCheckedChange={() => onToggleSource(source.id)}
                   />
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm">{source.name}</div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm truncate" dir={source.dir}>
+                        {source.name}
+                      </span>
+                      <span className="text-[0.5625rem] uppercase tracking-wide text-muted-foreground shrink-0">
+                        {languageLabel(source.language)}
+                      </span>
+                    </div>
                     <div className="text-[0.625rem] text-muted-foreground">
                       {source.genres.join(" · ")}
                     </div>
@@ -943,7 +1020,8 @@ function SettingsPanel({
       {/* Footer */}
       <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t">
         <span className="text-xs text-muted-foreground">
-          {selectedSources.length} sources · {selectedGenres.length || "all"} genres
+          {selectedSources.length} sources · {selectedGenres.length || "all"} genres ·{" "}
+          {selectedLanguages.length || "all"} languages
         </span>
         <div className="flex gap-1.5 ms-auto">
           <Button
@@ -995,8 +1073,10 @@ export function NewsWidget() {
   const [showSettings, setShowSettings] = useState(false);
   const [availableSources, setAvailableSources] = useState<NewsSource[]>([]);
   const [availableGenres, setAvailableGenres] = useState<GenreOption[]>([]);
+  const [availableLanguages, setAvailableLanguages] = useState<LanguageOption[]>(LANGUAGE_OPTIONS);
   const [draftSources, setDraftSources] = useState<string[]>([]);
   const [draftGenres, setDraftGenres] = useState<Genre[]>([]);
+  const [draftLanguages, setDraftLanguages] = useState<Language[]>([]);
   const [savingSettings, setSavingSettings] = useState(false);
 
   // Reader state
@@ -1079,9 +1159,13 @@ export function NewsWidget() {
       const data = await res.json();
       setAvailableSources(data.available || []);
       setAvailableGenres(data.genres || []);
+      if (Array.isArray(data.languages) && data.languages.length > 0) {
+        setAvailableLanguages(data.languages);
+      }
       setSettings(data.selected || { sources: [], genres: [] });
       setDraftSources(data.selected?.sources || []);
       setDraftGenres(data.selected?.genres || []);
+      setDraftLanguages(data.selected?.languages || []);
     } catch {
       // ignore
     }
@@ -1259,12 +1343,14 @@ export function NewsWidget() {
     fetchSettingsMeta(); // refresh available list
     setDraftSources(settings.sources);
     setDraftGenres(settings.genres);
+    setDraftLanguages(settings.languages ?? []);
     setShowSettings(true);
   }, [fetchSettingsMeta, settings]);
 
   const handleCancelSettings = useCallback(() => {
     setDraftSources(settings.sources);
     setDraftGenres(settings.genres);
+    setDraftLanguages(settings.languages ?? []);
     setShowSettings(false);
   }, [settings]);
 
@@ -1278,6 +1364,7 @@ export function NewsWidget() {
           action: "update-settings",
           sources: draftSources,
           genres: draftGenres,
+          languages: draftLanguages,
         }),
       });
       if (!res.ok) throw new Error("Failed to save");
@@ -1290,17 +1377,36 @@ export function NewsWidget() {
     } finally {
       setSavingSettings(false);
     }
-  }, [draftSources, draftGenres, fetchNews]);
+  }, [draftSources, draftGenres, draftLanguages, fetchNews]);
 
-  const toggleDraftSource = useCallback((id: string) => {
-    setDraftSources((prev) =>
-      prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]
-    );
-  }, []);
+  const toggleDraftSource = useCallback(
+    (id: string) => {
+      const adding = !draftSources.includes(id);
+      setDraftSources(
+        adding ? [...draftSources, id] : draftSources.filter((s) => s !== id)
+      );
+      // Toggling a source on also ticks its genres into the draft when none
+      // of them were selected, so a sports-only Arabic source (Kooora,
+      // Filgoal) starts returning articles instead of silently yielding
+      // nothing under a genre subset it can't serve. Visible before Save,
+      // reversible like any other chip.
+      const source = availableSources.find((s) => s.id === id);
+      if (adding && source && !source.genres.some((g) => draftGenres.includes(g))) {
+        setDraftGenres((prev) => Array.from(new Set([...prev, ...source.genres])));
+      }
+    },
+    [draftSources, draftGenres, availableSources]
+  );
 
   const toggleDraftGenre = useCallback((id: Genre) => {
     setDraftGenres((prev) =>
       prev.includes(id) ? prev.filter((g) => g !== id) : [...prev, id]
+    );
+  }, []);
+
+  const toggleDraftLanguage = useCallback((id: Language) => {
+    setDraftLanguages((prev) =>
+      prev.includes(id) ? prev.filter((l) => l !== id) : [...prev, id]
     );
   }, []);
 
@@ -1336,6 +1442,64 @@ export function NewsWidget() {
     return articles.filter((a) => a.genre === activeGenreFilter);
   }, [articles, activeGenreFilter]);
 
+  // ─── Language axis ────────────────────────────────────────────────────────
+  // Unlike the genre chips (a view-level narrowing of what already arrived),
+  // the language chips edit the SAVED selection: language is a per-source
+  // property, so the server gates whole sources with it and persistence comes
+  // for free from news-sources.json.
+
+  const selectedLanguages = useMemo(() => settings.languages ?? [], [settings]);
+
+  // Languages actually offered by the user's current sources — the chip row
+  // only makes sense when more than one is in play.
+  const languagesInPlay = useMemo(() => {
+    const selectedSourcesSet = new Set(settings.sources);
+    const set = new Set<Language>();
+    for (const s of availableSources) {
+      if (selectedSourcesSet.has(s.id)) set.add(s.language);
+    }
+    // Stable display order regardless of source order.
+    return LANGUAGE_OPTIONS.filter((l) => set.has(l.id)).map((l) => l.id);
+  }, [availableSources, settings.sources]);
+
+  const persistLanguages = useCallback(
+    (next: Language[]) => {
+      // Optimistic; the POST response (or a meta refetch on failure) is truth.
+      setSettings((prev) => ({ ...prev, languages: next }));
+      (async () => {
+        try {
+          const res = await fetch("/api/news", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "update-settings",
+              sources: settings.sources,
+              genres: settings.genres,
+              languages: next,
+            }),
+          });
+          if (!res.ok) throw new Error("Failed to save");
+        } catch {
+          await fetchSettingsMeta();
+        } finally {
+          // The server re-filters sources by language — reload the list either way.
+          fetchNews();
+        }
+      })();
+    },
+    [settings.sources, settings.genres, fetchNews, fetchSettingsMeta]
+  );
+
+  const handleToggleSavedLanguage = useCallback(
+    (lang: Language) => {
+      const next = selectedLanguages.includes(lang)
+        ? selectedLanguages.filter((l) => l !== lang)
+        : [...selectedLanguages, lang];
+      persistLanguages(next);
+    },
+    [selectedLanguages, persistLanguages]
+  );
+
   // ─── Reader handlers ──────────────────────────────────────────────────────
 
   const handleArticleClick = useCallback((article: NewsArticle) => {
@@ -1367,7 +1531,7 @@ export function NewsWidget() {
         pubDate: article.pubDate,
         source: article.source || "Coverage",
         sourceId: `x-trends-${trendCountryId}`,
-        genre: "world",
+        genre: "general",
         description: article.description,
         thumbnail: article.thumbnail || undefined,
         dir: trendCountry?.dir || "ltr",
@@ -1443,10 +1607,13 @@ export function NewsWidget() {
         <SettingsPanel
           availableSources={availableSources}
           availableGenres={availableGenres}
+          availableLanguages={availableLanguages}
           selectedSources={draftSources}
           selectedGenres={draftGenres}
+          selectedLanguages={draftLanguages}
           onToggleSource={toggleDraftSource}
           onToggleGenre={toggleDraftGenre}
+          onToggleLanguage={toggleDraftLanguage}
           onSave={handleSaveSettings}
           onCancel={handleCancelSettings}
           saving={savingSettings}
@@ -1681,6 +1848,45 @@ export function NewsWidget() {
             </div>
           )}
 
+          {/* Language filter chips — edits the saved language selection */}
+          {articles.length > 0 && languagesInPlay.length > 1 && (
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 -mx-1 px-1 shrink-0 scrollbar-thin">
+              <LanguagesIcon className="h-3 w-3 text-muted-foreground shrink-0" />
+              <button
+                onClick={() => {
+                  if (selectedLanguages.length > 0) persistLanguages([]);
+                }}
+                aria-pressed={selectedLanguages.length === 0}
+                className={cn(
+                  "text-[0.6875rem] px-3 md:px-2 min-h-11 md:min-h-0 md:py-0.5 rounded-full border transition-colors shrink-0",
+                  selectedLanguages.length === 0
+                    ? "bg-primary text-primary-foreground border-primary font-medium"
+                    : "border-border text-muted-foreground hover:bg-muted"
+                )}
+              >
+                All
+              </button>
+              {languagesInPlay.map((langId) => {
+                const active = selectedLanguages.includes(langId);
+                return (
+                  <button
+                    key={langId}
+                    onClick={() => handleToggleSavedLanguage(langId)}
+                    aria-pressed={active}
+                    className={cn(
+                      "text-[0.6875rem] px-3 md:px-2 min-h-11 md:min-h-0 md:py-0.5 rounded-full border transition-colors shrink-0",
+                      active
+                        ? "bg-primary text-primary-foreground border-primary font-medium"
+                        : "border-border text-muted-foreground hover:bg-muted"
+                    )}
+                  >
+                    {languageLabel(langId)}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
           {/* Partial-failure notice — a source that returns nothing used to leave
               no trace, so a half-empty (or empty) list looked like a broken widget. */}
           {failedSources.length > 0 && (
@@ -1759,6 +1965,7 @@ function ArticleListItem({
     <button
       onClick={onClick}
       dir={article.dir || "ltr"}
+      lang={article.language}
       className={cn(
         "w-full text-start flex items-center gap-2.5 p-2 min-h-11 md:min-h-0 rounded-lg transition-colors group",
         active

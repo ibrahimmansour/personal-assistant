@@ -23,7 +23,9 @@ export type Genre =
   | "entertainment"
   | "health"
   | "opinion"
-  | "lifestyle";
+  | "lifestyle"
+  /** Honest bucket for mixed-feed items with no keyword evidence. */
+  | "general";
 
 const GENRE_LABELS: Record<Genre, string> = {
   world: "World",
@@ -36,6 +38,16 @@ const GENRE_LABELS: Record<Genre, string> = {
   health: "Health",
   opinion: "Opinion",
   lifestyle: "Lifestyle",
+  general: "General",
+};
+
+/** Languages a source can publish in. Empty settings selection = all. */
+export type Language = "en" | "ar" | "de";
+
+const LANGUAGE_LABELS: Record<Language, string> = {
+  en: "English",
+  ar: "العربية",
+  de: "Deutsch",
 };
 
 // ─── Sources ─────────────────────────────────────────────────────────────────
@@ -49,8 +61,8 @@ export interface NewsSource {
   feeds: Partial<Record<Genre | "all", string>>;
   /** Default genres this source covers (used when listing) */
   genres: Genre[];
-  /** Locale hint for sorting/display */
-  locale?: string;
+  /** Publication language — a first-class filter axis, independent of genre */
+  language: Language;
   /** Text direction: "rtl" for Arabic/Hebrew sources */
   dir?: "ltr" | "rtl";
 }
@@ -63,7 +75,7 @@ const AVAILABLE_SOURCES: NewsSource[] = [
       all: "https://www.aljazeera.com/xml/rss/all.xml",
     },
     genres: ["world", "politics", "opinion", "business", "sports"],
-    locale: "en",
+    language: "en",
   },
   {
     id: "aljazeera-ar",
@@ -72,7 +84,7 @@ const AVAILABLE_SOURCES: NewsSource[] = [
       all: "https://www.aljazeera.net/aljazeerarss/a7c186be-1baa-4bd4-9d80-a84db769f779/73d0e1b4-532f-45ef-b135-bfdff8b8cab9",
     },
     genres: ["world", "politics", "opinion", "sports"],
-    locale: "ar",
+    language: "ar",
     dir: "rtl",
   },
   {
@@ -82,18 +94,19 @@ const AVAILABLE_SOURCES: NewsSource[] = [
       sports: "https://feeds.footballco.com/kooora/feed/6p5bsxot7te8yick",
     },
     genres: ["sports"],
-    locale: "ar",
+    language: "ar",
     dir: "rtl",
   },
   {
     id: "filgoal",
     name: "فيلجول",
     feeds: {
-      // Filgoal has no native RSS — use Google News as a proxy
+      // Filgoal has no usable native RSS — /rss* answers 403 and every other
+      // candidate path serves an HTML 404 page. Google News is the only proxy.
       sports: "https://news.google.com/rss/search?q=site:filgoal.com&hl=ar&gl=EG&ceid=EG:ar",
     },
     genres: ["sports"],
-    locale: "ar",
+    language: "ar",
     dir: "rtl",
   },
   {
@@ -110,7 +123,7 @@ const AVAILABLE_SOURCES: NewsSource[] = [
       sports: "https://feeds.bbci.co.uk/sport/rss.xml",
     },
     genres: ["world", "politics", "business", "technology", "science", "health", "entertainment", "sports"],
-    locale: "en",
+    language: "en",
   },
   {
     id: "guardian",
@@ -126,7 +139,7 @@ const AVAILABLE_SOURCES: NewsSource[] = [
       lifestyle: "https://www.theguardian.com/uk/lifeandstyle/rss",
     },
     genres: ["world", "politics", "business", "technology", "science", "sports", "opinion", "lifestyle"],
-    locale: "en",
+    language: "en",
   },
   {
     id: "nytimes",
@@ -143,7 +156,7 @@ const AVAILABLE_SOURCES: NewsSource[] = [
       opinion: "https://rss.nytimes.com/services/xml/rss/nyt/Opinion.xml",
     },
     genres: ["world", "politics", "business", "technology", "science", "health", "opinion"],
-    locale: "en",
+    language: "en",
   },
   {
     // Replaces Reuters: reutersagency.com/feed/ 404s and Reuters no longer
@@ -154,7 +167,7 @@ const AVAILABLE_SOURCES: NewsSource[] = [
       all: "https://feeds.npr.org/1001/rss.xml",
     },
     genres: ["world", "politics", "business", "science", "health"],
-    locale: "en",
+    language: "en",
   },
   {
     id: "techcrunch",
@@ -163,7 +176,7 @@ const AVAILABLE_SOURCES: NewsSource[] = [
       technology: "https://techcrunch.com/feed/",
     },
     genres: ["technology", "business"],
-    locale: "en",
+    language: "en",
   },
   {
     id: "theverge",
@@ -172,7 +185,7 @@ const AVAILABLE_SOURCES: NewsSource[] = [
       technology: "https://www.theverge.com/rss/index.xml",
     },
     genres: ["technology"],
-    locale: "en",
+    language: "en",
   },
   {
     id: "arstechnica",
@@ -181,7 +194,7 @@ const AVAILABLE_SOURCES: NewsSource[] = [
       technology: "https://feeds.arstechnica.com/arstechnica/index",
     },
     genres: ["technology", "science"],
-    locale: "en",
+    language: "en",
   },
   {
     id: "wired",
@@ -190,7 +203,7 @@ const AVAILABLE_SOURCES: NewsSource[] = [
       technology: "https://www.wired.com/feed/rss",
     },
     genres: ["technology", "science", "business"],
-    locale: "en",
+    language: "en",
   },
   {
     id: "hackernews",
@@ -199,7 +212,7 @@ const AVAILABLE_SOURCES: NewsSource[] = [
       technology: "https://hnrss.org/frontpage",
     },
     genres: ["technology"],
-    locale: "en",
+    language: "en",
   },
   {
     id: "lobsters",
@@ -208,7 +221,7 @@ const AVAILABLE_SOURCES: NewsSource[] = [
       technology: "https://lobste.rs/rss",
     },
     genres: ["technology"],
-    locale: "en",
+    language: "en",
   },
   {
     id: "dev-to",
@@ -217,7 +230,7 @@ const AVAILABLE_SOURCES: NewsSource[] = [
       technology: "https://dev.to/feed",
     },
     genres: ["technology"],
-    locale: "en",
+    language: "en",
   },
   {
     id: "bloomberg",
@@ -228,7 +241,7 @@ const AVAILABLE_SOURCES: NewsSource[] = [
       politics: "https://feeds.bloomberg.com/politics/news.rss",
     },
     genres: ["business", "technology", "politics"],
-    locale: "en",
+    language: "en",
   },
   {
     id: "nature",
@@ -237,7 +250,7 @@ const AVAILABLE_SOURCES: NewsSource[] = [
       science: "https://www.nature.com/nature.rss",
     },
     genres: ["science"],
-    locale: "en",
+    language: "en",
   },
   {
     // Replaces ESPN: every espn.com/espn/rss/* endpoint now answers 202 with an
@@ -248,7 +261,7 @@ const AVAILABLE_SOURCES: NewsSource[] = [
       sports: "https://www.skysports.com/rss/12040",
     },
     genres: ["sports"],
-    locale: "en",
+    language: "en",
   },
   {
     id: "spiegel",
@@ -257,7 +270,7 @@ const AVAILABLE_SOURCES: NewsSource[] = [
       all: "https://www.spiegel.de/schlagzeilen/tops/index.rss",
     },
     genres: ["world", "politics", "business", "sports", "science", "entertainment"],
-    locale: "de",
+    language: "de",
   },
   {
     id: "tagesschau",
@@ -266,7 +279,7 @@ const AVAILABLE_SOURCES: NewsSource[] = [
       all: "https://www.tagesschau.de/index~rss2.xml",
     },
     genres: ["world", "politics", "business", "sports"],
-    locale: "de",
+    language: "de",
   },
 ];
 
@@ -275,12 +288,17 @@ const AVAILABLE_SOURCES: NewsSource[] = [
 interface NewsSettings {
   sources: string[];
   genres: Genre[];
+  /** Selected publication languages; empty/missing = all languages. */
+  languages: Language[];
 }
 
 const DEFAULT_SETTINGS: NewsSettings = {
   sources: ["aljazeera", "bbc", "guardian", "techcrunch", "hackernews"],
   genres: ["world", "politics", "technology", "business"],
+  languages: [],
 };
+
+const VALID_LANGUAGES = new Set(Object.keys(LANGUAGE_LABELS) as Language[]);
 
 async function loadSettings(): Promise<NewsSettings> {
   try {
@@ -289,6 +307,11 @@ async function loadSettings(): Promise<NewsSettings> {
     return {
       sources: Array.isArray(parsed.sources) ? parsed.sources : DEFAULT_SETTINGS.sources,
       genres: Array.isArray(parsed.genres) ? parsed.genres : DEFAULT_SETTINGS.genres,
+      // Settings written before the language axis existed have no field —
+      // treat that as "all languages" so old files keep working.
+      languages: Array.isArray(parsed.languages)
+        ? parsed.languages.filter((l: unknown): l is Language => typeof l === "string" && VALID_LANGUAGES.has(l as Language))
+        : DEFAULT_SETTINGS.languages,
     };
   } catch {
     return DEFAULT_SETTINGS;
@@ -315,8 +338,8 @@ interface NewsArticle {
   author?: string;
   /** Text direction inherited from the source */
   dir?: "ltr" | "rtl";
-  /** Locale (e.g. "ar", "en") inherited from the source */
-  locale?: string;
+  /** Publication language inherited from the source */
+  language?: Language;
 }
 
 function decodeEntities(s: string): string {
@@ -354,7 +377,7 @@ function extractAttr(xml: string, tag: string, attr: string): string {
 // we need to figure out each article's genre from its <category> tags,
 // URL path, or title. Keywords cover Arabic, German, French, English.
 
-const GENRE_KEYWORDS: Record<Genre, RegExp> = {
+const GENRE_KEYWORDS: Record<Exclude<Genre, "general">, RegExp> = {
   sports: /\b(sport|sports|sportsworld|football|soccer|tennis|cricket|nba|fifa|olympics?|wrestling|boxing|formula1|f1|premier|champions[- ]?league|world[- ]?cup|player|match|kick[- ]?off|playoff)\b|رياض(ة|ي)|كرة|فريق|مباراة|لاعب|ملعب|بطولة|كأس|دوري|هدف|لاعبين|أهداف|spielmann|wettkampf|fußball|liga|stade|équipe|sportlich|joueur|match/i,
   politics: /\b(politic|political|election|government|minister|parliament|senate|congress|president|prime[- ]?minister|policy|diplomatic|treaty|coup|protest|gaza|israel|palestin|ukrain|russia|geopolit)\b|سياس(ة|ي|ية)|انتخاب|حكومة|وزير|برلمان|رئيس|مفاوضات|اتفاقية|سلطة|احتلال|politik|wahl|regierung|minister|parlament|politique|gouvernement/i,
   business: /\b(business|economy|economic|finance|financial|market|stock|trade|trading|investor|invest|earnings|profit|loss|company|corporat|startup|merger|acquisition|crypto|bitcoin|wall[- ]?street|nasdaq|dow[- ]?jones|inflation|recession)\b|اقتصاد|سوق|بورصة|تجارة|استثمار|شركة|مال(ي|ية)|مصرف|أعمال|أرباح|wirtschaft|finanz|markt|économie|finance|entreprise/i,
@@ -367,33 +390,65 @@ const GENRE_KEYWORDS: Record<Genre, RegExp> = {
   world: /\b(world|international|global|foreign|abroad|un[- ]general|united[- ]?nations|nato|asia|africa|europe|middle[- ]?east|americas?)\b|عالم|دولي|عالمي|welt|international|monde|étranger/i,
 };
 
+/** The same patterns with the /g flag, so match() counts every hit. */
+const GENRE_KEYWORDS_GLOBAL = Object.fromEntries(
+  Object.entries(GENRE_KEYWORDS).map(([g, re]) => [g, new RegExp(re.source, "gi")])
+) as Record<Exclude<Genre, "general">, RegExp>;
+
+function countMatches(text: string, re: RegExp): number {
+  if (!text) return 0;
+  return (text.match(re) || []).length;
+}
+
+/**
+ * URL paths carry real genre signal ("/sport/football/…") but hosts and query
+ * strings are pure noise ("news.google.com" scoring technology for every
+ * Google-News proxy article). Match only decoded path segments; the segment
+ * split also keeps \b patterns from matching mid-word inside slugs.
+ */
+function linkPathText(link: string): string {
+  try {
+    const url = new URL(link);
+    return decodeURIComponent(url.pathname)
+      .split(/[^a-z0-9\u0600-\u06FF]+/i)
+      .filter(Boolean)
+      .join(" ");
+  } catch {
+    return "";
+  }
+}
+
 function detectGenre({
   categories,
   link,
   title,
-  sourceGenres,
 }: {
   categories: string[];
   link: string;
   title: string;
-  sourceGenres: Genre[];
 }): Genre | null {
-  const haystack = [
-    ...categories,
-    link.toLowerCase(),
-    title,
-  ].join(" \n ");
+  // Categories and the title are what a reader would judge the story by, so
+  // they count double; the URL path is corroborating evidence only. The raw
+  // link (host + query) is deliberately not part of any haystack — that is
+  // what let "google" in proxy URLs tag sports stories as technology.
+  const textHaystack = [...categories, title].join(" \n ");
+  const pathHaystack = linkPathText(link);
 
-  // Score each genre by counting keyword hits. Sports/politics/business win
+  // Score each genre by weighted keyword hits. Sports/politics/business win
   // over the broad "world" tag when both match.
   const scores: Partial<Record<Genre, number>> = {};
-  for (const [g, re] of Object.entries(GENRE_KEYWORDS) as [Genre, RegExp][]) {
-    const matches = haystack.match(re);
-    if (matches) scores[g] = matches.length;
+  for (const [g, re] of Object.entries(GENRE_KEYWORDS_GLOBAL) as [
+    Exclude<Genre, "general">,
+    RegExp,
+  ][]) {
+    const score =
+      2 * countMatches(textHaystack, re) + countMatches(pathHaystack, re);
+    if (score > 0) scores[g] = score;
   }
 
-  // Prefer specific genres over "world" when there's a tie or "world" wins
-  // only marginally. The order here matches typical RSS specificity.
+  // Tie-break order matches typical RSS specificity: specific genres beat
+  // "world", so a story tagged ['World news', 'Football'] is bucketed as
+  // sports rather than world, which matches user intent for filter chips.
   const priority: Genre[] = [
     "sports",
     "technology",
@@ -407,20 +462,21 @@ function detectGenre({
     "world",
   ];
 
-  // Restrict to genres the source actually advertises so we don't tag a
-  // BBC article as "lifestyle" when the source never claimed that.
-  const allowed = new Set(sourceGenres);
-
-  // Walk the priority list and return the first specific genre with any
-  // matches. "world" is only chosen if no specific genre matched. This
-  // means a story tagged ['World news', 'Football'] gets bucketed as
-  // sports rather than world, which matches user intent for filter chips.
+  // Any genre the evidence supports is allowed — the source's advertised list
+  // governs feed selection, not classification, so an Al Jazeera technology
+  // story can be tagged technology even though the source only advertises
+  // world/politics/opinion/business/sports.
+  let best: Genre | null = null;
+  let bestScore = 0;
   for (const g of priority) {
-    if (!allowed.has(g)) continue;
-    if ((scores[g] ?? 0) > 0) return g;
+    const s = scores[g] ?? 0;
+    if (s > bestScore) {
+      best = g;
+      bestScore = s;
+    }
   }
 
-  return null;
+  return best;
 }
 
 function parseFeed(xml: string, source: NewsSource, genre: Genre): NewsArticle[] {
@@ -493,19 +549,19 @@ function parseFeed(xml: string, source: NewsSource, genre: Genre): NewsArticle[]
 
     // Determine the article's genre. For per-genre feeds (e.g. BBC Sports),
     // the feed itself dictates the genre. For mixed feeds we look at
-    // <category> tags, URL path, and (as a last resort) the title.
+    // <category> tags, URL path segments, and the title; when nothing scores,
+    // the item lands in the neutral "general" bucket instead of being
+    // laundered into the source's first advertised genre.
     let articleGenre = genre;
     if (useDetection) {
       const categories = Array.from(item.matchAll(/<category[^>]*>(?:<!\[CDATA\[)?([^<\]]+)/gi))
         .map((m) => m[1].trim())
         .filter(Boolean);
-      const detected = detectGenre({
-        categories,
-        link,
-        title,
-        sourceGenres: source.genres,
-      });
-      if (detected) articleGenre = detected;
+      const detected = detectGenre({ categories, link, title });
+      // A per-genre label is only trustworthy for real per-genre feeds; for
+      // an "all" feed the passed-in label is just the source's first genre,
+      // so unclassifiable items become "general".
+      articleGenre = detected ?? "general";
     }
 
     if (title && link) {
@@ -521,7 +577,7 @@ function parseFeed(xml: string, source: NewsSource, genre: Genre): NewsArticle[]
         thumbnail: thumbnail || undefined,
         author: author || undefined,
         dir: source.dir,
-        locale: source.locale,
+        language: source.language,
       });
     }
   }
@@ -955,12 +1011,13 @@ async function fetchThumbnail(url: string): Promise<string | null> {
 export async function GET(request: NextRequest) {
   const action = request.nextUrl.searchParams.get("action");
 
-  // Return available sources, genres, and the user's selection
+  // Return available sources, genres, languages, and the user's selection
   if (action === "settings") {
     const settings = await loadSettings();
     return Response.json({
       available: AVAILABLE_SOURCES,
       genres: Object.entries(GENRE_LABELS).map(([id, label]) => ({ id, label })),
+      languages: Object.entries(LANGUAGE_LABELS).map(([id, label]) => ({ id, label })),
       selected: settings,
     });
   }
@@ -1000,12 +1057,16 @@ export async function GET(request: NextRequest) {
 
   // Default: list articles from selected sources & genres
   const settings = await loadSettings();
-  const selectedSources = AVAILABLE_SOURCES.filter((s) => settings.sources.includes(s.id));
   const selectedGenreSet = new Set(settings.genres);
+  // Language is a per-source property, so the filter gates whole sources.
+  // Empty selection = all languages (also what old settings files resolve to).
+  const selectedLanguageSet = new Set(settings.languages);
 
   // Build list of (source, genre, url) tuples to fetch
   const tasks: Array<{ source: NewsSource; genre: Genre; url: string }> = [];
-  for (const source of selectedSources) {
+  for (const source of AVAILABLE_SOURCES) {
+    if (!(settings.sources.includes(source.id))) continue;
+    if (selectedLanguageSet.size > 0 && !selectedLanguageSet.has(source.language)) continue;
     // If source has per-genre feeds, fetch only the ones in selectedGenreSet
     const perGenreFeeds = Object.entries(source.feeds).filter(([k]) => k !== "all") as [Genre, string][];
     if (perGenreFeeds.length > 0) {
@@ -1019,7 +1080,8 @@ export async function GET(request: NextRequest) {
       const hasMatchingGenre =
         selectedGenreSet.size === 0 || source.genres.some((g) => selectedGenreSet.has(g));
       if (hasMatchingGenre) {
-        // Tag the article with the source's primary genre
+        // The genre here is only a fallback for per-genre-labelled feeds;
+        // parseFeed re-classifies every item of an "all" feed.
         tasks.push({ source, genre: source.genres[0], url: source.feeds.all });
       }
     }
@@ -1065,11 +1127,13 @@ export async function GET(request: NextRequest) {
 
   // After per-article genre detection, drop articles whose detected genre
   // is not in the user's selection. This is what makes the genre filter
-  // actually filter when "all" feeds are involved.
+  // actually filter when "all" feeds are involved. "general" items always
+  // pass: they carry no genre evidence either way, and dropping them would
+  // empty mixed feeds for anyone with a narrow subscription.
   const genreFiltered =
     selectedGenreSet.size === 0
       ? deduped
-      : deduped.filter((a) => selectedGenreSet.has(a.genre));
+      : deduped.filter((a) => selectedGenreSet.has(a.genre) || a.genre === "general");
 
   // Sort by date (newest first)
   genreFiltered.sort((a, b) => {
@@ -1096,10 +1160,12 @@ export async function POST(request: NextRequest) {
 
     const sources = (body.sources as string[] | undefined) ?? [];
     const genres = (body.genres as Genre[] | undefined) ?? [];
+    const languages = (body.languages as Language[] | undefined) ?? [];
 
     const filtered: NewsSettings = {
       sources: sources.filter((id) => validSourceIds.has(id)),
       genres: genres.filter((g) => validGenres.has(g)),
+      languages: languages.filter((l) => VALID_LANGUAGES.has(l)),
     };
 
     await saveSettings(filtered);
