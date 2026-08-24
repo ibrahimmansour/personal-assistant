@@ -76,7 +76,7 @@ personal-assistant/
 │   │       ├── database/          # Postgres connections + queries (pg)
 │   │       ├── vps/               # Remote host management over ssh
 │   │       ├── system/            # CPU/mem/disk/swap metrics
-│   │       ├── news/, weather/, browser/, email-rules/
+│   │       ├── news/, news/trends/, weather/, browser/, email-rules/
 │   │       ├── update/            # Self-update check
 │   │       └── proxy/
 │   ├── components/
@@ -206,6 +206,16 @@ Any new public route (OAuth callbacks, webhooks, health checks) must be allow-li
 
 ### Claude Code Sessions
 The `claude-code` widget drives the local `claude` CLI through `/api/claude-sessions/*` (`route` list, `messages`, `meta`, `run`, `schedules`, `upload`). Sessions run in **interactive** (PTY-backed, reaped after ~10 idle minutes) or **background** mode. `src/lib/claude-scheduler.ts` starts a one-minute ticker on first import and runs due entries from `~/.personal-assistant/claude-schedules.json` via `claude --resume <sid> --dangerously-skip-permissions -p <prompt>`, then advances `nextRunAt` or disables once-only schedules.
+
+### X Trends (news widget)
+
+The news widget has two modes, toggled by chips at the top of its body and persisted in `localStorage` (`news-widget-mode`): **Headlines** (the RSS list) and **X Trends** (Egypt / Germany / United States, `news-widget-trend-country`). Trends are served by `/api/news/trends` over `src/lib/x-trends.ts`.
+
+X has no free trends endpoint, so the list is **scraped from trends24.in**, whose per-country page carries a 24-slot hourly timeline. Parsing every snapshot — not just the newest — is what supplies the detail view: rank, peak rank, hours-on-list, "new this hour", and the per-hour rank history the sparkline draws, all from one request. `TRENDS_TTL_MS` is 15 min on disk (`~/.personal-assistant/x-trends-cache/`).
+
+A trend name explains nothing on its own, so each is paired with news coverage searched in the country's own market: **Bing News RSS first** (it returns a real snippet, the publisher's *direct* URL — so the widget's reader can extract the article — and a thumbnail), **Google News RSS as fallback** (better long-tail coverage, but an opaque redirect link the in-app reader can't extract, which is why the pane labels it). Cached 30 min per (country, trend) in `~/.personal-assistant/x-trends-context-cache/`. Contexts for the top 12 trends are backfilled in chunks of 4 via `POST {action:"contexts"}`, mirroring the widget's existing thumbnail backfill; the rest resolve on demand when a trend is opened. Keep that lazy — one context is one outbound search.
+
+The trend detail pane follows the same rules as the article reader: `sidePanel` on desktop, widget body below `md`, its own `useBackHandler` layer. Opening a coverage link reuses `ReaderPane` (the article is adapted to a `NewsArticle`), so back walks reader → trend → widget.
 
 ### External Service Integration Pattern
 - All external API calls go through Next.js API routes — never from the client

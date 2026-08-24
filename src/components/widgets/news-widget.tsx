@@ -14,6 +14,11 @@ import {
   Filter,
   Calendar as CalendarIcon,
   User as UserIcon,
+  TrendingUp,
+  Flame,
+  Clock,
+  Trophy,
+  Sparkles,
 } from "lucide-react";
 import { WidgetWrapper } from "@/components/widget-wrapper";
 import { cn } from "@/lib/utils";
@@ -89,6 +94,57 @@ interface FullArticle {
   content: string;
   fetchedAt: number;
 }
+
+// ─── X trends types (mirror /api/news/trends) ────────────────────────────────
+
+interface TrendCountryOption {
+  id: string;
+  name: string;
+  flag: string;
+  dir: "ltr" | "rtl";
+}
+
+interface XTrend {
+  id: string;
+  name: string;
+  url: string;
+  rank: number;
+  peakRank: number;
+  hoursOnList: number;
+  positions: (number | null)[];
+  isNew: boolean;
+  volume: string | null;
+  countryId: string;
+}
+
+interface TrendArticle {
+  title: string;
+  link: string;
+  source: string;
+  pubDate: string;
+  description: string;
+  thumbnail: string | null;
+}
+
+interface TrendContext {
+  trend: string;
+  summary: string;
+  articles: TrendArticle[];
+  provider: "bing" | "google" | "none";
+  fetchedAt: number;
+}
+
+type NewsMode = "news" | "trends";
+
+const MODE_STORAGE_KEY = "news-widget-mode";
+const TREND_COUNTRY_STORAGE_KEY = "news-widget-trend-country";
+
+/** Fallback so the country chips render before /api/news/trends answers. */
+const FALLBACK_COUNTRIES: TrendCountryOption[] = [
+  { id: "eg", name: "Egypt", flag: "🇪🇬", dir: "rtl" },
+  { id: "de", name: "Germany", flag: "🇩🇪", dir: "ltr" },
+  { id: "us", name: "United States", flag: "🇺🇸", dir: "ltr" },
+];
 
 // ─── Constants & helpers ─────────────────────────────────────────────────────
 
@@ -377,6 +433,426 @@ function ReaderPane({ article, onClose, fullWidth }: ReaderPaneProps) {
   );
 }
 
+// ─── X trends: rank history sparkline ────────────────────────────────────────
+// Ranks are inverted (#1 at the top) and gaps — hours the trend was off the
+// list — break the line rather than being drawn through.
+
+function TrendSparkline({
+  positions,
+  className,
+  height = 24,
+}: {
+  positions: (number | null)[];
+  className?: string;
+  height?: number;
+}) {
+  const width = 100;
+  const segments = useMemo(() => {
+    const ranks = positions.filter((p): p is number => p !== null);
+    if (ranks.length < 2) return [];
+    const worst = Math.max(...ranks, 2);
+    const stepX = positions.length > 1 ? width / (positions.length - 1) : width;
+    const out: string[] = [];
+    let current: string[] = [];
+    positions.forEach((p, i) => {
+      if (p === null) {
+        if (current.length > 1) out.push(current.join(" "));
+        current = [];
+        return;
+      }
+      const y = ((p - 1) / (worst - 1)) * (height - 2) + 1;
+      current.push(`${(i * stepX).toFixed(1)},${y.toFixed(1)}`);
+    });
+    if (current.length > 1) out.push(current.join(" "));
+    return out;
+  }, [positions, height]);
+
+  if (segments.length === 0) return null;
+
+  return (
+    <svg
+      viewBox={`0 0 ${width} ${height}`}
+      preserveAspectRatio="none"
+      className={cn("text-primary/70", className)}
+      aria-hidden
+    >
+      {segments.map((points, i) => (
+        <polyline
+          key={i}
+          points={points}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          vectorEffect="non-scaling-stroke"
+        />
+      ))}
+    </svg>
+  );
+}
+
+// ─── X trends: list row ──────────────────────────────────────────────────────
+
+function TrendListItem({
+  trend,
+  context,
+  dir,
+  active,
+  onClick,
+}: {
+  trend: XTrend;
+  context?: TrendContext;
+  dir: "ltr" | "rtl";
+  active: boolean;
+  onClick: () => void;
+}) {
+  const headline = context?.articles[0]?.title || "";
+  const summary = context?.summary || "";
+
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        "w-full text-start flex items-start gap-2.5 p-2 min-h-11 md:min-h-0 rounded-lg transition-colors group",
+        active ? "bg-primary/10 ring-1 ring-primary/30" : "hover:bg-muted/60 active:bg-muted"
+      )}
+    >
+      <span
+        className={cn(
+          "shrink-0 w-7 text-center text-xs font-semibold tabular-nums pt-0.5",
+          trend.rank <= 3 ? "text-primary" : "text-muted-foreground"
+        )}
+        aria-hidden
+      >
+        {trend.rank}
+      </span>
+
+      <span className="flex-1 min-w-0 flex flex-col gap-1">
+        <span
+          className={cn(
+            "text-sm font-medium leading-snug line-clamp-2 transition-colors",
+            active ? "text-primary" : "group-hover:text-primary"
+          )}
+          dir={dir}
+        >
+          {trend.name}
+        </span>
+
+        {(headline || summary) && (
+          <span className="text-[0.6875rem] text-muted-foreground line-clamp-2 leading-snug" dir={dir}>
+            {summary || headline}
+          </span>
+        )}
+
+        <span className="flex items-center gap-1.5 flex-wrap" dir="ltr">
+          {trend.isNew && (
+            <Badge
+              variant="outline"
+              className="text-[0.5625rem] px-1 py-0 h-3.5 font-normal text-emerald-500 bg-emerald-500/10 border-emerald-500/20"
+            >
+              new
+            </Badge>
+          )}
+          <span className="text-[0.625rem] text-muted-foreground">
+            {trend.hoursOnList}h on list
+          </span>
+          <span className="text-[0.625rem] text-muted-foreground/60">·</span>
+          <span className="text-[0.625rem] text-muted-foreground">peak #{trend.peakRank}</span>
+          {trend.volume && (
+            <>
+              <span className="text-[0.625rem] text-muted-foreground/60">·</span>
+              <span className="text-[0.625rem] text-muted-foreground">{trend.volume}</span>
+            </>
+          )}
+        </span>
+      </span>
+
+      <TrendSparkline positions={trend.positions} className="w-14 h-6 shrink-0 mt-0.5" />
+    </button>
+  );
+}
+
+// ─── X trends: detail pane ───────────────────────────────────────────────────
+
+interface TrendDetailPaneProps {
+  trend: XTrend;
+  country: TrendCountryOption;
+  /** Context already fetched for the list, so the pane opens populated. */
+  seedContext?: TrendContext;
+  onClose: () => void;
+  onOpenArticle: (article: TrendArticle) => void;
+  fullWidth?: boolean;
+}
+
+function TrendDetailPane({
+  trend,
+  country,
+  seedContext,
+  onClose,
+  onOpenArticle,
+  fullWidth,
+}: TrendDetailPaneProps) {
+  const [context, setContext] = useState<TrendContext | null>(seedContext ?? null);
+  const [loading, setLoading] = useState(!seedContext);
+  const [error, setError] = useState<string | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  const fetchContext = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const res = await fetch(
+        `/api/news/trends?action=context&country=${encodeURIComponent(trend.countryId)}&trend=${encodeURIComponent(trend.name)}`
+      );
+      const json = await res.json();
+      if (!res.ok || json.error) {
+        setError(json.error || `Failed (${res.status})`);
+        return;
+      }
+      setContext(json as TrendContext);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load coverage");
+    } finally {
+      setLoading(false);
+    }
+  }, [trend.countryId, trend.name]);
+
+  useEffect(() => {
+    // The pane is not remounted between trends in the desktop side panel, so
+    // seed state has to be reapplied per trend rather than only at mount.
+    setContext(seedContext ?? null);
+    setError(null);
+    if (!seedContext) fetchContext();
+    else setLoading(false);
+    scrollRef.current
+      ?.querySelector<HTMLElement>('[data-slot="scroll-area-viewport"]')
+      ?.scrollTo({ top: 0 });
+    // `seedContext` is derived from the same trend; keying off the trend id
+    // keeps a late list backfill from wiping a freshly fetched context.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trend.id]);
+
+  const firstSeenIdx = trend.positions.findIndex((p) => p !== null);
+  const hoursAgoFirstSeen =
+    firstSeenIdx === -1 ? 0 : trend.positions.length - 1 - firstSeenIdx;
+
+  return (
+    <div
+      className={cn(
+        "flex flex-col h-full bg-card overflow-hidden",
+        !fullWidth && "border rounded-lg"
+      )}
+    >
+      {/* Header */}
+      <div className="flex items-center gap-2 px-1 md:px-3 py-2 border-b bg-muted/30 shrink-0">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-11 w-11 md:h-7 md:w-7 shrink-0"
+          onClick={onClose}
+          title="Back to trends"
+          aria-label="Back to trends"
+        >
+          <ArrowLeft className="h-4 w-4 md:h-3.5 md:w-3.5" />
+        </Button>
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          <Badge
+            variant="outline"
+            className="text-[0.625rem] h-5 px-1.5 font-normal text-sky-500 bg-sky-500/10 border-sky-500/20 shrink-0"
+          >
+            #{trend.rank}
+          </Badge>
+          <span className="text-xs font-medium truncate">
+            {country.flag} {country.name}
+          </span>
+        </div>
+        <a
+          href={trend.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-muted-foreground hover:text-foreground inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md hover:bg-muted shrink-0"
+          title="Open on X"
+          aria-label="Open on X"
+        >
+          <ExternalLink className="h-3.5 w-3.5" />
+        </a>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-11 w-11 md:h-7 md:w-7 shrink-0"
+          onClick={fetchContext}
+          disabled={loading}
+          title="Refetch coverage"
+          aria-label="Refetch coverage"
+        >
+          <RefreshCw className={cn("h-4 w-4 md:h-3.5 md:w-3.5", loading && "animate-spin")} />
+        </Button>
+      </div>
+
+      {/* Body */}
+      <ScrollArea className="flex-1 min-h-0" ref={scrollRef}>
+        <div className="px-1 py-4 md:px-6 md:py-5 max-w-3xl mx-auto space-y-5">
+          <header className="space-y-3 pb-4 border-b">
+            <h1
+              className="text-2xl md:text-3xl font-bold leading-tight tracking-tight"
+              dir={country.dir}
+            >
+              {trend.name}
+            </h1>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground" dir="ltr">
+              <span className="flex items-center gap-1.5">
+                <Flame className="h-3 w-3" />
+                Rank #{trend.rank}
+              </span>
+              <span className="flex items-center gap-1.5">
+                <Trophy className="h-3 w-3" />
+                Peak #{trend.peakRank}
+              </span>
+              <span className="flex items-center gap-1.5">
+                <Clock className="h-3 w-3" />
+                {trend.hoursOnList}h on list
+              </span>
+              {firstSeenIdx !== -1 && (
+                <span className="flex items-center gap-1.5">
+                  <Sparkles className="h-3 w-3" />
+                  {hoursAgoFirstSeen === 0
+                    ? "first seen this hour"
+                    : `first seen ${hoursAgoFirstSeen}h ago`}
+                </span>
+              )}
+              {trend.volume && <span>{trend.volume}</span>}
+            </div>
+          </header>
+
+          {/* Rank history over the last 24 hourly snapshots */}
+          {trend.positions.length > 1 && (
+            <section className="space-y-1.5">
+              <h2 className="text-xs font-semibold text-muted-foreground">
+                Rank over the last {trend.positions.length}h
+              </h2>
+              <div className="rounded-lg border bg-muted/20 p-3">
+                <TrendSparkline positions={trend.positions} height={40} className="w-full h-16" />
+                <div className="flex items-center justify-between text-[0.625rem] text-muted-foreground pt-1" dir="ltr">
+                  <span>{trend.positions.length}h ago</span>
+                  <span>now</span>
+                </div>
+              </div>
+            </section>
+          )}
+
+          {/* News coverage — the "what is this actually about" */}
+          <section className="space-y-2">
+            <h2 className="text-xs font-semibold text-muted-foreground">
+              Why it&apos;s trending
+            </h2>
+
+            {loading ? (
+              <div className="flex flex-col items-center justify-center py-10 gap-3 text-muted-foreground">
+                <Loader2 className="h-5 w-5 animate-spin" />
+                <span className="text-sm">Looking for coverage…</span>
+              </div>
+            ) : error ? (
+              <div className="flex flex-col items-center justify-center py-10 gap-2 text-center">
+                <AlertCircle className="h-5 w-5 text-destructive" />
+                <p className="text-xs text-muted-foreground max-w-md">{error}</p>
+              </div>
+            ) : context && context.articles.length > 0 ? (
+              <>
+                {context.summary && (
+                  <p className="text-[0.9375rem] leading-7 text-foreground/90" dir={country.dir}>
+                    {context.summary}
+                  </p>
+                )}
+                <div className="space-y-1">
+                  {context.articles.map((article) => (
+                    <div key={article.link} className="flex items-start gap-1">
+                      <button
+                        onClick={() => onOpenArticle(article)}
+                        className="flex-1 min-w-0 text-start flex items-start gap-2.5 p-2 min-h-11 md:min-h-0 rounded-lg hover:bg-muted/60 active:bg-muted transition-colors group"
+                        dir={country.dir}
+                      >
+                        {article.thumbnail ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={article.thumbnail}
+                            alt=""
+                            className="w-12 h-12 rounded-md object-cover shrink-0 bg-muted"
+                            loading="lazy"
+                          />
+                        ) : null}
+                        <span className="flex-1 min-w-0 flex flex-col gap-1">
+                          <span className="text-sm font-medium leading-snug line-clamp-2 group-hover:text-primary transition-colors">
+                            {article.title}
+                          </span>
+                          {article.description && (
+                            <span className="text-[0.6875rem] text-muted-foreground line-clamp-2 leading-snug">
+                              {article.description}
+                            </span>
+                          )}
+                          <span className="flex items-center gap-1.5 flex-wrap" dir="ltr">
+                            {article.source && (
+                              <span className="text-[0.625rem] text-muted-foreground truncate">
+                                {article.source}
+                              </span>
+                            )}
+                            {article.pubDate && (
+                              <>
+                                <span className="text-[0.625rem] text-muted-foreground/60">·</span>
+                                <span className="text-[0.625rem] text-muted-foreground">
+                                  {timeAgo(article.pubDate)}
+                                </span>
+                              </>
+                            )}
+                          </span>
+                        </span>
+                      </button>
+                      {/* Sibling, not nested: a button inside a button is invalid. */}
+                      <a
+                        href={article.link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-muted-foreground hover:text-foreground inline-flex items-center justify-center h-11 w-11 md:h-8 md:w-8 rounded-md hover:bg-muted shrink-0"
+                        title="Open original"
+                        aria-label={`Open "${article.title}" in a new tab`}
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" />
+                      </a>
+                    </div>
+                  ))}
+                </div>
+                {context.provider === "google" && (
+                  <p className="text-[0.625rem] text-muted-foreground pt-1">
+                    Coverage via Google News — these links redirect, so the reader may
+                    fall back to opening them in the browser.
+                  </p>
+                )}
+              </>
+            ) : (
+              <div className="flex flex-col items-center justify-center py-10 gap-2 text-center text-muted-foreground">
+                <Newspaper className="h-6 w-6 opacity-40" />
+                <p className="text-xs max-w-xs">
+                  No news coverage found for this trend. It may be a hashtag campaign,
+                  a fandom topic, or slang rather than a news event.
+                </p>
+                <a
+                  href={trend.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-1 inline-flex items-center gap-1 h-11 md:h-7 px-3 md:px-2.5 text-[0.8rem] rounded-md border border-border bg-background hover:bg-muted hover:text-foreground transition-colors"
+                >
+                  See posts on X
+                  <ExternalLink className="h-3 w-3" />
+                </a>
+              </div>
+            )}
+          </section>
+        </div>
+      </ScrollArea>
+    </div>
+  );
+}
+
 // ─── Settings panel ──────────────────────────────────────────────────────────
 
 interface SettingsPanelProps {
@@ -526,6 +1002,40 @@ export function NewsWidget() {
   // Reader state
   const [selectedArticle, setSelectedArticle] = useState<NewsArticle | null>(null);
 
+  // ─── X trends state ───────────────────────────────────────────────────────
+
+  const [mode, setModeState] = useState<NewsMode>(() => {
+    if (typeof window === "undefined") return "news";
+    return localStorage.getItem(MODE_STORAGE_KEY) === "trends" ? "trends" : "news";
+  });
+  const setMode = useCallback((next: NewsMode) => {
+    setModeState(next);
+    try { localStorage.setItem(MODE_STORAGE_KEY, next); } catch {}
+  }, []);
+
+  const [trendCountries, setTrendCountries] = useState<TrendCountryOption[]>(FALLBACK_COUNTRIES);
+  const [trendCountryId, setTrendCountryIdState] = useState<string>(() => {
+    if (typeof window === "undefined") return FALLBACK_COUNTRIES[0].id;
+    return localStorage.getItem(TREND_COUNTRY_STORAGE_KEY) || FALLBACK_COUNTRIES[0].id;
+  });
+  const setTrendCountryId = useCallback((id: string) => {
+    setTrendCountryIdState(id);
+    try { localStorage.setItem(TREND_COUNTRY_STORAGE_KEY, id); } catch {}
+  }, []);
+
+  const [trends, setTrends] = useState<XTrend[]>([]);
+  const [trendsCapturedAt, setTrendsCapturedAt] = useState<string>("");
+  const [trendsLoading, setTrendsLoading] = useState(false);
+  const [trendsError, setTrendsError] = useState<string | null>(null);
+  // Keyed `${countryId}:${trend name}` so switching countries doesn't collide.
+  const [trendContexts, setTrendContexts] = useState<Record<string, TrendContext>>({});
+  const [selectedTrend, setSelectedTrend] = useState<XTrend | null>(null);
+
+  const trendCountry = useMemo(
+    () => trendCountries.find((c) => c.id === trendCountryId) || trendCountries[0],
+    [trendCountries, trendCountryId]
+  );
+
   // ─── Data fetching ────────────────────────────────────────────────────────
 
   // Thumbnails resolved by the lazy og:image backfill below, keyed by article
@@ -584,7 +1094,101 @@ export function NewsWidget() {
     return () => clearInterval(interval);
   }, [fetchNews, fetchSettingsMeta]);
 
-  useRefreshOnVisible(fetchNews);
+  // ─── Trend fetching ───────────────────────────────────────────────────────
+
+  const fetchTrends = useCallback(
+    async (countryId: string, { force = false }: { force?: boolean } = {}) => {
+      try {
+        setTrendsLoading(true);
+        setTrendsError(null);
+        const res = await fetch(
+          `/api/news/trends?country=${encodeURIComponent(countryId)}${force ? "&refresh=1" : ""}`
+        );
+        const json = await res.json();
+        if (Array.isArray(json.countries) && json.countries.length > 0) {
+          setTrendCountries(json.countries as TrendCountryOption[]);
+        }
+        if (!res.ok || json.error) {
+          setTrends([]);
+          setTrendsError(json.error || `Failed (${res.status})`);
+          return;
+        }
+        setTrends(json.trends || []);
+        setTrendsCapturedAt(json.capturedAt || "");
+      } catch (err) {
+        setTrends([]);
+        setTrendsError(err instanceof Error ? err.message : "Failed to fetch trends");
+      } finally {
+        setTrendsLoading(false);
+      }
+    },
+    []
+  );
+
+  // Trends are only fetched once the tab is actually opened — the widget's
+  // common case is the article list, and each country costs an outbound scrape.
+  useEffect(() => {
+    if (mode !== "trends") return;
+    fetchTrends(trendCountryId);
+  }, [mode, trendCountryId, fetchTrends]);
+
+  // Backfill the news context that explains each trend, in small chunks, the
+  // same way the article list backfills thumbnails. Only the top of the list is
+  // covered: each entry is an outbound news search, cached server-side for 30
+  // minutes, and the rest resolve on demand when a trend is opened.
+  const CONTEXT_PREFETCH = 12;
+  useEffect(() => {
+    if (mode !== "trends" || trends.length === 0) return;
+    const wanted = trends
+      .slice(0, CONTEXT_PREFETCH)
+      .map((t) => t.name)
+      .filter((name) => !trendContexts[`${trendCountryId}:${name}`]);
+    if (wanted.length === 0) return;
+
+    let cancelled = false;
+    (async () => {
+      const CHUNK_SIZE = 4;
+      for (let i = 0; i < wanted.length; i += CHUNK_SIZE) {
+        if (cancelled) return;
+        try {
+          const res = await fetch("/api/news/trends", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "contexts",
+              country: trendCountryId,
+              trends: wanted.slice(i, i + CHUNK_SIZE),
+            }),
+          });
+          if (!res.ok) continue;
+          const json = (await res.json()) as { results?: Record<string, TrendContext> };
+          if (cancelled || !json.results) continue;
+          setTrendContexts((prev) => {
+            const next = { ...prev };
+            for (const [name, ctx] of Object.entries(json.results!)) {
+              next[`${trendCountryId}:${name}`] = ctx;
+            }
+            return next;
+          });
+        } catch {
+          // ignore — try the next chunk
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // `trendContexts` is written by this effect; re-running on it would loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, trends, trendCountryId]);
+
+  const refreshActive = useCallback(() => {
+    if (mode === "trends") fetchTrends(trendCountryId, { force: true });
+    else fetchNews();
+  }, [mode, trendCountryId, fetchTrends, fetchNews]);
+
+  useRefreshOnVisible(refreshActive);
 
   // ─── Lazy thumbnail backfill ──────────────────────────────────────────────
   // Some sources (Al Jazeera Arabic, Filgoal via Google News, sparse RSS feeds)
@@ -742,24 +1346,76 @@ export function NewsWidget() {
     setSelectedArticle(null);
   }, []);
 
-  // Below `md` the reader takes over the whole expanded card rather than
-  // docking beside the list, so it is a dismissible full-viewport surface and
-  // needs its own back layer. It stacks above the WidgetWrapper's layer, so the
-  // first back closes the article and the second closes the widget.
+  // ─── Trend handlers ───────────────────────────────────────────────────────
+
+  const handleTrendClick = useCallback((trend: XTrend) => {
+    setSelectedTrend(trend);
+  }, []);
+
+  const handleCloseTrend = useCallback(() => {
+    setSelectedTrend(null);
+  }, []);
+
+  // A trend's coverage links are read in the same reader as the article list,
+  // so they are adapted to a NewsArticle rather than given a second reader.
+  const handleOpenTrendArticle = useCallback(
+    (article: TrendArticle) => {
+      setSelectedArticle({
+        id: `trend-article-${article.link}`,
+        title: article.title,
+        link: article.link,
+        pubDate: article.pubDate,
+        source: article.source || "Coverage",
+        sourceId: `x-trends-${trendCountryId}`,
+        genre: "world",
+        description: article.description,
+        thumbnail: article.thumbnail || undefined,
+        dir: trendCountry?.dir || "ltr",
+      });
+    },
+    [trendCountryId, trendCountry]
+  );
+
+  const handleSwitchMode = useCallback(
+    (next: NewsMode) => {
+      setSelectedArticle(null);
+      setSelectedTrend(null);
+      setMode(next);
+    },
+    [setMode]
+  );
+
+  const handleSwitchCountry = useCallback(
+    (id: string) => {
+      setSelectedArticle(null);
+      setSelectedTrend(null);
+      setTrendCountryId(id);
+    },
+    [setTrendCountryId]
+  );
+
+  // Below `md` these panes take over the whole expanded card rather than
+  // docking beside the list, so each is a dismissible full-viewport surface and
+  // needs its own back layer. They stack above the WidgetWrapper's layer, so
+  // back walks reader → trend → widget.
+  const trendIsOverlay = isMobile && !!selectedTrend;
   const readerIsOverlay = isMobile && !!selectedArticle;
+  useBackHandler(trendIsOverlay, handleCloseTrend);
   useBackHandler(readerIsOverlay, handleCloseReader);
 
   useEffect(() => {
-    if (!readerIsOverlay) return;
+    if (!readerIsOverlay && !trendIsOverlay) return;
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.stopPropagation();
-        handleCloseReader();
+        // Topmost surface first, matching the back-layer order.
+        if (readerIsOverlay) handleCloseReader();
+        else handleCloseTrend();
       }
     };
     document.addEventListener("keydown", handleKey, true);
     return () => document.removeEventListener("keydown", handleKey, true);
-  }, [readerIsOverlay, handleCloseReader]);
+  }, [readerIsOverlay, trendIsOverlay, handleCloseReader, handleCloseTrend]);
 
   // ─── Render ───────────────────────────────────────────────────────────────
 
@@ -799,55 +1455,195 @@ export function NewsWidget() {
     );
   }
 
+  const isTrends = mode === "trends";
+
+  const modeToggle = (
+    <div className="flex items-center gap-1 shrink-0" role="group" aria-label="News mode">
+      <button
+        onClick={() => handleSwitchMode("news")}
+        aria-pressed={!isTrends}
+        className={cn(
+          "flex items-center gap-1.5 text-[0.6875rem] px-3 md:px-2 min-h-11 md:min-h-0 md:py-0.5 rounded-full border transition-colors",
+          !isTrends
+            ? "bg-primary text-primary-foreground border-primary font-medium"
+            : "border-border text-muted-foreground hover:bg-muted"
+        )}
+      >
+        <Newspaper className="h-3 w-3" />
+        Headlines
+      </button>
+      <button
+        onClick={() => handleSwitchMode("trends")}
+        aria-pressed={isTrends}
+        className={cn(
+          "flex items-center gap-1.5 text-[0.6875rem] px-3 md:px-2 min-h-11 md:min-h-0 md:py-0.5 rounded-full border transition-colors",
+          isTrends
+            ? "bg-primary text-primary-foreground border-primary font-medium"
+            : "border-border text-muted-foreground hover:bg-muted"
+        )}
+      >
+        <TrendingUp className="h-3 w-3" />
+        X Trends
+      </button>
+    </div>
+  );
+
   return (
     <WidgetWrapper
-      title="News"
-      icon={<Newspaper className="h-4 w-4" />}
+      title={isTrends ? "X Trends" : "News"}
+      icon={isTrends ? <TrendingUp className="h-4 w-4" /> : <Newspaper className="h-4 w-4" />}
       widgetType="news"
       expandRequested={expandRequested}
       onExpandHandled={onExpandHandled}
-      forceExpand={!!selectedArticle}
+      forceExpand={!!selectedArticle || !!selectedTrend}
       onExpandChange={(expanded) => {
-        // When user collapses the widget, clear the selected article
-        if (!expanded) setSelectedArticle(null);
+        // When user collapses the widget, clear whatever detail pane was open
+        if (!expanded) {
+          setSelectedArticle(null);
+          setSelectedTrend(null);
+        }
       }}
       // WidgetWrapper renders sidePanel as `hidden md:block`, so on a phone the
       // reader never appeared at all — tapping an article expanded the widget
       // and left the same list on screen. Below `md` the reader is rendered as
       // the widget body instead (see below).
       sidePanel={
-        selectedArticle && !isMobile ? (
+        isMobile ? undefined : selectedArticle ? (
           <ReaderPane article={selectedArticle} onClose={handleCloseReader} />
+        ) : selectedTrend && trendCountry ? (
+          <TrendDetailPane
+            trend={selectedTrend}
+            country={trendCountry}
+            seedContext={trendContexts[`${trendCountryId}:${selectedTrend.name}`]}
+            onClose={handleCloseTrend}
+            onOpenArticle={handleOpenTrendArticle}
+          />
         ) : undefined
       }
       headerAction={
-        <div className={cn("flex items-center gap-0.5", readerIsOverlay && "hidden")}>
+        <div
+          className={cn(
+            "flex items-center gap-0.5",
+            (readerIsOverlay || trendIsOverlay) && "hidden"
+          )}
+        >
+          {!isTrends && (
+            <button
+              onClick={handleOpenSettings}
+              className="text-muted-foreground hover:text-foreground transition-colors inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md hover:bg-muted"
+              title="Sources & genres"
+              aria-label="Sources & genres"
+            >
+              <Settings2 className="h-3.5 w-3.5" />
+            </button>
+          )}
           <button
-            onClick={handleOpenSettings}
-            className="text-muted-foreground hover:text-foreground transition-colors inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md hover:bg-muted"
-            title="Sources & genres"
-            aria-label="Sources & genres"
-          >
-            <Settings2 className="h-3.5 w-3.5" />
-          </button>
-          <button
-            onClick={fetchNews}
-            disabled={loading}
+            onClick={refreshActive}
+            disabled={isTrends ? trendsLoading : loading}
             className="text-muted-foreground hover:text-foreground transition-colors inline-flex items-center justify-center h-11 w-11 md:h-auto md:w-auto md:p-1 rounded-md hover:bg-muted disabled:opacity-50"
             title="Refresh"
             aria-label="Refresh"
           >
-            <RefreshCw className={cn("h-3.5 w-3.5", loading && "animate-spin")} />
+            <RefreshCw
+              className={cn("h-3.5 w-3.5", (isTrends ? trendsLoading : loading) && "animate-spin")}
+            />
           </button>
         </div>
       }
     >
-      {readerIsOverlay ? (
+      {readerIsOverlay && selectedArticle ? (
         <div className="h-full -mx-1">
           <ReaderPane article={selectedArticle} onClose={handleCloseReader} fullWidth />
         </div>
+      ) : trendIsOverlay && selectedTrend && trendCountry ? (
+        <div className="h-full -mx-1">
+          <TrendDetailPane
+            trend={selectedTrend}
+            country={trendCountry}
+            seedContext={trendContexts[`${trendCountryId}:${selectedTrend.name}`]}
+            onClose={handleCloseTrend}
+            onOpenArticle={handleOpenTrendArticle}
+            fullWidth
+          />
+        </div>
+      ) : isTrends ? (
+        <div className="flex flex-col h-full gap-2">
+          {/* Mode + country chips */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 -mx-1 px-1 shrink-0 scrollbar-thin">
+            {modeToggle}
+            <span className="w-px h-5 bg-border shrink-0 mx-0.5" aria-hidden />
+            {trendCountries.map((c) => {
+              const active = c.id === trendCountryId;
+              return (
+                <button
+                  key={c.id}
+                  onClick={() => handleSwitchCountry(c.id)}
+                  aria-pressed={active}
+                  className={cn(
+                    "flex items-center gap-1.5 text-[0.6875rem] px-3 md:px-2 min-h-11 md:min-h-0 md:py-0.5 rounded-full border transition-colors shrink-0",
+                    active
+                      ? "font-medium text-sky-500 bg-sky-500/10 border-sky-500/20"
+                      : "border-border text-muted-foreground hover:bg-muted"
+                  )}
+                >
+                  <span aria-hidden>{c.flag}</span>
+                  {c.name}
+                </button>
+              );
+            })}
+          </div>
+
+          {trendsCapturedAt && trends.length > 0 && (
+            <div className="text-[0.625rem] text-muted-foreground shrink-0">
+              X trends in {trendCountry?.name} · updated {timeAgo(trendsCapturedAt)}
+            </div>
+          )}
+
+          {trendsLoading && trends.length === 0 ? (
+            <div className="flex items-center justify-center flex-1">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : trendsError ? (
+            <div className="flex flex-col items-center justify-center flex-1 gap-2 text-center">
+              <AlertCircle className="h-5 w-5 text-destructive" />
+              <span className="text-xs text-muted-foreground max-w-xs">{trendsError}</span>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-11 md:h-7 text-xs"
+                onClick={() => fetchTrends(trendCountryId, { force: true })}
+              >
+                Try again
+              </Button>
+            </div>
+          ) : trends.length === 0 ? (
+            <div className="flex flex-col items-center justify-center flex-1 gap-2 text-muted-foreground">
+              <TrendingUp className="h-8 w-8 opacity-40" />
+              <p className="text-xs">No trends right now.</p>
+            </div>
+          ) : (
+            <ScrollArea className="flex-1 min-h-0 -mx-1">
+              <div className="space-y-0.5 px-1">
+                {trends.map((trend) => (
+                  <TrendListItem
+                    key={trend.id}
+                    trend={trend}
+                    context={trendContexts[`${trendCountryId}:${trend.name}`]}
+                    dir={trendCountry?.dir || "ltr"}
+                    active={selectedTrend?.id === trend.id}
+                    onClick={() => handleTrendClick(trend)}
+                  />
+                ))}
+              </div>
+            </ScrollArea>
+          )}
+        </div>
       ) : (
         <div className="flex flex-col h-full gap-2">
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 -mx-1 px-1 shrink-0 scrollbar-thin">
+            {modeToggle}
+          </div>
+
           {/* Genre filter chips */}
           {articles.length > 0 && genresInResults.length > 1 && (
             <div className="flex items-center gap-1.5 overflow-x-auto pb-1 -mx-1 px-1 shrink-0 scrollbar-thin">
