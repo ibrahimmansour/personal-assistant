@@ -26,6 +26,7 @@ The application uses **no database**. All data is stored as local JSON files und
 ├── gmail-emails-cache.json       # Gmail email cache (5min TTL)
 ├── google-tokens.json            # Google OAuth2 tokens
 ├── file-bookmarks.json           # File browser bookmarks
+├── services.json                 # Service monitor pins/aliases/hidden/health checks
 ├── jira/
 │   └── auth.json                 # Jira cookie auth
 └── (created automatically on first write)
@@ -259,6 +260,31 @@ TTL: 5 minutes (300,000ms)
   "user": "d067576"
 }
 ```
+
+### Service Monitor (`services.json`)
+
+Machine-scoped, **not** profile-namespaced — the services running on the host do
+not change when you switch between the work and private profile.
+
+```json
+{
+  "pinned": ["zeed-staging-backend.service"],
+  "hidden": ["snapd.service"],
+  "aliases": { "postgresql@16-main.service": "ZEED Postgres" },
+  "checks": {
+    "zeed-staging-backend.service": {
+      "url": "http://127.0.0.1:5501/health",
+      "expectStatus": 200,
+      "timeoutMs": 4000
+    }
+  },
+  "showSystem": false
+}
+```
+
+Every key is optional; a missing file reads as all-empty with `showSystem: false`.
+Only preferences live here — the service list itself is discovered live on each
+request and never cached to disk.
 
 ### File Bookmarks (`file-bookmarks.json`)
 

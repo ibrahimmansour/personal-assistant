@@ -30,6 +30,22 @@ import {
   Trash2,
   Settings,
   Scale,
+  HeartPulse,
+  CircleCheck,
+  CircleAlert,
+  CircleX,
+  CircleDashed,
+  Pin,
+  PinOff,
+  EyeOff,
+  RotateCw,
+  Square,
+  Pencil,
+  Check,
+  ScrollText,
+  Plug,
+  Container,
+  Loader,
 } from "lucide-react";
 import { WidgetWrapper } from "@/components/widget-wrapper";
 import { Badge } from "@/components/ui/badge";
@@ -40,6 +56,13 @@ import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { useRefreshOnVisible } from "@/hooks/use-refresh-on-visible";
 import { useWidgetNavFor } from "@/components/widget-nav-context";
+import type {
+  ControlAction,
+  ServiceHealth,
+  ServiceInfo,
+  ServiceTier,
+  ServicesSnapshot,
+} from "@/lib/service-monitor";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -126,7 +149,7 @@ interface SystemMetrics {
   timestamp: number;
 }
 
-type Tab = "overview" | "cpu" | "memory" | "processes" | "network" | "disks" | "system";
+type Tab = "overview" | "services" | "cpu" | "memory" | "processes" | "network" | "disks" | "system";
 type ProcessSort = "cpu" | "mem" | "pid" | "name" | "rss";
 
 // ─── Helper functions ──────────────────────────────────────────────────────────
@@ -144,6 +167,34 @@ function formatBytesShort(bytes: number): string {
   const i = Math.floor(Math.log(bytes) / Math.log(1024));
   return `${(bytes / Math.pow(1024, i)).toFixed(i > 2 ? 1 : 0)}${units[i]}`;
 }
+
+function formatDuration(seconds: number | null): string {
+  if (seconds === null || seconds < 0) return "—";
+  const d = Math.floor(seconds / 86400);
+  const h = Math.floor((seconds % 86400) / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  if (d > 0) return `${d}d ${h}h`;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m`;
+  return `${Math.floor(seconds)}s`;
+}
+
+// ─── Service health presentation ───────────────────────────────────────────────
+
+const HEALTH_META: Record<ServiceHealth, { label: string; dot: string; text: string; icon: React.ReactNode }> = {
+  healthy: { label: "Healthy", dot: "bg-green-500", text: "text-green-600 dark:text-green-500", icon: <CircleCheck className="h-3 w-3" /> },
+  degraded: { label: "Degraded", dot: "bg-amber-500", text: "text-amber-600 dark:text-amber-500", icon: <CircleAlert className="h-3 w-3" /> },
+  failed: { label: "Failed", dot: "bg-destructive", text: "text-destructive", icon: <CircleX className="h-3 w-3" /> },
+  starting: { label: "Starting", dot: "bg-blue-500", text: "text-blue-600 dark:text-blue-500", icon: <Loader className="h-3 w-3 animate-spin" /> },
+  stopped: { label: "Stopped", dot: "bg-muted-foreground/50", text: "text-muted-foreground", icon: <CircleDashed className="h-3 w-3" /> },
+  unknown: { label: "Unknown", dot: "bg-muted-foreground/50", text: "text-muted-foreground", icon: <CircleDashed className="h-3 w-3" /> },
+};
+
+const TIER_META: Record<ServiceTier, { label: string; hint: string }> = {
+  app: { label: "Your services", hint: "Installed by you — user units, containers and supervised process trees" },
+  infra: { label: "Infrastructure", hint: "Databases, web servers and other daemons you depend on" },
+  system: { label: "System", hint: "OS plumbing — correct to run, rarely worth watching" },
+};
 
 // ─── Sparkline Component ───────────────────────────────────────────────────────
 
@@ -412,6 +463,20 @@ export function SystemMonitorWidget() {
   const [swapLoading, setSwapLoading] = useState(false);
   const [swappinessValue, setSwappinessValue] = useState("60");
 
+  // Service monitor state
+  const [servicesData, setServicesData] = useState<ServicesSnapshot | null>(null);
+  const [servicesError, setServicesError] = useState<string | null>(null);
+  const [servicesLoading, setServicesLoading] = useState(true);
+  const [serviceSearch, setServiceSearch] = useState("");
+  const [expandedService, setExpandedService] = useState<string | null>(null);
+  const [showSystemTier, setShowSystemTier] = useState(false);
+  const [serviceBusy, setServiceBusy] = useState<string | null>(null);
+  const [serviceMessage, setServiceMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [controlConfirm, setControlConfirm] = useState<{ id: string; operation: ControlAction } | null>(null);
+  const [serviceLogs, setServiceLogs] = useState<{ id: string; logs: string; error: string | null } | null>(null);
+  const [aliasDraft, setAliasDraft] = useState<{ id: string; value: string } | null>(null);
+  const [checkDraft, setCheckDraft] = useState<{ id: string; value: string } | null>(null);
+
   const MAX_HISTORY = 60;
 
   const fetchMetrics = useCallback(async () => {
@@ -624,6 +689,122 @@ export function SystemMonitorWidget() {
     }
   }, [swappinessValue, fetchSwapInfo]);
 
+  // ─── Services ──────────────────────────────────────────────────────────────
+
+  const showSystemAdopted = useRef(false);
+
+  const fetchServices = useCallback(async () => {
+    try {
+      const res = await fetch("/api/system/services");
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data: ServicesSnapshot = await res.json();
+      setServicesData(data);
+      // Adopt the saved toggle once. Re-applying it on every poll would race
+      // the optimistic local flip against the write that persists it.
+      if (!showSystemAdopted.current) {
+        showSystemAdopted.current = true;
+        setShowSystemTier(data.prefs.showSystem);
+      }
+      setServicesError(null);
+    } catch (err) {
+      setServicesError(err instanceof Error ? err.message : "Failed to load services");
+    } finally {
+      setServicesLoading(false);
+    }
+  }, []);
+
+  // Services poll on their own, slower cadence: the endpoint shells out to
+  // systemctl/ps/ss, and the CPU figure is a delta between two samples, so a
+  // longer gap is both cheaper and more accurate than the metrics tick.
+  useEffect(() => {
+    if (paused) return;
+    fetchServices();
+    const interval = setInterval(fetchServices, 10000);
+    return () => clearInterval(interval);
+  }, [fetchServices, paused]);
+
+  const flashServiceMessage = useCallback((type: "success" | "error", text: string) => {
+    setServiceMessage({ type, text });
+    setTimeout(() => setServiceMessage(null), 4000);
+  }, []);
+
+  const postService = useCallback(async (body: Record<string, unknown>) => {
+    const res = await fetch("/api/system/services", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    return res.json();
+  }, []);
+
+  const handleServiceControl = useCallback(
+    async (service: ServiceInfo, operation: ControlAction) => {
+      setServiceBusy(service.id);
+      setControlConfirm(null);
+      try {
+        const data = await postService({
+          action: "control",
+          id: service.id,
+          operation,
+          source: service.source,
+        });
+        flashServiceMessage(data.success ? "success" : "error", data.message || data.error || "Failed");
+        // systemd returns as soon as the job is queued; give the unit a moment
+        // to settle before reading its new state.
+        setTimeout(fetchServices, 1200);
+      } catch (err) {
+        flashServiceMessage("error", err instanceof Error ? err.message : "Failed");
+      } finally {
+        setServiceBusy(null);
+      }
+    },
+    [postService, flashServiceMessage, fetchServices]
+  );
+
+  const handleServiceLogs = useCallback(
+    async (service: ServiceInfo) => {
+      if (serviceLogs?.id === service.id) {
+        setServiceLogs(null);
+        return;
+      }
+      setServiceBusy(service.id);
+      try {
+        const data = await postService({ action: "logs", id: service.id, source: service.source, lines: 100 });
+        setServiceLogs({ id: service.id, logs: data.logs || "", error: data.error ?? null });
+      } catch (err) {
+        setServiceLogs({ id: service.id, logs: "", error: err instanceof Error ? err.message : "Failed" });
+      } finally {
+        setServiceBusy(null);
+      }
+    },
+    [postService, serviceLogs]
+  );
+
+  const handleServicePref = useCallback(
+    async (body: Record<string, unknown>) => {
+      try {
+        const data = await postService(body);
+        if (data.error) flashServiceMessage("error", data.error);
+        else fetchServices();
+      } catch (err) {
+        flashServiceMessage("error", err instanceof Error ? err.message : "Failed");
+      }
+    },
+    [postService, flashServiceMessage, fetchServices]
+  );
+
+  const visibleServices = useMemo(() => {
+    const all = servicesData?.services ?? [];
+    const q = serviceSearch.trim().toLowerCase();
+    if (!q) return all;
+    return all.filter((s) =>
+      [s.name, s.id, s.description ?? "", ...s.ports.map((p) => String(p.port)), ...s.processes.map((p) => p.comm)]
+        .join(" ")
+        .toLowerCase()
+        .includes(q)
+    );
+  }, [servicesData, serviceSearch]);
+
   // Sorted + filtered processes
   const sortedProcesses = useMemo(() => {
     const procs = searchResults || metrics?.processes || [];
@@ -645,6 +826,7 @@ export function SystemMonitorWidget() {
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
     { id: "overview", label: "Overview", icon: <Activity className="h-3 w-3" /> },
+    { id: "services", label: "Services", icon: <HeartPulse className="h-3 w-3" /> },
     { id: "cpu", label: "CPU", icon: <Cpu className="h-3 w-3" /> },
     { id: "memory", label: "Memory", icon: <MemoryStick className="h-3 w-3" /> },
     { id: "processes", label: "Processes", icon: <Server className="h-3 w-3" /> },
@@ -656,7 +838,7 @@ export function SystemMonitorWidget() {
   // ─── Render sections ───────────────────────────────────────────────────────
 
   const renderContent = () => {
-    if (loading && !metrics) {
+    if (loading && !metrics && activeTab !== "services") {
       return (
         <div className="flex items-center justify-center h-32">
           <div className="flex flex-col items-center gap-2 text-muted-foreground">
@@ -666,6 +848,7 @@ export function SystemMonitorWidget() {
         </div>
       );
     }
+    if (activeTab === "services") return renderServices();
     if (error && !metrics) {
       return (
         <div className="flex items-center justify-center h-32">
@@ -713,6 +896,32 @@ export function SystemMonitorWidget() {
             <span className="text-[0.5625rem] text-muted-foreground font-medium">Disk</span>
           </div>
         </div>
+
+        {/* Service health — the "is everything still up?" line */}
+        {servicesData && (
+          <button
+            onClick={() => setActiveTab("services")}
+            className="w-full rounded-md border p-2 flex items-center justify-between gap-2 hover:bg-muted/50 transition-colors text-left"
+          >
+            <span className="flex items-center gap-1.5 min-w-0">
+              <HeartPulse className="h-3 w-3 text-muted-foreground shrink-0" />
+              <span className="text-[0.625rem] text-muted-foreground">Services</span>
+            </span>
+            <span className="flex items-center gap-2 text-[0.625rem] font-mono tabular-nums shrink-0">
+              <span className="text-green-600 dark:text-green-500">{servicesData.summary.healthy} up</span>
+              {servicesData.summary.degraded > 0 && (
+                <span className="text-amber-600 dark:text-amber-500">{servicesData.summary.degraded} degraded</span>
+              )}
+              {servicesData.summary.failed > 0 && (
+                <span className="text-destructive">{servicesData.summary.failed} failed</span>
+              )}
+              {servicesData.summary.stopped > 0 && (
+                <span className="text-muted-foreground">{servicesData.summary.stopped} stopped</span>
+              )}
+              <ChevronRight className="h-3 w-3 text-muted-foreground" />
+            </span>
+          </button>
+        )}
 
         {/* CPU Sparkline */}
         <div className="rounded-md border p-2 space-y-1">
@@ -797,6 +1006,479 @@ export function SystemMonitorWidget() {
             </span>
           )}
         </div>
+      </div>
+    );
+  };
+
+  // ─── Services ──────────────────────────────────────────────────────────────
+
+  const renderServices = () => {
+    const summary = servicesData?.summary;
+    const attention = (summary?.failed ?? 0) + (summary?.degraded ?? 0);
+
+    // A search is an explicit request for a specific unit, so it reaches into
+    // the collapsed system tier rather than silently returning nothing.
+    const tiers: ServiceTier[] =
+      showSystemTier || serviceSearch.trim() ? ["app", "infra", "system"] : ["app", "infra"];
+    const pinned = visibleServices.filter((s) => s.pinned);
+    const systemCount = (servicesData?.services ?? []).filter((s) => s.tier === "system").length;
+
+    const renderRow = (service: ServiceInfo) => {
+      const meta = HEALTH_META[service.health];
+      const isOpen = expandedService === service.id;
+      const busy = serviceBusy === service.id;
+
+      return (
+        <div key={service.id} className="border-b last:border-b-0">
+          <button
+            onClick={() => {
+              setExpandedService(isOpen ? null : service.id);
+              if (isOpen) setServiceLogs(null);
+            }}
+            aria-expanded={isOpen}
+            className={cn(
+              "w-full text-left flex items-center gap-2 px-1 min-h-11 md:min-h-0 md:py-1.5 rounded hover:bg-muted/50 transition-colors",
+              isOpen && "bg-muted/40"
+            )}
+          >
+            <span className={cn("h-2 w-2 rounded-full shrink-0", meta.dot)} aria-hidden="true" />
+            <span className="flex-1 min-w-0">
+              <span className="flex items-center gap-1.5">
+                <span className="text-[0.6875rem] font-medium truncate">{service.name}</span>
+                {service.source === "docker" && <Container className="h-2.5 w-2.5 shrink-0 text-muted-foreground" />}
+                {service.restarts > 0 && (
+                  <Badge variant="secondary" className="h-3.5 px-1 text-[0.5rem] shrink-0 tabular-nums">
+                    {service.restarts}&times;
+                  </Badge>
+                )}
+                {service.ports.slice(0, 3).map((port) => (
+                  <Badge key={`${port.proto}${port.port}`} variant="outline" className="h-3.5 px-1 text-[0.5rem] shrink-0 tabular-nums font-mono">
+                    :{port.port}
+                  </Badge>
+                ))}
+              </span>
+              <span className="block text-[0.5625rem] text-muted-foreground truncate">
+                {service.healthReason ?? service.description ?? service.id}
+              </span>
+            </span>
+            <span className="shrink-0 text-right text-[0.5625rem] font-mono tabular-nums text-muted-foreground leading-tight">
+              <span className="block">{formatDuration(service.uptimeSeconds)}</span>
+              <span className="block">
+                {service.cpu.toFixed(1)}% · {formatBytesShort(service.memory)}
+              </span>
+            </span>
+            {isOpen ? <ChevronDown className="h-3 w-3 shrink-0" /> : <ChevronRight className="h-3 w-3 shrink-0" />}
+          </button>
+
+          {isOpen && (
+            <div className="px-2 pb-2 space-y-2 text-[0.5625rem]">
+              {/* Facts */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-3 gap-y-1 rounded border bg-muted/20 p-2">
+                <div>
+                  <span className="text-muted-foreground">Status:</span>{" "}
+                  <span className={cn("font-medium", meta.text)}>
+                    {meta.label} · {service.activeState}/{service.subState}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Main PID:</span>{" "}
+                  <span className="font-mono">{service.mainPid ?? "—"}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Uptime:</span>{" "}
+                  <span className="font-mono">{formatDuration(service.uptimeSeconds)}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Restarts:</span>{" "}
+                  <span className="font-mono">{service.restarts}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">CPU:</span>{" "}
+                  <span className="font-mono">{service.cpu.toFixed(1)}%</span>
+                  <span className="text-muted-foreground"> of one core</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Memory:</span>{" "}
+                  <span className="font-mono">
+                    {formatBytes(service.memory)}
+                    <span className="text-muted-foreground"> ({service.memorySource})</span>
+                  </span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">On boot:</span>{" "}
+                  <span className="font-medium">
+                    {service.enabled === null ? "—" : service.enabled ? "enabled" : "disabled"}
+                  </span>
+                </div>
+                <div className="col-span-2 sm:col-span-3 break-all">
+                  <span className="text-muted-foreground">Unit:</span>{" "}
+                  <span className="font-mono">{service.id}</span>
+                  <span className="text-muted-foreground"> · {service.source}</span>
+                </div>
+                {service.statusText && (
+                  <div className="col-span-2 sm:col-span-3 break-all">
+                    <span className="text-muted-foreground">Reports:</span> {service.statusText}
+                  </div>
+                )}
+              </div>
+
+              {/* Health check */}
+              <div className="rounded border p-2 space-y-1.5">
+                <div className="flex items-center gap-1 text-muted-foreground">
+                  <HeartPulse className="h-3 w-3" />
+                  <span className="font-medium">Health check</span>
+                </div>
+                {service.probe && (
+                  <div className={cn("font-mono", service.probe.ok ? "text-green-600 dark:text-green-500" : "text-destructive")}>
+                    {service.probe.ok ? "OK" : "FAIL"} {service.probe.status ?? ""}{" "}
+                    {service.probe.latencyMs !== null && `· ${service.probe.latencyMs}ms`}
+                    {service.probe.error && ` · ${service.probe.error}`}
+                  </div>
+                )}
+                <div className="flex flex-wrap md:flex-nowrap items-center gap-1">
+                  <Input
+                    value={checkDraft?.id === service.id ? checkDraft.value : service.check?.url ?? ""}
+                    onChange={(e) => setCheckDraft({ id: service.id, value: e.target.value })}
+                    placeholder="http://127.0.0.1:8080/health"
+                    className="h-11 md:h-7 flex-1 text-[0.5625rem] font-mono"
+                  />
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    className="h-11 md:h-7 text-[0.5625rem] px-2"
+                    onClick={() => {
+                      const url = checkDraft?.id === service.id ? checkDraft.value : service.check?.url ?? "";
+                      handleServicePref({ action: "set-check", id: service.id, check: url ? { url } : null });
+                      setCheckDraft(null);
+                    }}
+                  >
+                    Save
+                  </Button>
+                </div>
+                <p className="text-muted-foreground">
+                  An HTTP probe turns &ldquo;the process exists&rdquo; into &ldquo;the service answers&rdquo;.
+                </p>
+              </div>
+
+              {/* Ports */}
+              {service.ports.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1">
+                  <Plug className="h-3 w-3 text-muted-foreground" />
+                  {service.ports.map((port) => (
+                    <Badge key={`${port.proto}${port.port}`} variant="outline" className="h-4 px-1 text-[0.5rem] font-mono">
+                      {port.address}:{port.port}/{port.proto}
+                    </Badge>
+                  ))}
+                </div>
+              )}
+
+              {/* Member processes — the grouping the flat process list could not show */}
+              {service.processes.length > 0 && (
+                <div className="rounded border">
+                  <div className="grid grid-cols-[46px_42px_46px_1fr] gap-1 px-1.5 py-1 border-b text-muted-foreground font-medium">
+                    <span>PID</span>
+                    <span>CPU%</span>
+                    <span>RSS</span>
+                    <span>Process</span>
+                  </div>
+                  {service.processes.map((proc) => (
+                    <div
+                      key={proc.pid}
+                      className="grid grid-cols-[46px_42px_46px_1fr] gap-1 px-1.5 py-0.5 font-mono tabular-nums"
+                      title={proc.command}
+                    >
+                      <span className="text-muted-foreground">{proc.pid}</span>
+                      <span>{proc.cpu.toFixed(1)}</span>
+                      <span className="text-muted-foreground">{formatBytesShort(proc.rss)}</span>
+                      <span className="truncate font-sans">
+                        {proc.comm}
+                        {proc.role && <span className="text-muted-foreground"> — {proc.role}</span>}
+                      </span>
+                    </div>
+                  ))}
+                  <div className="px-1.5 py-1 border-t text-muted-foreground">
+                    {service.processCount} process{service.processCount === 1 ? "" : "es"} in this group
+                  </div>
+                </div>
+              )}
+
+              {/* Rename */}
+              {aliasDraft?.id === service.id ? (
+                <div className="flex flex-wrap md:flex-nowrap items-center gap-1">
+                  <Input
+                    value={aliasDraft.value}
+                    onChange={(e) => setAliasDraft({ id: service.id, value: e.target.value })}
+                    placeholder="Display name"
+                    className="h-11 md:h-7 flex-1 text-[0.5625rem]"
+                    autoFocus
+                  />
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    className="h-11 md:h-7 text-[0.5625rem] px-2"
+                    onClick={() => {
+                      handleServicePref({ action: "alias", id: service.id, name: aliasDraft.value });
+                      setAliasDraft(null);
+                    }}
+                  >
+                    <Check className="h-2.5 w-2.5 mr-1" />
+                    Save
+                  </Button>
+                  <Button size="sm" variant="ghost" className="h-11 md:h-7 text-[0.5625rem] px-2" onClick={() => setAliasDraft(null)}>
+                    Cancel
+                  </Button>
+                </div>
+              ) : null}
+
+              {/* Actions */}
+              <div className="flex flex-wrap items-center gap-1 pt-1 border-t">
+                {controlConfirm?.id === service.id ? (
+                  <>
+                    <span className="text-muted-foreground">
+                      {controlConfirm.operation} {service.name}?
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      className="h-11 md:h-7 text-[0.5625rem] px-2"
+                      onClick={() => handleServiceControl(service, controlConfirm.operation)}
+                    >
+                      Confirm
+                    </Button>
+                    <Button size="sm" variant="ghost" className="h-11 md:h-7 text-[0.5625rem] px-2" onClick={() => setControlConfirm(null)}>
+                      Cancel
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      className="h-11 md:h-7 text-[0.5625rem] px-2"
+                      disabled={busy || !service.canControl}
+                      title={service.canControl ? undefined : "System units need root or a polkit rule"}
+                      onClick={() => setControlConfirm({ id: service.id, operation: "restart" })}
+                    >
+                      <RotateCw className="h-2.5 w-2.5 mr-1" />
+                      Restart
+                    </Button>
+                    {service.activeState === "active" ? (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        className="h-11 md:h-7 text-[0.5625rem] px-2"
+                        disabled={busy || !service.canControl}
+                        title={service.canControl ? undefined : "System units need root or a polkit rule"}
+                        onClick={() => setControlConfirm({ id: service.id, operation: "stop" })}
+                      >
+                        <Square className="h-2.5 w-2.5 mr-1" />
+                        Stop
+                      </Button>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        className="h-11 md:h-7 text-[0.5625rem] px-2"
+                        disabled={busy || !service.canControl}
+                        title={service.canControl ? undefined : "System units need root or a polkit rule"}
+                        onClick={() => handleServiceControl(service, "start")}
+                      >
+                        <Play className="h-2.5 w-2.5 mr-1" />
+                        Start
+                      </Button>
+                    )}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-11 md:h-7 text-[0.5625rem] px-2"
+                      disabled={busy}
+                      onClick={() => handleServiceLogs(service)}
+                    >
+                      <ScrollText className="h-2.5 w-2.5 mr-1" />
+                      {serviceLogs?.id === service.id ? "Hide logs" : "Logs"}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-11 md:h-7 text-[0.5625rem] px-2"
+                      onClick={() => handleServicePref({ action: service.pinned ? "unpin" : "pin", id: service.id })}
+                    >
+                      {service.pinned ? <PinOff className="h-2.5 w-2.5 mr-1" /> : <Pin className="h-2.5 w-2.5 mr-1" />}
+                      {service.pinned ? "Unpin" : "Pin"}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-11 md:h-7 text-[0.5625rem] px-2"
+                      onClick={() => setAliasDraft({ id: service.id, value: service.name })}
+                    >
+                      <Pencil className="h-2.5 w-2.5 mr-1" />
+                      Rename
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-11 md:h-7 text-[0.5625rem] px-2"
+                      onClick={() => handleServicePref({ action: "hide", id: service.id })}
+                    >
+                      <EyeOff className="h-2.5 w-2.5 mr-1" />
+                      Hide
+                    </Button>
+                  </>
+                )}
+              </div>
+
+              {/* Logs */}
+              {serviceLogs?.id === service.id && (
+                <div className="rounded border bg-muted/30 p-2 max-h-48 overflow-auto">
+                  {serviceLogs.error && <p className="text-muted-foreground">{serviceLogs.error}</p>}
+                  {serviceLogs.logs && (
+                    <pre className="font-mono text-[0.5rem] leading-relaxed whitespace-pre-wrap break-all">
+                      {serviceLogs.logs}
+                    </pre>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    return (
+      <div className="flex flex-col h-full gap-2">
+        {/* Toolbar */}
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+            <Input
+              value={serviceSearch}
+              onChange={(e) => setServiceSearch(e.target.value)}
+              placeholder="Search services, ports, processes..."
+              className="h-6 pl-7 pr-7 text-[0.625rem]"
+            />
+            {serviceSearch && (
+              <button
+                aria-label="Clear service search"
+                onClick={() => setServiceSearch("")}
+                className="absolute right-2 top-1/2 -translate-y-1/2"
+              >
+                <X className="h-3 w-3 text-muted-foreground hover:text-foreground" />
+              </button>
+            )}
+          </div>
+          <button
+            onClick={() => {
+              const next = !showSystemTier;
+              setShowSystemTier(next);
+              handleServicePref({ action: "set-show-system", value: next });
+            }}
+            aria-pressed={showSystemTier}
+            className={cn(
+              "shrink-0 rounded px-2 h-11 md:h-6 text-[0.5625rem] font-medium transition-colors",
+              showSystemTier ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted/50"
+            )}
+          >
+            System ({systemCount})
+          </button>
+        </div>
+
+        {/* Health summary */}
+        {summary && (
+          <div className="grid grid-cols-4 gap-1 text-center">
+            {([
+              ["healthy", summary.healthy],
+              ["degraded", summary.degraded],
+              ["failed", summary.failed],
+              ["stopped", summary.stopped],
+            ] as [ServiceHealth, number][]).map(([health, count]) => (
+              <div
+                key={health}
+                className={cn(
+                  "rounded-md border py-1",
+                  count > 0 && (health === "failed" || health === "degraded") && "border-current",
+                  count > 0 ? HEALTH_META[health].text : "text-muted-foreground"
+                )}
+              >
+                <div className="flex items-center justify-center gap-1">
+                  {HEALTH_META[health].icon}
+                  <span className="text-xs font-bold tabular-nums">{count}</span>
+                </div>
+                <div className="text-[0.5rem]">{HEALTH_META[health].label}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {serviceMessage && (
+          <div
+            className={cn(
+              "text-[0.625rem] px-2 py-1 rounded border break-all",
+              serviceMessage.type === "error"
+                ? "text-destructive border-destructive/30 bg-destructive/5"
+                : "text-green-600 border-green-500/30 bg-green-500/5"
+            )}
+          >
+            {serviceMessage.text}
+          </div>
+        )}
+
+        {servicesError && !servicesData && (
+          <p className="text-[0.625rem] text-destructive px-1">{servicesError}</p>
+        )}
+
+        {servicesLoading && !servicesData && (
+          <div className="flex items-center justify-center h-24 text-muted-foreground gap-2">
+            <HeartPulse className="h-4 w-4 animate-pulse" />
+            <span className="text-xs">Discovering services...</span>
+          </div>
+        )}
+
+        <ScrollArea className="flex-1 min-h-0">
+          {pinned.length > 0 && (
+            <div className="mb-2">
+              <div className="flex items-center gap-1 px-1 pb-1 text-[0.5625rem] font-medium text-muted-foreground uppercase tracking-wide">
+                <Pin className="h-2.5 w-2.5" />
+                Pinned
+              </div>
+              <div className="rounded-md border">{pinned.map(renderRow)}</div>
+            </div>
+          )}
+
+          {tiers.map((tier) => {
+            const rows = visibleServices.filter((s) => s.tier === tier && !s.pinned);
+            if (rows.length === 0) return null;
+            return (
+              <div key={tier} className="mb-2">
+                <div className="px-1 pb-1">
+                  <div className="text-[0.5625rem] font-medium text-muted-foreground uppercase tracking-wide">
+                    {TIER_META[tier].label} ({rows.length})
+                  </div>
+                  <div className="text-[0.5rem] text-muted-foreground/70">{TIER_META[tier].hint}</div>
+                </div>
+                <div className="rounded-md border">{rows.map(renderRow)}</div>
+              </div>
+            );
+          })}
+
+          {servicesData && visibleServices.length === 0 && (
+            <p className="text-[0.625rem] text-muted-foreground px-1 py-4 text-center">
+              {serviceSearch ? "No services match that search." : "No services discovered on this host."}
+            </p>
+          )}
+
+          {servicesData && !servicesData.capabilities.systemd && !servicesData.capabilities.launchd && (
+            <p className="text-[0.5rem] text-muted-foreground px-1 pb-2">
+              No service manager detected — showing long-running process trees that are listening on a port.
+            </p>
+          )}
+        </ScrollArea>
+
+        {attention > 0 && (
+          <div className="text-[0.5625rem] text-destructive px-1 border-t pt-1">
+            {attention} service{attention === 1 ? "" : "s"} need attention
+          </div>
+        )}
       </div>
     );
   };
@@ -1683,6 +2365,17 @@ export function SystemMonitorWidget() {
       onExpandHandled={onExpandHandled}
       headerAction={
         <div className="flex items-center gap-1">
+          {servicesData && servicesData.summary.failed + servicesData.summary.degraded > 0 && (
+            <button
+              onClick={() => setActiveTab("services")}
+              aria-label={`${servicesData.summary.failed + servicesData.summary.degraded} services need attention`}
+            >
+              <Badge variant="destructive" className="text-[0.5625rem] h-4 px-1.5 tabular-nums gap-0.5">
+                <CircleAlert className="h-2.5 w-2.5" />
+                {servicesData.summary.failed + servicesData.summary.degraded}
+              </Badge>
+            </button>
+          )}
           {metrics && (
             <>
               <Badge

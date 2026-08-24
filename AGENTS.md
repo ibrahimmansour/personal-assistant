@@ -76,6 +76,7 @@ personal-assistant/
 │   │       ├── database/          # Postgres connections + queries (pg)
 │   │       ├── vps/               # Remote host management over ssh
 │   │       ├── system/            # CPU/mem/disk/swap metrics
+│       ├── system/services/   # Service discovery + health (systemd/docker/launchd)
 │   │       ├── news/, news/trends/, weather/, browser/, email-rules/
 │   │       ├── update/            # Self-update check
 │   │       └── proxy/
@@ -121,6 +122,7 @@ personal-assistant/
 │   │   ├── jira-auth.ts, jira-client.ts
 │   │   ├── ai-client.ts           # Ollama (local LLM)
 │   │   ├── anthropic-client.ts    # Anthropic Messages API (fetch, no SDK)
+│   │   ├── service-monitor.ts     # Long-running service discovery + health
 │   │   ├── claude-scheduler.ts    # Cron-ish runner for Claude Code prompts
 │   │   ├── claude-schedule-types.ts
 │   │   ├── mock-data.ts           # Fallback mock data
@@ -217,6 +219,59 @@ A trend name explains nothing on its own, so each is paired with news coverage s
 
 The trend detail pane follows the same rules as the article reader: `sidePanel` on desktop, widget body below `md`, its own `useBackHandler` layer. Opening a coverage link reuses `ReaderPane` (the article is adapted to a `NewsArticle`), so back walks reader → trend → widget.
 
+### Service Health (system monitor)
+
+The system monitor's **Services** tab answers "is everything that should be
+running still running", which the Processes tab structurally cannot: `ps` names
+a row by argv[0] (`node`, `next-server (v1`, `postgres`) and scatters one
+service across a dozen rows that sort apart from each other.
+
+`src/lib/service-monitor.ts` groups instead of lists. The grouping key on Linux
+is the systemd unit, read straight off the process table — `ps -eo
+pid,ppid,unit,uunit,…`, where procps' `unit`/`uunit` columns already resolve a
+PID's cgroup to its system or user unit. A **user** unit wins over the system
+unit for the same PID, because every user unit's processes are also children of
+`user@N.service`. Unit metadata comes from **one** `systemctl show '*.service'
+--timestamp=unix` per scope (~100ms for the whole machine, versus one fork per
+unit); the glob matches loaded units only, which is exactly the set worth
+showing. `systemctl --user` needs `$XDG_RUNTIME_DIR`, which a process started
+outside a login session does not inherit — the lib falls back to
+`/run/user/<uid>` rather than silently losing every unit the user installed.
+
+CPU per service is **not** summed from `ps %cpu` (that column is the process's
+lifetime average, which is ~0 for anything up for a week). It is a delta of
+systemd's cumulative `CPUUsageNSec` between two polls, so the previous sample is
+held in a module-level map and the widget polls services on its own 10s
+interval, separate from the 3s metrics tick. Memory prefers the cgroup's
+`MemoryCurrent` and falls back to summed RSS (`memorySource` says which).
+
+Rows are bucketed into three **tiers** so the list is not 100 units of OS
+plumbing: `app` (fragment path under `/etc/systemd` or `$HOME` — you installed
+it), `infra` (owns a listening port, or matches a known-daemon list: postgres,
+redis, caddy, nginx, docker…), and `system` (everything else, plus every
+`Type=oneshot` and every `active (exited)` unit with no surviving processes —
+those already finished by design). The `system` tier is collapsed behind a
+toggle and excluded from the health summary. Docker containers and macOS
+launchd labels join as their own entries; long-running non-unit process trees
+that hold a listening port are adopted as `source: "process"` and flagged as
+unsupervised.
+
+Health is `healthy | degraded | failed | starting | stopped | unknown`, derived
+from `ActiveState`/`SubState`/`Result`, and **degraded also covers a restart
+inside the last 5 minutes** — a service that is "active" because it just
+crash-looped is not healthy. An optional per-service HTTP check
+(`services.json` → `checks`) upgrades the signal from "the process exists" to
+"the service answers"; a failing probe forces `degraded`.
+
+Two things are best-effort by design and must not be treated as failures:
+without root, `ss`/`lsof` only attribute sockets to the current user's PIDs (so
+a system daemon may show no ports), and `journalctl -u` on a system unit needs
+the `adm`/`systemd-journal` group (the route returns that hint as the error
+string rather than an empty pane). Control actions (`start`/`stop`/`restart`)
+are offered only where they can work — `canControl` is true for user units and
+containers — and unit ids are validated against a strict regex before reaching
+`execFile`.
+
 ### External Service Integration Pattern
 - All external API calls go through Next.js API routes — never from the client
 - Token management in dedicated `src/lib/*-token.ts` / `*-auth.ts` helpers with auto-refresh
@@ -230,6 +285,7 @@ Everything lives in `~/.personal-assistant/` as JSON — no app database:
 - Dashboard state: dual persistence (localStorage + `/api/dashboard`)
 - Workspaces: localStorage, per profile
 - `claude-schedules.json`, `db-connections.json`, `vps-connections.json`, notes/tasks/email-rules — all profile-namespaced where profile-scoped
+- `services.json` (service monitor pins/aliases/hidden/health checks) is machine-scoped, not profile-scoped
 - Outlook tokens are read from `~/.sap-email-cli/token_cache.json`
 - `pg` connects only to user-configured Postgres servers via the database API; it is not app storage
 
