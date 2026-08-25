@@ -290,12 +290,27 @@ interface NewsSettings {
   genres: Genre[];
   /** Selected publication languages; empty/missing = all languages. */
   languages: Language[];
+  /** Bumped when a stored shape needs migrating on read. */
+  version?: number;
 }
+
+/**
+ * 2 — "general" stopped being exempt from the genre drop and became a normal,
+ * de-selectable genre. A file written before that was filtered as if it always
+ * contained "general", so adding it is the faithful translation of the old
+ * behaviour; without it a mixed-feed source would go quiet on upgrade with no
+ * visible cause.
+ */
+const SETTINGS_VERSION = 2;
 
 const DEFAULT_SETTINGS: NewsSettings = {
   sources: ["aljazeera", "bbc", "guardian", "techcrunch", "hackernews"],
-  genres: ["world", "politics", "technology", "business"],
+  // "general" is the bucket a mixed feed's unclassifiable items land in, so a
+  // default subscription that omits it would silently drop part of every
+  // mixed-feed source. It is a normal, de-selectable genre like any other.
+  genres: ["world", "politics", "technology", "business", "general"],
   languages: [],
+  version: SETTINGS_VERSION,
 };
 
 const VALID_LANGUAGES = new Set(Object.keys(LANGUAGE_LABELS) as Language[]);
@@ -304,14 +319,24 @@ async function loadSettings(): Promise<NewsSettings> {
   try {
     const data = await readFile(SETTINGS_FILE, "utf-8");
     const parsed = JSON.parse(data);
+    const genres: Genre[] = Array.isArray(parsed.genres) ? parsed.genres : DEFAULT_SETTINGS.genres;
+    const version = typeof parsed.version === "number" ? parsed.version : 1;
+    // v1 filtered as though "general" were always selected. Carry that forward
+    // once so an upgrade doesn't quietly mute every mixed-feed source; an empty
+    // list already means "all genres", so it needs nothing.
+    const migrated =
+      version < 2 && genres.length > 0 && !genres.includes("general")
+        ? [...genres, "general" as Genre]
+        : genres;
     return {
       sources: Array.isArray(parsed.sources) ? parsed.sources : DEFAULT_SETTINGS.sources,
-      genres: Array.isArray(parsed.genres) ? parsed.genres : DEFAULT_SETTINGS.genres,
+      genres: migrated,
       // Settings written before the language axis existed have no field —
       // treat that as "all languages" so old files keep working.
       languages: Array.isArray(parsed.languages)
         ? parsed.languages.filter((l: unknown): l is Language => typeof l === "string" && VALID_LANGUAGES.has(l as Language))
         : DEFAULT_SETTINGS.languages,
+      version: SETTINGS_VERSION,
     };
   } catch {
     return DEFAULT_SETTINGS;
@@ -1077,8 +1102,13 @@ export async function GET(request: NextRequest) {
       }
     } else if (source.feeds.all) {
       // For "all" feeds, only include if at least one of the source's genres is selected
+      // "general" only ever comes out of a mixed feed, so selecting it has to
+      // keep mixed feeds in the fetch set even when none of the source's
+      // advertised genres are selected.
       const hasMatchingGenre =
-        selectedGenreSet.size === 0 || source.genres.some((g) => selectedGenreSet.has(g));
+        selectedGenreSet.size === 0 ||
+        selectedGenreSet.has("general") ||
+        source.genres.some((g) => selectedGenreSet.has(g));
       if (hasMatchingGenre) {
         // The genre here is only a fallback for per-genre-labelled feeds;
         // parseFeed re-classifies every item of an "all" feed.
@@ -1127,13 +1157,14 @@ export async function GET(request: NextRequest) {
 
   // After per-article genre detection, drop articles whose detected genre
   // is not in the user's selection. This is what makes the genre filter
-  // actually filter when "all" feeds are involved. "general" items always
-  // pass: they carry no genre evidence either way, and dropping them would
-  // empty mixed feeds for anyone with a narrow subscription.
+  // actually filter when "all" feeds are involved. "general" gets no special
+  // exemption: an unconditional pass-through meant roughly a fifth of a
+  // filtered list ignored the selection outright, which is what made the
+  // genre chips read as broken. It is offered as its own chip instead.
   const genreFiltered =
     selectedGenreSet.size === 0
       ? deduped
-      : deduped.filter((a) => selectedGenreSet.has(a.genre) || a.genre === "general");
+      : deduped.filter((a) => selectedGenreSet.has(a.genre));
 
   // Sort by date (newest first)
   genreFiltered.sort((a, b) => {
@@ -1166,6 +1197,9 @@ export async function POST(request: NextRequest) {
       sources: sources.filter((id) => validSourceIds.has(id)),
       genres: genres.filter((g) => validGenres.has(g)),
       languages: languages.filter((l) => VALID_LANGUAGES.has(l)),
+      // Anything written through the app is current by definition — stamping it
+      // stops the v1 migration from re-adding a genre the user just unticked.
+      version: SETTINGS_VERSION,
     };
 
     await saveSettings(filtered);

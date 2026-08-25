@@ -221,9 +221,16 @@ The trend detail pane follows the same rules as the article reader: `sidePanel` 
 
 ### Headlines: genre and language axes (news widget)
 
-Headlines mode filters on two independent axes, and they are persisted the same
-way — `~/.personal-assistant/news-sources.json` via `/api/news`
-(`action: "update-settings"`).
+Headlines mode filters on two independent axes. **Both chip rows edit the saved
+selection** in `~/.personal-assistant/news-sources.json` via `/api/news`
+(`action: "update-settings"`) and refetch — neither is a view-level narrowing of
+what already arrived. That was the earlier design for genre, and it is what made
+the chips read as decorative: a row derived from the current page can only ever
+subtract from it, so a genre outside the subscription had no chip at all and no
+chip could broaden anything. `persistSelection()` in the widget is the single
+writer for both axes (and for the source list, when a language toggle has to
+bring sources with it); it also syncs the settings-panel drafts so the two UIs
+can't disagree.
 
 **Genre** is per *article*. A source's `genres` list governs which of its feeds
 get fetched, **not** how its articles are classified — clamping classification
@@ -233,28 +240,52 @@ scores every genre and takes the highest: categories and title count double, the
 link contributes **decoded path segments only** (the raw URL put `news.google.com`
 into the haystack, which scored `technology` for every Google-News proxy
 article). An item with no evidence becomes `general` — an honest bucket rather
-than `sourceGenres[0]`, which turned `world` into a junk drawer. `general` always
-survives the server-side genre drop, otherwise a narrow subscription would empty
-the mixed feeds; the chip row still filters it strictly. Per-genre feeds (BBC
-Sports, Guardian Technology) are never re-classified — detection runs only for a
-source whose sole feed is `all`.
+than `sourceGenres[0]`, which turned `world` into a junk drawer. Per-genre feeds
+(BBC Sports, Guardian Technology) are never re-classified — detection runs only
+for a source whose sole feed is `all`.
+
+`general` gets **no exemption from the server-side genre drop**. It used to pass
+unconditionally so a narrow subscription couldn't empty the mixed feeds, but that
+meant roughly a fifth of a filtered list ignored the selection outright, which is
+the concrete sense in which the genre filter "didn't work". It is a normal,
+de-selectable genre instead: it ships in `DEFAULT_SETTINGS.genres`, it earns a
+chip whenever a subscribed source has an `all` feed, and selecting it alone keeps
+mixed feeds in the fetch set (the task builder checks `selectedGenreSet.has("general")`
+explicitly, since no source *advertises* `general`). Settings files are versioned
+for this: `SETTINGS_VERSION` is 2, and `loadSettings()` adds `general` to a v1
+file's non-empty genre list once, because v1 was filtered as though it were
+always selected — without that a mixed-feed source goes quiet on upgrade with no
+visible cause. `POST update-settings` stamps the current version, so the
+migration can't re-add a genre the user just unticked.
 
 **Language** (`en` | `ar` | `de`) is per *source*, so it gates whole sources
 server-side before any fetch. It replaced the old free-form `locale` hint with a
 typed, required `NewsSource.language`, mirrored onto `NewsArticle.language` and
 rendered as `lang` on the list row and reader (RTL still comes from `dir`).
 Empty selection = all languages, which is also what a settings file written
-before the field resolves to. Unlike the genre chips — a view-level narrowing of
-what already arrived — the language chips edit the *saved* selection and refetch.
+before the field resolves to.
 
-Arabic sources are `aljazeera-ar`, `kooora` and `filgoal`. They are not in
-`DEFAULT_SETTINGS.sources`, and kooora/filgoal are sports-only while the default
-genres are not — which is why they looked absent. Ticking a source in the
-settings panel now also ticks its genres when none were selected, so a
-sports-only source can't be enabled into silence. FilGoal has no usable native
-RSS (`/rss*` answers 403, other paths serve an HTML 404), so it goes through a
-Google News search feed whose links are opaque redirects the reader can't
-extract — the reader labels that, as the trends pane does.
+The language chips list **every language the catalog offers**, not the ones the
+subscribed sources happen to publish in. Deriving the row from the selection made
+Arabic unreachable from the widget body: no Arabic source ships in
+`DEFAULT_SETTINGS.sources`, so the language with no subscribed source got no
+chip, and the chip that would have pulled its sources in was the missing one.
+Turning a language on therefore **also enables that language's sources** (and
+their genres, when the saved genre list can't serve them) — otherwise it selects
+a language that gates every subscribed source to nothing and returns an empty
+list. The genre chips are narrowed the other way, to what the subscribed sources
+can actually serve, so every genre chip is clickable-into-results; a genre that
+is currently doing the filtering is never dropped from the row even if its source
+was unticked.
+
+Arabic sources are `aljazeera-ar`, `kooora` and `filgoal`; kooora/filgoal are
+sports-only while the default genres are not. Ticking a source in the settings
+panel also ticks its genres when none were selected, so a sports-only source
+can't be enabled into silence — the language toggle applies the same rule.
+FilGoal has no usable native RSS (`/rss*` answers 403, other paths serve an HTML
+404), so it goes through a Google News search feed whose links are opaque
+redirects the reader can't extract — the reader labels that, as the trends pane
+does.
 
 ### Service Health (system monitor)
 
