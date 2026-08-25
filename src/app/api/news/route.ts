@@ -286,10 +286,22 @@ const AVAILABLE_SOURCES: NewsSource[] = [
 // ─── Settings persistence ────────────────────────────────────────────────────
 
 interface NewsSettings {
+  /** Subscription: which sources to read. Owned by the settings panel. */
   sources: string[];
+  /** Subscription: which genres to read. Empty = all. Owned by the panel. */
   genres: Genre[];
-  /** Selected publication languages; empty/missing = all languages. */
+  /** Subscription: which languages to read; empty = all. Owned by the panel. */
   languages: Language[];
+  /**
+   * The widget's genre filter chip — a single genre, or null for "All".
+   * Deliberately NOT the same field as `genres`: the chip row is a filter
+   * ("show me only this"), the panel is a subscription ("read these"). Sharing
+   * one list made a chip click add to or subtract from the subscription, so
+   * the list came back barely changed and the row read as decorative.
+   */
+  activeGenre: Genre | null;
+  /** The widget's language filter chip — a single language, or null. */
+  activeLanguage: Language | null;
   /** Bumped when a stored shape needs migrating on read. */
   version?: number;
 }
@@ -300,8 +312,12 @@ interface NewsSettings {
  * contained "general", so adding it is the faithful translation of the old
  * behaviour; without it a mixed-feed source would go quiet on upgrade with no
  * visible cause.
+ *
+ * 3 — the widget's filter chips moved off `genres`/`languages` onto their own
+ * single-valued `activeGenre`/`activeLanguage`. A v2 file has no filter, which
+ * is exactly `null` on both, so the migration is a no-op beyond the default.
  */
-const SETTINGS_VERSION = 2;
+const SETTINGS_VERSION = 3;
 
 const DEFAULT_SETTINGS: NewsSettings = {
   sources: ["aljazeera", "bbc", "guardian", "techcrunch", "hackernews"],
@@ -310,10 +326,21 @@ const DEFAULT_SETTINGS: NewsSettings = {
   // mixed-feed source. It is a normal, de-selectable genre like any other.
   genres: ["world", "politics", "technology", "business", "general"],
   languages: [],
+  activeGenre: null,
+  activeLanguage: null,
   version: SETTINGS_VERSION,
 };
 
 const VALID_LANGUAGES = new Set(Object.keys(LANGUAGE_LABELS) as Language[]);
+const VALID_GENRES = new Set(Object.keys(GENRE_LABELS) as Genre[]);
+
+function parseActiveGenre(v: unknown): Genre | null {
+  return typeof v === "string" && VALID_GENRES.has(v as Genre) ? (v as Genre) : null;
+}
+
+function parseActiveLanguage(v: unknown): Language | null {
+  return typeof v === "string" && VALID_LANGUAGES.has(v as Language) ? (v as Language) : null;
+}
 
 async function loadSettings(): Promise<NewsSettings> {
   try {
@@ -336,6 +363,9 @@ async function loadSettings(): Promise<NewsSettings> {
       languages: Array.isArray(parsed.languages)
         ? parsed.languages.filter((l: unknown): l is Language => typeof l === "string" && VALID_LANGUAGES.has(l as Language))
         : DEFAULT_SETTINGS.languages,
+      // Absent on any file written before v3 — no filter, which is the default.
+      activeGenre: parseActiveGenre(parsed.activeGenre),
+      activeLanguage: parseActiveLanguage(parsed.activeLanguage),
       version: SETTINGS_VERSION,
     };
   } catch {
@@ -1082,10 +1112,21 @@ export async function GET(request: NextRequest) {
 
   // Default: list articles from selected sources & genres
   const settings = await loadSettings();
-  const selectedGenreSet = new Set(settings.genres);
+  // Two layers, in this order:
+  //   1. the subscription (`genres` / `languages`) — what the panel says to read
+  //   2. the widget's filter chip (`activeGenre` / `activeLanguage`) — a single
+  //      value that overrides the subscription for as long as it is set
+  // A chip therefore narrows to exactly one genre/language no matter what the
+  // subscription holds, which is the only reading of a filter row that matches
+  // what it looks like. Clearing the chip falls back to the subscription.
+  const selectedGenreSet = settings.activeGenre
+    ? new Set<Genre>([settings.activeGenre])
+    : new Set(settings.genres);
   // Language is a per-source property, so the filter gates whole sources.
   // Empty selection = all languages (also what old settings files resolve to).
-  const selectedLanguageSet = new Set(settings.languages);
+  const selectedLanguageSet = settings.activeLanguage
+    ? new Set<Language>([settings.activeLanguage])
+    : new Set(settings.languages);
 
   // Build list of (source, genre, url) tuples to fetch
   const tasks: Array<{ source: NewsSource; genre: Genre; url: string }> = [];
@@ -1101,19 +1142,18 @@ export async function GET(request: NextRequest) {
         }
       }
     } else if (source.feeds.all) {
-      // For "all" feeds, only include if at least one of the source's genres is selected
-      // "general" only ever comes out of a mixed feed, so selecting it has to
-      // keep mixed feeds in the fetch set even when none of the source's
-      // advertised genres are selected.
-      const hasMatchingGenre =
-        selectedGenreSet.size === 0 ||
-        selectedGenreSet.has("general") ||
-        source.genres.some((g) => selectedGenreSet.has(g));
-      if (hasMatchingGenre) {
-        // The genre here is only a fallback for per-genre-labelled feeds;
-        // parseFeed re-classifies every item of an "all" feed.
-        tasks.push({ source, genre: source.genres[0], url: source.feeds.all });
-      }
+      // A mixed feed is always fetched for a subscribed source, whatever the
+      // genre selection. Its articles are classified per-item by parseFeed, so
+      // the source's advertised `genres` list is a hint about what it usually
+      // covers, not a guarantee about what is in the feed today — gating on it
+      // meant filtering to "technology" silently excluded the Al Jazeera tech
+      // story that per-article detection exists to find. The post-fetch drop
+      // below does the filtering, on the genre each article actually got.
+      // (This also subsumes the old "general" special case: `general` only ever
+      // comes out of a mixed feed, and mixed feeds are now never skipped.)
+      // The genre passed here is an unused fallback — parseFeed re-classifies
+      // every item of an "all" feed.
+      tasks.push({ source, genre: source.genres[0], url: source.feeds.all });
     }
   }
 
@@ -1155,12 +1195,12 @@ export async function GET(request: NextRequest) {
     return true;
   });
 
-  // After per-article genre detection, drop articles whose detected genre
-  // is not in the user's selection. This is what makes the genre filter
-  // actually filter when "all" feeds are involved. "general" gets no special
-  // exemption: an unconditional pass-through meant roughly a fifth of a
-  // filtered list ignored the selection outright, which is what made the
-  // genre chips read as broken. It is offered as its own chip instead.
+  // After per-article genre detection, drop articles whose detected genre is
+  // not in the effective set (the chip when one is active, otherwise the
+  // subscription). This is what makes the genre filter actually filter when
+  // "all" feeds are involved. "general" gets no special exemption: an
+  // unconditional pass-through meant roughly a fifth of a filtered list
+  // ignored the selection outright. It is offered as its own chip instead.
   const genreFiltered =
     selectedGenreSet.size === 0
       ? deduped
@@ -1185,18 +1225,29 @@ export async function POST(request: NextRequest) {
   const body = await request.json();
   const { action } = body;
 
+  // Subscription write — the settings panel. Leaves the filter chips alone
+  // unless the caller names them, so saving the panel can't silently clear a
+  // filter the user set in the widget body.
   if (action === "update-settings") {
     const validSourceIds = new Set(AVAILABLE_SOURCES.map((s) => s.id));
-    const validGenres = new Set(Object.keys(GENRE_LABELS) as Genre[]);
 
+    const current = await loadSettings();
     const sources = (body.sources as string[] | undefined) ?? [];
     const genres = (body.genres as Genre[] | undefined) ?? [];
     const languages = (body.languages as Language[] | undefined) ?? [];
 
     const filtered: NewsSettings = {
       sources: sources.filter((id) => validSourceIds.has(id)),
-      genres: genres.filter((g) => validGenres.has(g)),
+      genres: genres.filter((g) => VALID_GENRES.has(g)),
       languages: languages.filter((l) => VALID_LANGUAGES.has(l)),
+      activeGenre:
+        body.activeGenre === undefined
+          ? current.activeGenre
+          : parseActiveGenre(body.activeGenre),
+      activeLanguage:
+        body.activeLanguage === undefined
+          ? current.activeLanguage
+          : parseActiveLanguage(body.activeLanguage),
       // Anything written through the app is current by definition — stamping it
       // stops the v1 migration from re-adding a genre the user just unticked.
       version: SETTINGS_VERSION,
@@ -1204,6 +1255,33 @@ export async function POST(request: NextRequest) {
 
     await saveSettings(filtered);
     return Response.json({ success: true, settings: filtered });
+  }
+
+  // Filter write — the widget's chip rows. Single-valued and independent of the
+  // subscription: `null` clears the axis back to "All". `sources` is accepted
+  // alongside because picking a language the subscription can't serve has to
+  // bring that language's sources with it, or the filter selects nothing.
+  if (action === "set-filter") {
+    const validSourceIds = new Set(AVAILABLE_SOURCES.map((s) => s.id));
+    const current = await loadSettings();
+
+    const next: NewsSettings = {
+      sources: Array.isArray(body.sources)
+        ? (body.sources as string[]).filter((id) => validSourceIds.has(id))
+        : current.sources,
+      genres: current.genres,
+      languages: current.languages,
+      activeGenre:
+        body.genre === undefined ? current.activeGenre : parseActiveGenre(body.genre),
+      activeLanguage:
+        body.language === undefined
+          ? current.activeLanguage
+          : parseActiveLanguage(body.language),
+      version: SETTINGS_VERSION,
+    };
+
+    await saveSettings(next);
+    return Response.json({ success: true, settings: next });
   }
 
   // Batch fetch thumbnails (og:image) for many articles at once.

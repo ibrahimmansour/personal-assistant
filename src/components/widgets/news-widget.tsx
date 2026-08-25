@@ -85,9 +85,13 @@ interface LanguageOption {
 }
 
 interface NewsSettings {
+  /** Subscription — owned by the settings panel. */
   sources: string[];
   genres: Genre[];
   languages?: Language[];
+  /** Filter chips — single-valued, independent of the subscription above. */
+  activeGenre?: Genre | null;
+  activeLanguage?: Language | null;
 }
 
 interface FailedSource {
@@ -1061,7 +1065,12 @@ export function NewsWidget() {
   // the nav request to expand it, so a news tile tap opened nothing at all.
   const { expandRequested, onExpandHandled } = useWidgetNavFor("news");
   const [articles, setArticles] = useState<NewsArticle[]>([]);
-  const [settings, setSettings] = useState<NewsSettings>({ sources: [], genres: [] });
+  const [settings, setSettings] = useState<NewsSettings>({
+    sources: [],
+    genres: [],
+    activeGenre: null,
+    activeLanguage: null,
+  });
   const [failedSources, setFailedSources] = useState<FailedSource[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -1132,20 +1141,29 @@ export function NewsWidget() {
     });
   }, []);
 
+  // Every chip click refetches, and a feed round-trip is seconds long, so two
+  // quick clicks can land their responses out of order — the second click's
+  // list is then overwritten by the first click's, and the filter looks like it
+  // did nothing. Only the newest in-flight request may write.
+  const newsRequestRef = useRef(0);
+
   const fetchNews = useCallback(async () => {
+    const requestId = ++newsRequestRef.current;
     try {
       setLoading(true);
       setError(null);
       const res = await fetch("/api/news");
       if (!res.ok) throw new Error("Failed to fetch news");
       const data = await res.json();
+      if (requestId !== newsRequestRef.current) return;
       setArticles(applyCachedThumbnails(data.articles || []));
       setFailedSources(data.failedSources || []);
       if (data.settings) setSettings(data.settings);
     } catch (err) {
+      if (requestId !== newsRequestRef.current) return;
       setError(err instanceof Error ? err.message : "Failed to fetch news");
     } finally {
-      setLoading(false);
+      if (requestId === newsRequestRef.current) setLoading(false);
     }
   }, [applyCachedThumbnails]);
 
@@ -1408,33 +1426,40 @@ export function NewsWidget() {
   }, []);
 
   // ─── Filter axes ──────────────────────────────────────────────────────────
-  // Both chip rows edit the SAVED selection rather than narrowing what already
-  // arrived. A view-level filter can only ever subtract from the page in hand,
-  // so a genre outside the subscription had no chip at all and no chip could
-  // broaden anything — the row looked like a filter and behaved like a legend.
-  // Editing the saved selection means the list always matches the chips.
+  // The chip rows are a FILTER, single-valued per axis: clicking "Sports" shows
+  // sports and nothing else, and "All" clears back to the subscription. They do
+  // not edit the subscription (`settings.genres` / `settings.languages`), which
+  // the settings panel owns.
+  //
+  // Sharing one list between the two is what made the chips read as broken.
+  // As a multi-select over the subscription, clicking an already-subscribed
+  // genre *removed* it and clicking an unsubscribed one *added* it — so the
+  // click either widened the list or trimmed one genre out of five, and either
+  // way the list came back looking the same. No single click could ever say
+  // "only this", which is the one thing a filter chip looks like it does.
 
-  const selectedGenres = useMemo(() => settings.genres ?? [], [settings]);
-  const selectedLanguages = useMemo(() => settings.languages ?? [], [settings]);
+  const activeGenre = settings.activeGenre ?? null;
+  const activeLanguage = settings.activeLanguage ?? null;
+  const subscribedGenres = useMemo(() => settings.genres ?? [], [settings]);
 
-  const persistSelection = useCallback(
-    (next: { sources?: string[]; genres?: Genre[]; languages?: Language[] }) => {
-      const merged = {
-        sources: next.sources ?? settings.sources,
-        genres: next.genres ?? settings.genres ?? [],
-        languages: next.languages ?? settings.languages ?? [],
-      };
+  /** Single writer for the chip rows. `undefined` = leave that axis alone. */
+  const setFilter = useCallback(
+    (next: { genre?: Genre | null; language?: Language | null; sources?: string[] }) => {
       // Optimistic; the POST response (or a meta refetch on failure) is truth.
-      setSettings(merged);
-      setDraftSources(merged.sources);
-      setDraftGenres(merged.genres);
-      setDraftLanguages(merged.languages);
+      setSettings((prev) => ({
+        ...prev,
+        sources: next.sources ?? prev.sources,
+        activeGenre: next.genre === undefined ? prev.activeGenre ?? null : next.genre,
+        activeLanguage:
+          next.language === undefined ? prev.activeLanguage ?? null : next.language,
+      }));
+      if (next.sources) setDraftSources(next.sources);
       (async () => {
         try {
           const res = await fetch("/api/news", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ action: "update-settings", ...merged }),
+            body: JSON.stringify({ action: "set-filter", ...next }),
           });
           if (!res.ok) throw new Error("Failed to save");
           const json = await res.json();
@@ -1447,7 +1472,7 @@ export function NewsWidget() {
         }
       })();
     },
-    [settings, fetchNews, fetchSettingsMeta]
+    [fetchNews, fetchSettingsMeta]
   );
 
   // Genres the user's current sources can actually serve. Restricting the row
@@ -1470,22 +1495,18 @@ export function NewsWidget() {
       for (const g of s.genres) servable.add(g);
       if (s.feeds.all) servable.add("general");
     }
-    // Never hide a genre that is currently doing the filtering, even if the
+    // Never hide the genre that is currently doing the filtering, even if the
     // source that served it was since unticked — the row would then misreport
     // the state it is supposed to show.
-    for (const g of selectedGenres) servable.add(g);
+    if (activeGenre) servable.add(activeGenre);
     if (servable.size === 0) return catalog;
     return catalog.filter((g) => servable.has(g.id));
-  }, [availableGenres, availableSources, settings.sources, selectedGenres]);
+  }, [availableGenres, availableSources, settings.sources, activeGenre]);
 
-  const handleToggleSavedGenre = useCallback(
-    (id: Genre) => {
-      const next = selectedGenres.includes(id)
-        ? selectedGenres.filter((g) => g !== id)
-        : [...selectedGenres, id];
-      persistSelection({ genres: next });
-    },
-    [selectedGenres, persistSelection]
+  // Exclusive: a click filters to that genre, clicking the active one clears.
+  const handleSelectGenre = useCallback(
+    (id: Genre) => setFilter({ genre: activeGenre === id ? null : id }),
+    [activeGenre, setFilter]
   );
 
   // Every language the catalog offers, not just the ones the subscribed sources
@@ -1498,45 +1519,36 @@ export function NewsWidget() {
     if (availableSources.length === 0) return catalog.map((l) => l.id);
     const offered = new Set<Language>();
     for (const s of availableSources) offered.add(s.language);
-    for (const l of selectedLanguages) offered.add(l);
+    if (activeLanguage) offered.add(activeLanguage);
     return catalog.filter((l) => offered.has(l.id)).map((l) => l.id);
-  }, [availableLanguages, availableSources, selectedLanguages]);
+  }, [availableLanguages, availableSources, activeLanguage]);
 
-  const handleToggleSavedLanguage = useCallback(
+  // Exclusive, like the genre row. Turning a language on also has to bring its
+  // sources with it: language gates whole sources server-side, so picking
+  // العربية while every subscribed source is English or German would select a
+  // language that can return nothing.
+  const handleSelectLanguage = useCallback(
     (lang: Language) => {
-      const removing = selectedLanguages.includes(lang);
-      const nextLanguages = removing
-        ? selectedLanguages.filter((l) => l !== lang)
-        : [...selectedLanguages, lang];
-      if (removing) {
-        persistSelection({ languages: nextLanguages });
+      if (activeLanguage === lang) {
+        setFilter({ language: null });
         return;
       }
-      // Turning a language on has to bring its sources with it. Language gates
-      // whole sources server-side, so picking العربية while every subscribed
-      // source is English or German selects a language that can return nothing.
       const sourcesInLang = availableSources.filter((s) => s.language === lang);
       const alreadyCovered =
         sourcesInLang.length === 0 ||
         sourcesInLang.some((s) => settings.sources.includes(s.id));
       if (alreadyCovered) {
-        persistSelection({ languages: nextLanguages });
+        setFilter({ language: lang });
         return;
       }
-      const nextSources = [...settings.sources];
-      const nextGenres = [...(settings.genres ?? [])];
-      for (const s of sourcesInLang) {
-        nextSources.push(s.id);
-        // Same rule the settings panel applies when ticking a source: a
-        // sports-only source (Kooora, FilGoal) enabled under a genre subset it
-        // cannot serve would arrive silent.
-        if (nextGenres.length > 0 && !s.genres.some((g) => nextGenres.includes(g))) {
-          for (const g of s.genres) if (!nextGenres.includes(g)) nextGenres.push(g);
-        }
-      }
-      persistSelection({ sources: nextSources, genres: nextGenres, languages: nextLanguages });
+      // Additive only — subscribing to the sources the chip needs, never
+      // unsubscribing. The genre axis is left alone: a sports-only Arabic
+      // source (Kooora, FilGoal) under an unrelated genre filter returning
+      // nothing is the filter working, not a source enabled into silence.
+      const nextSources = [...settings.sources, ...sourcesInLang.map((s) => s.id)];
+      setFilter({ language: lang, sources: nextSources });
     },
-    [selectedLanguages, availableSources, settings.sources, settings.genres, persistSelection]
+    [activeLanguage, availableSources, settings.sources, setFilter]
   );
 
   // ─── Reader handlers ──────────────────────────────────────────────────────
@@ -1850,18 +1862,18 @@ export function NewsWidget() {
             {modeToggle}
           </div>
 
-          {/* Genre filter chips — edits the saved genre selection */}
+          {/* Genre filter chips — one genre at a time, "All" clears */}
           {genreFilterOptions.length > 1 && (
             <div className="flex items-center gap-1.5 overflow-x-auto pb-1 -mx-1 px-1 shrink-0 scrollbar-thin">
               <Filter className="h-3 w-3 text-muted-foreground shrink-0" />
               <button
                 onClick={() => {
-                  if (selectedGenres.length > 0) persistSelection({ genres: [] });
+                  if (activeGenre) setFilter({ genre: null });
                 }}
-                aria-pressed={selectedGenres.length === 0}
+                aria-pressed={activeGenre === null}
                 className={cn(
                   "text-[0.6875rem] px-3 md:px-2 min-h-11 md:min-h-0 md:py-0.5 rounded-full border transition-colors shrink-0",
-                  selectedGenres.length === 0
+                  activeGenre === null
                     ? "bg-primary text-primary-foreground border-primary font-medium"
                     : "border-border text-muted-foreground hover:bg-muted"
                 )}
@@ -1869,11 +1881,11 @@ export function NewsWidget() {
                 All
               </button>
               {genreFilterOptions.map((g) => {
-                const active = selectedGenres.includes(g.id);
+                const active = activeGenre === g.id;
                 return (
                   <button
                     key={g.id}
-                    onClick={() => handleToggleSavedGenre(g.id)}
+                    onClick={() => handleSelectGenre(g.id)}
                     aria-pressed={active}
                     className={cn(
                       "text-[0.6875rem] px-3 md:px-2 min-h-11 md:min-h-0 md:py-0.5 rounded-full border transition-colors shrink-0",
@@ -1889,18 +1901,18 @@ export function NewsWidget() {
             </div>
           )}
 
-          {/* Language filter chips — edits the saved language selection */}
+          {/* Language filter chips — one language at a time, "All" clears */}
           {languagesInPlay.length > 1 && (
             <div className="flex items-center gap-1.5 overflow-x-auto pb-1 -mx-1 px-1 shrink-0 scrollbar-thin">
               <LanguagesIcon className="h-3 w-3 text-muted-foreground shrink-0" />
               <button
                 onClick={() => {
-                  if (selectedLanguages.length > 0) persistSelection({ languages: [] });
+                  if (activeLanguage) setFilter({ language: null });
                 }}
-                aria-pressed={selectedLanguages.length === 0}
+                aria-pressed={activeLanguage === null}
                 className={cn(
                   "text-[0.6875rem] px-3 md:px-2 min-h-11 md:min-h-0 md:py-0.5 rounded-full border transition-colors shrink-0",
-                  selectedLanguages.length === 0
+                  activeLanguage === null
                     ? "bg-primary text-primary-foreground border-primary font-medium"
                     : "border-border text-muted-foreground hover:bg-muted"
                 )}
@@ -1908,11 +1920,11 @@ export function NewsWidget() {
                 All
               </button>
               {languagesInPlay.map((langId) => {
-                const active = selectedLanguages.includes(langId);
+                const active = activeLanguage === langId;
                 return (
                   <button
                     key={langId}
-                    onClick={() => handleToggleSavedLanguage(langId)}
+                    onClick={() => handleSelectLanguage(langId)}
                     aria-pressed={active}
                     className={cn(
                       "text-[0.6875rem] px-3 md:px-2 min-h-11 md:min-h-0 md:py-0.5 rounded-full border transition-colors shrink-0",
@@ -1957,9 +1969,11 @@ export function NewsWidget() {
             <div className="flex flex-col items-center justify-center flex-1 gap-2 text-muted-foreground">
               <Newspaper className="h-8 w-8 opacity-40" />
               <p className="text-xs">
-                {selectedGenres.length > 0
-                  ? "No articles for the selected genres."
-                  : "No articles."}
+                {activeGenre || activeLanguage
+                  ? "No articles match this filter."
+                  : subscribedGenres.length > 0
+                    ? "No articles for the selected genres."
+                    : "No articles."}
               </p>
               <Button
                 variant="outline"

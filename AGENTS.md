@@ -219,73 +219,102 @@ A trend name explains nothing on its own, so each is paired with news coverage s
 
 The trend detail pane follows the same rules as the article reader: `sidePanel` on desktop, widget body below `md`, its own `useBackHandler` layer. Opening a coverage link reuses `ReaderPane` (the article is adapted to a `NewsArticle`), so back walks reader → trend → widget.
 
-### Headlines: genre and language axes (news widget)
+### Headlines: filter chips vs. subscription (news widget)
 
-Headlines mode filters on two independent axes. **Both chip rows edit the saved
-selection** in `~/.personal-assistant/news-sources.json` via `/api/news`
-(`action: "update-settings"`) and refetch — neither is a view-level narrowing of
-what already arrived. That was the earlier design for genre, and it is what made
-the chips read as decorative: a row derived from the current page can only ever
-subtract from it, so a genre outside the subscription had no chip at all and no
-chip could broaden anything. `persistSelection()` in the widget is the single
-writer for both axes (and for the source list, when a language toggle has to
-bring sources with it); it also syncs the settings-panel drafts so the two UIs
-can't disagree.
+Headlines mode has **two levels of selection, in two separate fields** of
+`~/.personal-assistant/news-sources.json`, and conflating them is what made the
+filters read as broken three releases running:
 
-**Genre** is per *article*. A source's `genres` list governs which of its feeds
-get fetched, **not** how its articles are classified — clamping classification
-to the advertised list is what made an Al Jazeera technology story impossible to
-tag as technology, so it fell through to `world`. `detectGenre()` therefore
-scores every genre and takes the highest: categories and title count double, the
-link contributes **decoded path segments only** (the raw URL put `news.google.com`
-into the haystack, which scored `technology` for every Google-News proxy
-article). An item with no evidence becomes `general` — an honest bucket rather
-than `sourceGenres[0]`, which turned `world` into a junk drawer. Per-genre feeds
-(BBC Sports, Guardian Technology) are never re-classified — detection runs only
-for a source whose sole feed is `all`.
+- **Subscription** — `sources`, `genres`, `languages`. What to *read*. Owned by
+  the settings panel; multi-select; empty genre/language list = all.
+- **Filter** — `activeGenre`, `activeLanguage`. What to *show right now*.
+  Owned by the widget's chip rows; **single-valued or `null`**, never a list.
 
-`general` gets **no exemption from the server-side genre drop**. It used to pass
-unconditionally so a narrow subscription couldn't empty the mixed feeds, but that
-meant roughly a fifth of a filtered list ignored the selection outright, which is
-the concrete sense in which the genre filter "didn't work". It is a normal,
-de-selectable genre instead: it ships in `DEFAULT_SETTINGS.genres`, it earns a
-chip whenever a subscribed source has an `all` feed, and selecting it alone keeps
-mixed feeds in the fetch set (the task builder checks `selectedGenreSet.has("general")`
-explicitly, since no source *advertises* `general`). Settings files are versioned
-for this: `SETTINGS_VERSION` is 2, and `loadSettings()` adds `general` to a v1
-file's non-empty genre list once, because v1 was filtered as though it were
-always selected — without that a mixed-feed source goes quiet on upgrade with no
-visible cause. `POST update-settings` stamps the current version, so the
-migration can't re-add a genre the user just unticked.
+The server applies the filter as an override, not an intersection:
+`activeGenre ? {activeGenre} : genres`, same for language. So a chip narrows to
+exactly one genre whatever the subscription holds, and "All" falls back to the
+subscription. `POST set-filter` is the chips' writer and touches nothing else;
+`POST update-settings` is the panel's and leaves `activeGenre`/`activeLanguage`
+alone unless the body names them (`undefined` ≠ `null`), so saving the panel
+cannot silently clear a filter set in the widget body.
+
+**Do not put the chip rows back on the `genres`/`languages` lists.** That was
+the previous design and it is why the user reported "no filtration happens at
+all" a third time: as a multi-select over the subscription, clicking an
+already-subscribed genre *removed* it and clicking an unsubscribed one *added*
+it, so a click either widened the list or trimmed one genre out of five — either
+way the list came back looking the same, and no single click could ever express
+"only this", which is the one thing a filter chip looks like it does. (The
+design before that was worse still: a view-level narrowing of the page in hand,
+which could only subtract, so a genre outside the subscription had no chip at
+all.) `setFilter()` in the widget is the single writer for both chip rows, plus
+the source list when a language chip has to bring sources with it.
+
+Two supporting rules, both load-bearing:
+
+- **A mixed (`all`) feed is always fetched for a subscribed source**, whatever
+  the genre selection, because its articles are classified per-item and the
+  source's advertised `genres` is a hint about what it usually covers, not a
+  manifest of what is in the feed today. Gating on it meant filtering to
+  technology excluded the Al Jazeera tech story that per-article detection
+  exists to find. The post-fetch drop does the filtering, on the genre each
+  article actually got. This also subsumes the old `general` special case —
+  `general` only ever comes out of a mixed feed.
+- **The chip rows refetch, and a feed round-trip is seconds long**, so
+  `fetchNews()` carries a request-sequence guard: only the newest in-flight
+  request may write state. Without it two quick chip clicks resolve out of order
+  and the second click's list is overwritten by the first's — indistinguishable
+  from a filter that did nothing.
+
+**Genre** is per *article*. `detectGenre()` scores every genre and takes the
+highest, with no clamp to the source's advertised list — clamping is what made
+an Al Jazeera technology story impossible to tag as technology, so it fell
+through to `world`. Categories and title count double; the link contributes
+**decoded path segments only** (the raw URL put `news.google.com` into the
+haystack, which scored `technology` for every Google-News proxy article). An
+item with no evidence becomes `general` — an honest bucket rather than
+`sourceGenres[0]`, which turned `world` into a junk drawer. Per-genre feeds (BBC
+Sports, Guardian Technology) are never re-classified; detection runs only for a
+source whose sole feed is `all`. `general` gets no exemption from the genre
+drop: it is a normal, de-selectable genre that ships in
+`DEFAULT_SETTINGS.genres` and earns a chip whenever a subscribed source has an
+`all` feed.
 
 **Language** (`en` | `ar` | `de`) is per *source*, so it gates whole sources
-server-side before any fetch. It replaced the old free-form `locale` hint with a
-typed, required `NewsSource.language`, mirrored onto `NewsArticle.language` and
+before any fetch. It replaced the old free-form `locale` hint with a typed,
+required `NewsSource.language`, mirrored onto `NewsArticle.language` and
 rendered as `lang` on the list row and reader (RTL still comes from `dir`).
-Empty selection = all languages, which is also what a settings file written
-before the field resolves to.
 
 The language chips list **every language the catalog offers**, not the ones the
-subscribed sources happen to publish in. Deriving the row from the selection made
-Arabic unreachable from the widget body: no Arabic source ships in
+subscribed sources happen to publish in. Deriving the row from the subscription
+made Arabic unreachable from the widget body: no Arabic source ships in
 `DEFAULT_SETTINGS.sources`, so the language with no subscribed source got no
 chip, and the chip that would have pulled its sources in was the missing one.
-Turning a language on therefore **also enables that language's sources** (and
-their genres, when the saved genre list can't serve them) — otherwise it selects
-a language that gates every subscribed source to nothing and returns an empty
-list. The genre chips are narrowed the other way, to what the subscribed sources
-can actually serve, so every genre chip is clickable-into-results; a genre that
-is currently doing the filtering is never dropped from the row even if its source
-was unticked.
+Picking a language therefore **also subscribes that language's sources** —
+additively, never unsubscribing — otherwise it selects a language that gates
+every subscribed source to nothing. It deliberately does *not* touch the genre
+axis any more: under a single-valued filter, widening genres to keep a
+sports-only source from arriving silent would override the genre chip the user
+just set. A sports-only Arabic source returning nothing under an unrelated genre
+filter is the filter working. The genre chips are narrowed the other way, to
+what the subscribed sources can serve, so every genre chip is
+clickable-into-results; the genre currently doing the filtering is never dropped
+from the row even if its source was unticked.
+
+Settings are versioned: `SETTINGS_VERSION` is 3. v1 → v2 adds `general` to a
+non-empty genre list once (v1 filtered as though it were always selected, so
+without the migration a mixed-feed source goes quiet on upgrade with no visible
+cause); v2 → v3 is a no-op beyond defaulting the two new filter fields to
+`null`. Both `POST` actions stamp the current version, so a migration can't
+re-add a genre the user just unticked.
 
 Arabic sources are `aljazeera-ar`, `kooora` and `filgoal`; kooora/filgoal are
 sports-only while the default genres are not. Ticking a source in the settings
 panel also ticks its genres when none were selected, so a sports-only source
-can't be enabled into silence — the language toggle applies the same rule.
-FilGoal has no usable native RSS (`/rss*` answers 403, other paths serve an HTML
-404), so it goes through a Google News search feed whose links are opaque
-redirects the reader can't extract — the reader labels that, as the trends pane
-does.
+can't be subscribed into silence. FilGoal has no usable native RSS (`/rss*`
+answers 403, other paths serve an HTML 404), so it goes through a Google News
+search feed whose links are opaque redirects the reader can't extract — the
+reader labels that, as the trends pane does.
 
 ### Service Health (system monitor)
 
@@ -448,6 +477,7 @@ Settings written through the app land in `~/.personal-assistant/config.json` and
 - Do NOT size text with a px arbitrary value (`text-[10px]`) — use rem (`text-[0.625rem]`), or the text-size setting can't scale it
 - Do NOT re-enable page/pinch zoom (`userScalable`, `maximumScale`) or put rem back into `--spacing`/`--radius` — text scaling is the zoom
 - Do NOT render an email body from a list-endpoint row — fetch it by ID (list rows above 50 have no body)
+- Do NOT drive the news widget's filter chips off `settings.genres`/`languages` — those are the subscription; chips are the single-valued `activeGenre`/`activeLanguage`
 - Do NOT remount a component holding a back layer (`useBackHandler`) via a changing `key`
 - Do NOT bypass the WidgetWrapper for widget components
 - Do NOT register a widget without layouts for both profiles at all three breakpoints
