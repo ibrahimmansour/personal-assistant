@@ -1122,17 +1122,42 @@ export async function GET(request: NextRequest) {
   const selectedGenreSet = settings.activeGenre
     ? new Set<Genre>([settings.activeGenre])
     : new Set(settings.genres);
-  // Language is a per-source property, so the filter gates whole sources.
-  // Empty selection = all languages (also what old settings files resolve to).
-  const selectedLanguageSet = settings.activeLanguage
-    ? new Set<Language>([settings.activeLanguage])
-    : new Set(settings.languages);
+  // Language is a per-source property, so it selects the source pool outright
+  // rather than filtering articles after the fetch.
+  //
+  // A language chip is a *view*, never an edit of the subscription. It used to
+  // be both: picking a language additively subscribed that language's sources
+  // so the chip couldn't select a silent set, and nothing ever unsubscribed
+  // them. Every language the user had ever filtered by therefore stayed in the
+  // subscription, so clearing the chip (or picking a third language) returned
+  // the previous filter's sources alongside the new one's — the list read as
+  // the new filter's results appended to the old filter's. Scoping the pool to
+  // the catalog here gets the same "a chip never selects nothing" guarantee
+  // with no lasting state, so switching filters fully replaces.
+  const subscribedSet = new Set(settings.sources);
+  const sourcePool = (() => {
+    if (settings.activeLanguage) {
+      const inLanguage = AVAILABLE_SOURCES.filter((s) => s.language === settings.activeLanguage);
+      // Honour the subscription when it can serve the language; fall back to
+      // the whole catalog for that language when it can't, so a language with
+      // no subscribed source still shows something.
+      const subscribed = inLanguage.filter((s) => subscribedSet.has(s.id));
+      return subscribed.length > 0 ? subscribed : inLanguage;
+    }
+    // No chip: the subscription, narrowed by the panel's language selection
+    // (empty = all languages, also what old settings files resolve to).
+    const subscribedLanguages = new Set(settings.languages);
+    return AVAILABLE_SOURCES.filter(
+      (s) =>
+        subscribedSet.has(s.id) &&
+        (subscribedLanguages.size === 0 || subscribedLanguages.has(s.language))
+    );
+  })();
+  const effectiveSources = sourcePool.map((s) => s.id);
 
   // Build list of (source, genre, url) tuples to fetch
   const tasks: Array<{ source: NewsSource; genre: Genre; url: string }> = [];
-  for (const source of AVAILABLE_SOURCES) {
-    if (!(settings.sources.includes(source.id))) continue;
-    if (selectedLanguageSet.size > 0 && !selectedLanguageSet.has(source.language)) continue;
+  for (const source of sourcePool) {
     // If source has per-genre feeds, fetch only the ones in selectedGenreSet
     const perGenreFeeds = Object.entries(source.feeds).filter(([k]) => k !== "all") as [Genre, string][];
     if (perGenreFeeds.length > 0) {
@@ -1161,6 +1186,7 @@ export async function GET(request: NextRequest) {
     return Response.json({
       articles: [],
       settings,
+      effectiveSources,
       failedSources: [],
     });
   }
@@ -1216,6 +1242,10 @@ export async function GET(request: NextRequest) {
   return Response.json({
     articles: genreFiltered.slice(0, 60),
     settings,
+    // The sources actually behind this list. Under a language chip that is the
+    // catalog's sources for that language, not the subscription, so the widget
+    // needs it to build a genre row that matches what is on screen.
+    effectiveSources,
     failedSources,
     fetchedAt: new Date().toISOString(),
   });
@@ -1258,17 +1288,15 @@ export async function POST(request: NextRequest) {
   }
 
   // Filter write — the widget's chip rows. Single-valued and independent of the
-  // subscription: `null` clears the axis back to "All". `sources` is accepted
-  // alongside because picking a language the subscription can't serve has to
-  // bring that language's sources with it, or the filter selects nothing.
+  // subscription: `null` clears the axis back to "All". It writes the two
+  // `active*` fields and nothing else; a chip that also edited `sources` left
+  // the previous filter's sources subscribed for good, which is what made a
+  // filter change read as additive.
   if (action === "set-filter") {
-    const validSourceIds = new Set(AVAILABLE_SOURCES.map((s) => s.id));
     const current = await loadSettings();
 
     const next: NewsSettings = {
-      sources: Array.isArray(body.sources)
-        ? (body.sources as string[]).filter((id) => validSourceIds.has(id))
-        : current.sources,
+      sources: current.sources,
       genres: current.genres,
       languages: current.languages,
       activeGenre:

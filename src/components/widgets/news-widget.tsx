@@ -1071,6 +1071,11 @@ export function NewsWidget() {
     activeGenre: null,
     activeLanguage: null,
   });
+  // The sources the current list actually came from, as reported by the API.
+  // Under a language chip that is the catalog's sources for that language
+  // rather than the subscription, so the genre row has to be built from this,
+  // not from `settings.sources`.
+  const [effectiveSources, setEffectiveSources] = useState<string[] | null>(null);
   const [failedSources, setFailedSources] = useState<FailedSource[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -1146,6 +1151,10 @@ export function NewsWidget() {
   // list is then overwritten by the first click's, and the filter looks like it
   // did nothing. Only the newest in-flight request may write.
   const newsRequestRef = useRef(0);
+  // Same problem one layer up: the filter write itself. Without this an older
+  // set-filter response could re-apply its (stale) settings over the newer
+  // click's and trigger a fetch for the filter the user already moved off.
+  const filterWriteRef = useRef(0);
 
   const fetchNews = useCallback(async () => {
     const requestId = ++newsRequestRef.current;
@@ -1157,6 +1166,9 @@ export function NewsWidget() {
       const data = await res.json();
       if (requestId !== newsRequestRef.current) return;
       setArticles(applyCachedThumbnails(data.articles || []));
+      setEffectiveSources(
+        Array.isArray(data.effectiveSources) ? data.effectiveSources : null
+      );
       setFailedSources(data.failedSources || []);
       if (data.settings) setSettings(data.settings);
     } catch (err) {
@@ -1442,18 +1454,28 @@ export function NewsWidget() {
   const activeLanguage = settings.activeLanguage ?? null;
   const subscribedGenres = useMemo(() => settings.genres ?? [], [settings]);
 
-  /** Single writer for the chip rows. `undefined` = leave that axis alone. */
+  /**
+   * Single writer for the chip rows. `undefined` = leave that axis alone.
+   *
+   * It writes the filter axes only. A chip that also edited the subscription
+   * (the language chip used to subscribe its language's sources so it couldn't
+   * select a silent set) left those sources behind on the next switch, so the
+   * new filter's list arrived on top of the old filter's sources. The server
+   * now scopes a language chip to the catalog instead, which needs no lasting
+   * state, so a filter change replaces rather than accumulates.
+   */
   const setFilter = useCallback(
-    (next: { genre?: Genre | null; language?: Language | null; sources?: string[] }) => {
+    (next: { genre?: Genre | null; language?: Language | null }) => {
+      // Two chip clicks land two writes; the settings file and this state must
+      // both end up on the newer one however the responses interleave.
+      const writeId = ++filterWriteRef.current;
       // Optimistic; the POST response (or a meta refetch on failure) is truth.
       setSettings((prev) => ({
         ...prev,
-        sources: next.sources ?? prev.sources,
         activeGenre: next.genre === undefined ? prev.activeGenre ?? null : next.genre,
         activeLanguage:
           next.language === undefined ? prev.activeLanguage ?? null : next.language,
       }));
-      if (next.sources) setDraftSources(next.sources);
       (async () => {
         try {
           const res = await fetch("/api/news", {
@@ -1463,12 +1485,15 @@ export function NewsWidget() {
           });
           if (!res.ok) throw new Error("Failed to save");
           const json = await res.json();
+          if (writeId !== filterWriteRef.current) return;
           if (json.settings) setSettings(json.settings);
         } catch {
+          if (writeId !== filterWriteRef.current) return;
           await fetchSettingsMeta();
         } finally {
-          // The server re-selects feeds from the saved axes — reload either way.
-          fetchNews();
+          // The server re-selects feeds from the saved axes — reload either
+          // way, but only for the click that is still the current filter.
+          if (writeId === filterWriteRef.current) fetchNews();
         }
       })();
     },
@@ -1488,7 +1513,7 @@ export function NewsWidget() {
     // Before the meta fetch lands (or if it failed) there is nothing to narrow
     // by — offer the whole catalog rather than a row built from stale state.
     if (availableSources.length === 0) return catalog;
-    const selectedSourceSet = new Set(settings.sources);
+    const selectedSourceSet = new Set(effectiveSources ?? settings.sources);
     const servable = new Set<Genre>();
     for (const s of availableSources) {
       if (!selectedSourceSet.has(s.id)) continue;
@@ -1501,7 +1526,7 @@ export function NewsWidget() {
     if (activeGenre) servable.add(activeGenre);
     if (servable.size === 0) return catalog;
     return catalog.filter((g) => servable.has(g.id));
-  }, [availableGenres, availableSources, settings.sources, activeGenre]);
+  }, [availableGenres, availableSources, effectiveSources, settings.sources, activeGenre]);
 
   // Exclusive: a click filters to that genre, clicking the active one clears.
   const handleSelectGenre = useCallback(
@@ -1523,32 +1548,14 @@ export function NewsWidget() {
     return catalog.filter((l) => offered.has(l.id)).map((l) => l.id);
   }, [availableLanguages, availableSources, activeLanguage]);
 
-  // Exclusive, like the genre row. Turning a language on also has to bring its
-  // sources with it: language gates whole sources server-side, so picking
-  // العربية while every subscribed source is English or German would select a
-  // language that can return nothing.
+  // Exclusive, like the genre row, and — like it — a view and nothing else.
+  // The server picks the language's sources out of the catalog when the
+  // subscription can't serve it, so the chip no longer has to subscribe them
+  // to avoid selecting a silent set, and switching language drops the previous
+  // language's sources instead of keeping them subscribed forever.
   const handleSelectLanguage = useCallback(
-    (lang: Language) => {
-      if (activeLanguage === lang) {
-        setFilter({ language: null });
-        return;
-      }
-      const sourcesInLang = availableSources.filter((s) => s.language === lang);
-      const alreadyCovered =
-        sourcesInLang.length === 0 ||
-        sourcesInLang.some((s) => settings.sources.includes(s.id));
-      if (alreadyCovered) {
-        setFilter({ language: lang });
-        return;
-      }
-      // Additive only — subscribing to the sources the chip needs, never
-      // unsubscribing. The genre axis is left alone: a sports-only Arabic
-      // source (Kooora, FilGoal) under an unrelated genre filter returning
-      // nothing is the filter working, not a source enabled into silence.
-      const nextSources = [...settings.sources, ...sourcesInLang.map((s) => s.id)];
-      setFilter({ language: lang, sources: nextSources });
-    },
-    [activeLanguage, availableSources, settings.sources, setFilter]
+    (lang: Language) => setFilter({ language: activeLanguage === lang ? null : lang }),
+    [activeLanguage, setFilter]
   );
 
   // ─── Reader handlers ──────────────────────────────────────────────────────
@@ -1840,7 +1847,16 @@ export function NewsWidget() {
               <p className="text-xs">No trends right now.</p>
             </div>
           ) : (
-            <ScrollArea className="flex-1 min-h-0 -mx-1">
+            // A feed round-trip is seconds long, so between a chip click and
+            // its response the list on screen belongs to the *previous*
+            // filter. Dimming it says so; left at full strength the new
+            // articles look like they arrived on top of the old ones.
+            <ScrollArea
+              className={cn(
+                "flex-1 min-h-0 -mx-1 transition-opacity",
+                loading && "opacity-40"
+              )}
+            >
               <div className="space-y-0.5 px-1">
                 {trends.map((trend) => (
                   <TrendListItem

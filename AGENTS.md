@@ -260,11 +260,15 @@ Two supporting rules, both load-bearing:
   exists to find. The post-fetch drop does the filtering, on the genre each
   article actually got. This also subsumes the old `general` special case —
   `general` only ever comes out of a mixed feed.
-- **The chip rows refetch, and a feed round-trip is seconds long**, so
-  `fetchNews()` carries a request-sequence guard: only the newest in-flight
-  request may write state. Without it two quick chip clicks resolve out of order
-  and the second click's list is overwritten by the first's — indistinguishable
-  from a filter that did nothing.
+- **The chip rows refetch, and a feed round-trip is seconds long**, so both
+  layers carry a sequence guard: `fetchNews()` lets only the newest in-flight
+  GET write state, and `setFilter()` lets only the newest `set-filter` write
+  apply its response or trigger a reload. Without them two quick chip clicks
+  resolve out of order and the second click's list is overwritten by the
+  first's — indistinguishable from a filter that did nothing. For the same
+  reason the list is dimmed while a refetch is in flight: at full strength the
+  previous filter's articles sit on screen looking like current results until
+  the feeds answer.
 
 **Genre** is per *article*. `detectGenre()` scores every genre and takes the
 highest, with no clamp to the source's advertised list — clamping is what made
@@ -290,16 +294,27 @@ subscribed sources happen to publish in. Deriving the row from the subscription
 made Arabic unreachable from the widget body: no Arabic source ships in
 `DEFAULT_SETTINGS.sources`, so the language with no subscribed source got no
 chip, and the chip that would have pulled its sources in was the missing one.
-Picking a language therefore **also subscribes that language's sources** —
-additively, never unsubscribing — otherwise it selects a language that gates
-every subscribed source to nothing. It deliberately does *not* touch the genre
-axis any more: under a single-valued filter, widening genres to keep a
-sports-only source from arriving silent would override the genre chip the user
-just set. A sports-only Arabic source returning nothing under an unrelated genre
-filter is the filter working. The genre chips are narrowed the other way, to
-what the subscribed sources can serve, so every genre chip is
-clickable-into-results; the genre currently doing the filtering is never dropped
-from the row even if its source was unticked.
+Because a chip must never select a set that can return nothing, the **server**
+picks the source pool for an active language chip: the subscribed sources in
+that language when there are any, and otherwise **that language's sources
+straight from the catalog**, without subscribing them. Earlier versions got the
+same guarantee by having the chip *subscribe* the language's sources
+additively, and nothing ever unsubscribed them — so every language ever
+filtered by stayed in `sources`, and switching or clearing the chip returned
+the previous filter's sources alongside the new one's. That is the "results of
+the new filter are appended to the old" report: a filter chip that permanently
+widened the subscription. **A chip writes `activeGenre`/`activeLanguage` and
+nothing else** — `set-filter` no longer accepts a `sources` array, and the GET
+reports the pool it actually used as `effectiveSources` so the widget can build
+its genre row from what is on screen rather than from the subscription.
+
+The chip deliberately does *not* touch the genre axis: under a single-valued
+filter, widening genres to keep a sports-only source from arriving silent would
+override the genre chip the user just set. A sports-only Arabic source returning
+nothing under an unrelated genre filter is the filter working. The genre chips
+are narrowed the other way, to what the *effective* sources can serve, so every
+genre chip is clickable-into-results; the genre currently doing the filtering is
+never dropped from the row even if its source was unticked.
 
 Settings are versioned: `SETTINGS_VERSION` is 3. v1 → v2 adds `general` to a
 non-empty genre list once (v1 filtered as though it were always selected, so
@@ -477,7 +492,7 @@ Settings written through the app land in `~/.personal-assistant/config.json` and
 - Do NOT size text with a px arbitrary value (`text-[10px]`) — use rem (`text-[0.625rem]`), or the text-size setting can't scale it
 - Do NOT re-enable page/pinch zoom (`userScalable`, `maximumScale`) or put rem back into `--spacing`/`--radius` — text scaling is the zoom
 - Do NOT render an email body from a list-endpoint row — fetch it by ID (list rows above 50 have no body)
-- Do NOT drive the news widget's filter chips off `settings.genres`/`languages` — those are the subscription; chips are the single-valued `activeGenre`/`activeLanguage`
+- Do NOT drive the news widget's filter chips off `settings.genres`/`languages` — those are the subscription; chips are the single-valued `activeGenre`/`activeLanguage`, and a chip must never write `sources` (that is what made filters accumulate)
 - Do NOT remount a component holding a back layer (`useBackHandler`) via a changing `key`
 - Do NOT bypass the WidgetWrapper for widget components
 - Do NOT register a widget without layouts for both profiles at all three breakpoints
