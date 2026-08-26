@@ -1862,6 +1862,46 @@ export function NewsWidget() {
             {modeToggle}
           </div>
 
+          {/* Active-filter summary. The chip rows scroll horizontally, so an
+              active chip can sit off-screen — and a second axis left on
+              (e.g. العربية) silently empties most genre picks, which reads
+              exactly like "the filter does nothing". This bar never scrolls
+              away and clears either axis in one tap. */}
+          {(activeGenre || activeLanguage) && (
+            <div className="flex items-center gap-1.5 flex-wrap shrink-0 text-[0.6875rem]">
+              <span className="text-muted-foreground shrink-0">Filtered:</span>
+              {activeGenre && (
+                <button
+                  onClick={() => setFilter({ genre: null })}
+                  className={cn(
+                    "inline-flex items-center gap-1 px-2 py-0.5 rounded-full border font-medium",
+                    genreColors[activeGenre]
+                  )}
+                  aria-label={`Clear genre filter ${GENRE_LABELS[activeGenre]}`}
+                >
+                  {GENRE_LABELS[activeGenre]}
+                  <X className="h-3 w-3" aria-hidden />
+                </button>
+              )}
+              {activeLanguage && (
+                <button
+                  onClick={() => setFilter({ language: null })}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border font-medium bg-primary text-primary-foreground border-primary"
+                  aria-label={`Clear language filter ${languageLabel(activeLanguage)}`}
+                >
+                  {languageLabel(activeLanguage)}
+                  <X className="h-3 w-3" aria-hidden />
+                </button>
+              )}
+              <button
+                onClick={() => setFilter({ genre: null, language: null })}
+                className="px-2 py-0.5 rounded-full border border-border text-muted-foreground hover:bg-muted"
+              >
+                Clear all
+              </button>
+            </div>
+          )}
+
           {/* Genre filter chips — one genre at a time, "All" clears */}
           {genreFilterOptions.length > 1 && (
             <div className="flex items-center gap-1.5 overflow-x-auto pb-1 -mx-1 px-1 shrink-0 scrollbar-thin">
@@ -1968,15 +2008,40 @@ export function NewsWidget() {
           ) : articles.length === 0 ? (
             <div className="flex flex-col items-center justify-center flex-1 gap-2 text-muted-foreground">
               <Newspaper className="h-8 w-8 opacity-40" />
-              <p className="text-xs">
-                {activeGenre || activeLanguage
-                  ? "No articles match this filter."
-                  : subscribedGenres.length > 0
+              {activeGenre || activeLanguage ? (
+                <>
+                  {/* Name the active axes — an empty result under a forgotten
+                      second filter (e.g. Technology × العربية, which has no
+                      source) is the filter working, but without naming the
+                      combo it is indistinguishable from a dead filter. */}
+                  <p className="text-xs text-center max-w-[16rem]">
+                    No{" "}
+                    {[
+                      activeGenre && GENRE_LABELS[activeGenre],
+                      activeLanguage && languageLabel(activeLanguage),
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}{" "}
+                    articles right now.
+                  </p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-11 md:h-7 text-xs"
+                    onClick={() => setFilter({ genre: null, language: null })}
+                  >
+                    Clear filter
+                  </Button>
+                </>
+              ) : (
+                <p className="text-xs">
+                  {subscribedGenres.length > 0
                     ? "No articles for the selected genres."
                     : "No articles."}
-              </p>
+                </p>
+              )}
               <Button
-                variant="outline"
+                variant={activeGenre || activeLanguage ? "ghost" : "outline"}
                 size="sm"
                 className="h-11 md:h-7 text-xs"
                 onClick={handleOpenSettings}
