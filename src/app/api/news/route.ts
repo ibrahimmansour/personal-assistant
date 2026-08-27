@@ -621,7 +621,14 @@ function parseFeed(xml: string, source: NewsSource, genre: Genre): NewsArticle[]
 
     if (title && link) {
       articles.push({
-        id: `${source.id}-${Buffer.from(link).toString("base64url").slice(0, 20)}`,
+        // Hashed, not a truncated encoding of the link itself. A base64 prefix
+        // of the URL is a prefix of the *origin* — every TechCrunch link starts
+        // "https://techcrunch.com/2026/…" — so slicing 20 chars collapsed a
+        // whole source's articles onto one id. React then had a list of
+        // duplicate keys and could no longer reconcile it: switching genre left
+        // the old genre's rows in the DOM and appended the new ones, so the
+        // filter read as additive until something remounted the list.
+        id: `${source.id}-${createHash("sha1").update(link).digest("base64url").slice(0, 16)}`,
         title: title.slice(0, 250),
         link,
         pubDate: pubDate || new Date().toISOString(),

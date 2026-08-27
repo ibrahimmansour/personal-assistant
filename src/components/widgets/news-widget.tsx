@@ -2066,7 +2066,13 @@ export function NewsWidget() {
               </Button>
             </div>
           ) : (
-            <ScrollArea className="flex-1 min-h-0 -mx-1">
+            // Dimmed while a refetch is in flight, for the same reason the
+            // trend list is: a feed round-trip is seconds long, so between a
+            // chip click and its response the list on screen still belongs to
+            // the previous filter. At full strength it reads as a filter that
+            // did nothing — or, once the new rows land, as results appended to
+            // the old ones.
+            <ScrollArea className={cn("flex-1 min-h-0 -mx-1 transition-opacity", loading && "opacity-40")}>
               <div className="space-y-0.5 px-1">
                 {articles.map((article) => (
                   <ArticleListItem

@@ -269,6 +269,18 @@ Two supporting rules, both load-bearing:
   reason the list is dimmed while a refetch is in flight: at full strength the
   previous filter's articles sit on screen looking like current results until
   the feeds answer.
+- **An article's `id` is a hash of its link, and the list is keyed by it.**
+  It used to be `base64url(link).slice(0, 20)` — twenty base64 characters is
+  fifteen bytes of URL, i.e. the *origin*, so every TechCrunch item shared one
+  id and every Guardian item another (49 articles, 15 distinct ids). React had
+  a list of duplicate keys, could no longer reconcile it, and a genre switch
+  left the old genre's rows in the DOM with the new genre's appended. That is
+  the last "the new filter's results are added to the old one's" report, and
+  the one no server-side fix could reach: `/api/news` was already returning
+  exactly one genre. It also looked self-healing, because opening an article
+  expands the widget and remounts the list, which rebuilds it correctly — the
+  symptom disappeared precisely when the user went looking for it. Derive any
+  new list key from the whole link (hash it), never from a prefix.
 
 **Genre** is per *article*. `detectGenre()` scores every genre and takes the
 highest, with no clamp to the source's advertised list — clamping is what made
@@ -493,6 +505,7 @@ Settings written through the app land in `~/.personal-assistant/config.json` and
 - Do NOT re-enable page/pinch zoom (`userScalable`, `maximumScale`) or put rem back into `--spacing`/`--radius` — text scaling is the zoom
 - Do NOT render an email body from a list-endpoint row — fetch it by ID (list rows above 50 have no body)
 - Do NOT drive the news widget's filter chips off `settings.genres`/`languages` — those are the subscription; chips are the single-valued `activeGenre`/`activeLanguage`, and a chip must never write `sources` (that is what made filters accumulate)
+- Do NOT build a list item's `id`/`key` from a truncated encoding of a URL — a prefix is the origin, so the ids collide, React stops reconciling the list and old rows survive a refresh; hash the whole link
 - Do NOT remount a component holding a back layer (`useBackHandler`) via a changing `key`
 - Do NOT bypass the WidgetWrapper for widget components
 - Do NOT register a widget without layouts for both profiles at all three breakpoints
