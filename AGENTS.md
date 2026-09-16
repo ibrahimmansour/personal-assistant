@@ -70,7 +70,7 @@ personal-assistant/
 │   │       ├── outlook/           # Emails (get/reply/search), calendar, refresh-token
 │   │       ├── google/            # OAuth, Gmail (get/reply/search), Calendar
 │   │       ├── github/prs/, jira/, jira/[key]/, jira/auth/
-│   │       ├── claude-sessions/   # list, messages, meta, run, schedules, upload
+│   │       ├── claude-sessions/   # list, messages, meta, run, schedules, upload, models (Claude Code + OpenCode)
 │   │       ├── ai/, ai/context/   # Chat assistant + dashboard context injection
 │   │       ├── files/, files-ai/  # File browser + AI file ops
 │   │       ├── database/          # Postgres connections + queries (pg)
@@ -123,7 +123,8 @@ personal-assistant/
 │   │   ├── ai-client.ts           # Ollama (local LLM)
 │   │   ├── anthropic-client.ts    # Anthropic Messages API (fetch, no SDK)
 │   │   ├── service-monitor.ts     # Long-running service discovery + health
-│   │   ├── claude-scheduler.ts    # Cron-ish runner for Claude Code prompts
+│   │   ├── claude-scheduler.ts    # Cron-ish runner for Claude Code / OpenCode prompts
+│   │   ├── opencode-store.ts      # Read-only OpenCode SQLite store + model catalogue
 │   │   ├── claude-schedule-types.ts
 │   │   ├── mock-data.ts           # Fallback mock data
 │   │   └── utils.ts               # cn() utility
@@ -206,8 +207,19 @@ Any new public route (OAuth callbacks, webhooks, health checks) must be allow-li
 - **`src/lib/ai-client.ts`** — Ollama at `OLLAMA_URL` (default `http://localhost:11434`), model `OLLAMA_MODEL` (default `gemma3:4b`). Powers the AI chat panel (`/api/ai`, `/api/ai/context`). Optional; absent Ollama degrades gracefully.
 - **`src/lib/anthropic-client.ts`** — Anthropic Messages API called directly via `fetch` (no SDK), `ANTHROPIC_API_KEY` from `.env.local`, default model `claude-haiku-4-5`, override with `ANTHROPIC_MODEL`. Used for the files widget's extraction/summarization (`/api/files-ai`).
 
-### Claude Code Sessions
-The `claude-code` widget drives the local `claude` CLI through `/api/claude-sessions/*` (`route` list, `messages`, `meta`, `run`, `schedules`, `upload`). Sessions run in **interactive** (PTY-backed, reaped after ~10 idle minutes) or **background** mode. `src/lib/claude-scheduler.ts` starts a one-minute ticker on first import and runs due entries from `~/.personal-assistant/claude-schedules.json` via `claude --resume <sid> --dangerously-skip-permissions -p <prompt>`, then advances `nextRunAt` or disables once-only schedules.
+### Claude Code Sessions (Claude Code + OpenCode)
+The `claude-code` widget drives two local CLIs through `/api/claude-sessions/*` (`route` list, `messages`, `meta`, `run`, `schedules`, `upload`, `models`): **Claude Code** (`claude`) and **OpenCode** (`opencode`). Every session belongs to one agent, chosen when it is created (the `AgentToggle` in the sidebar and folder picker seeds `selectedAgent`; existing sessions keep theirs). Both agents support **interactive** (PTY-backed, reaped after ~10 idle minutes) and **background** mode, and the session list is one merged, agent-tagged list (`agent: "claude" | "opencode"` on every row).
+
+The two stores differ, and `src/lib/opencode-store.ts` hides that:
+
+- **Claude** sessions are JSONL logs under `~/.claude/projects/<encoded-cwd>/`; ids are UUIDs the widget can pre-generate (`--session-id`), and the messages route tails the file.
+- **OpenCode** sessions live in SQLite at `~/.local/share/opencode/opencode.db` (tables `session`, `message`, `part`; ids look like `ses_…`). The lib opens it **read-only** through `process.getBuiltinModule("node:sqlite")` (Node ≥ 22.13) with a `bun:sqlite` fallback for the compiled binary, and degrades to `opencode session list --format json` / `opencode export <id>` when neither driver exists. It maps rows onto the same `ChatMessage` shape (tool parts become `toolUses` + `toolResults` on the *same* assistant message — the widget pairs by id, so that is fine), reports OpenCode's recorded per-turn `cost`, and the messages route polls a change signature (row counts + newest `time_updated`) every 750 ms and resends the whole conversation as `replace: true`, because OpenCode rewrites parts in place while streaming. An assistant message with no `finish` yet is "still working" — `attachSse` sets `waitingForReply` on that for OpenCode only. Deletion goes through `opencode session delete`; nothing writes to the database.
+
+OpenCode mints its own ids, so a **new background OpenCode session has no id until its first run**: `/api/claude-sessions/run` spawns `opencode run --format json --auto`, answers as soon as the event stream names the session (`{ ok, sessionId, running: true }`) and lets the run finish on its own; the widget re-keys the store under the id and the SSE tail attaches. Follow-ups pass `--session <id>` and are awaited like Claude's `-p`. Two CLI facts that cost time: `opencode run -- <msg>` **hangs** (yargs drops the message, OpenCode waits on stdin) — pass the prompt as a plain positional; and an argv prompt is stored wrapped in double quotes, which `stripArgvQuotes()` removes for display. `opencode --auto` is the `--dangerously-skip-permissions` equivalent and is used for both modes.
+
+**Models and effort.** Claude's model list is static in the widget (`CLAUDE_MODEL_OPTIONS`: default, fable, opus, opus[1m], sonnet, sonnet[1m], haiku) and `--model` applies only when a session is created; `--effort` (`CLAUDE_EFFORT_OPTIONS`: low → max) is a launch flag sent on every background run and terminal spawn, with no live slash command. OpenCode's list comes from `GET /api/claude-sessions/models` (`opencode models --verbose`, cached 10 min, grouped by provider in a searchable picker) and its `--model provider/model` and `--variant` are **per message**, so the header pickers change the active OpenCode session's next run; the TUI has no `--variant` flag, so variants apply to background runs only. Preferences persist in `localStorage` as `claude-code-agent`, `claude-code-model`, `claude-code-effort`, `opencode-model`, `opencode-variant`.
+
+`src/lib/claude-scheduler.ts` starts a one-minute ticker on first import and runs due entries from `~/.personal-assistant/claude-schedules.json` — `claude --resume <sid> --dangerously-skip-permissions [--model] [--effort] -p <prompt>` or `opencode run --auto --session <sid> [--model] [--variant] <prompt>` per the entry's `agent` (missing = claude) — then advances `nextRunAt` or disables once-only schedules. Both CLIs are resolved on a PATH extended by `buildAgentPath()` (`~/.opencode/bin`, `~/.local/bin`, …) because the server is often launched with a minimal environment.
 
 ### X Trends (news widget)
 
@@ -507,5 +519,6 @@ Settings written through the app land in `~/.personal-assistant/config.json` and
 - Do NOT drive the news widget's filter chips off `settings.genres`/`languages` — those are the subscription; chips are the single-valued `activeGenre`/`activeLanguage`, and a chip must never write `sources` (that is what made filters accumulate)
 - Do NOT build a list item's `id`/`key` from a truncated encoding of a URL — a prefix is the origin, so the ids collide, React stops reconciling the list and old rows survive a refresh; hash the whole link
 - Do NOT remount a component holding a back layer (`useBackHandler`) via a changing `key`
+- Do NOT write to `~/.local/share/opencode/opencode.db` or pass `opencode run -- <prompt>` — read the DB read-only, delete through the CLI, and pass the prompt as a plain positional (the `--` form hangs on stdin)
 - Do NOT bypass the WidgetWrapper for widget components
 - Do NOT register a widget without layouts for both profiles at all three breakpoints

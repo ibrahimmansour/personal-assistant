@@ -5,6 +5,7 @@ import { join } from "path";
 import { homedir } from "os";
 import { execFile } from "child_process";
 import { promisify } from "util";
+import { deleteOpenCodeSession, isOpenCodeSessionId, listOpenCodeSessions } from "@/lib/opencode-store";
 
 const execFileAsync = promisify(execFile);
 
@@ -15,7 +16,13 @@ const CONNECTIONS_FILE = join(DATA_DIR, "vps-connections.json");
 
 const CLAUDE_PROJECTS_DIR = join(homedir(), ".claude", "projects");
 
+/** Which CLI owns a session. Claude sessions live in ~/.claude/projects as
+ *  JSONL logs; OpenCode sessions live in its SQLite store. */
+type AgentKind = "claude" | "opencode";
+
 interface ClaudeSession {
+  /** Owning CLI. Defaults to "claude" for every legacy consumer. */
+  agent: AgentKind;
   sessionId: string;
   summary: string;
   firstPrompt: string;
@@ -30,6 +37,17 @@ interface ClaudeSession {
    *  the chat view will be empty until the user resumes (which makes the CLI
    *  start writing a new log). */
   hasLog: boolean;
+  /** OpenCode only: the `provider/model` the session last used. */
+  model?: string;
+  /** OpenCode only: the model variant (reasoning effort) the session last used. */
+  variant?: string;
+}
+
+/** Claude's on-disk project dir name for a cwd (`/a/b` → `-a-b`). Mirrors the
+ *  widget's encoder so OpenCode sessions can share the folder filter. */
+function encodeProjectDirName(absPath: string): string {
+  if (!absPath || absPath === "/") return "-";
+  return absPath.replace(/\//g, "-");
 }
 
 export async function GET(request: NextRequest) {
@@ -68,6 +86,7 @@ export async function GET(request: NextRequest) {
             const rawSummary = entry.summary || "";
             const usableSummary = isErrorSummary(rawSummary) ? "" : rawSummary;
             allSessions.push({
+              agent: "claude",
               sessionId: entry.sessionId,
               summary: cleanTitle(usableSummary),
               firstPrompt: cleanTitle(entry.firstPrompt || ""),
@@ -140,6 +159,7 @@ export async function GET(request: NextRequest) {
           // falls back to firstPrompt only when none of them exist.
           const rawTitle = customTitle || aiTitle || legacySummary;
           allSessions.push({
+            agent: "claude",
             sessionId,
             summary: isErrorSummary(rawTitle) ? "" : cleanTitle(rawTitle),
             firstPrompt: cleanTitle(firstPrompt),
@@ -156,6 +176,33 @@ export async function GET(request: NextRequest) {
           });
         } catch {}
       }
+    }
+
+    // OpenCode sessions join the same list, tagged by agent. They have no
+    // project dir on disk, so the encoded cwd stands in for one — that is
+    // what the widget's folder filter compares against.
+    try {
+      for (const oc of await listOpenCodeSessions()) {
+        const dirName = encodeProjectDirName(oc.directory);
+        if (projectFilter && dirName !== projectFilter) continue;
+        allSessions.push({
+          agent: "opencode",
+          sessionId: oc.sessionId,
+          summary: cleanTitle(oc.title),
+          firstPrompt: cleanTitle(oc.firstPrompt),
+          messageCount: oc.messageCount,
+          created: oc.created,
+          modified: oc.modified,
+          gitBranch: "",
+          projectPath: oc.directory,
+          projectDirName: dirName,
+          hasLog: true,
+          model: oc.model,
+          variant: oc.variant,
+        });
+      }
+    } catch (err) {
+      console.warn("[claude-sessions] opencode list failed:", err instanceof Error ? err.message : err);
     }
 
     // Sort by modified date, newest first
@@ -314,6 +361,7 @@ export async function POST(request: NextRequest) {
           if (data.entries) {
             for (const entry of data.entries) {
               sessions.push({
+                agent: "claude",
                 sessionId: entry.sessionId,
                 summary: entry.summary || "",
                 firstPrompt: entry.firstPrompt || "",
@@ -391,9 +439,14 @@ export async function POST(request: NextRequest) {
   }
 
   if (action === "delete-session") {
-    // Delete a local Claude session JSONL file
+    // Delete a local Claude session JSONL file (or an OpenCode session via its CLI)
     const { sessionId, projectDir } = body as { sessionId?: string; projectDir?: string };
     if (!sessionId) return Response.json({ error: "sessionId required" }, { status: 400 });
+
+    if (isOpenCodeSessionId(sessionId)) {
+      const ok = await deleteOpenCodeSession(sessionId);
+      return Response.json({ success: ok });
+    }
 
     try {
       // Search across all project dirs (or just the hinted one)

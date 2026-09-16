@@ -87,9 +87,11 @@ export async function POST(request: NextRequest) {
 
   if (action === "create") {
     const b = body as {
+      agent?: string;
       sessionId?: string;
       cwd?: string;
       model?: string;
+      effort?: string;
       prompt?: string;
       nextRunAt?: string;
       recurrence?: unknown;
@@ -101,9 +103,11 @@ export async function POST(request: NextRequest) {
     const recurrence = validateRecurrence(b.recurrence) || { type: "once" };
     const schedule: Schedule = {
       id: randomUUID(),
+      agent: b.agent === "opencode" ? "opencode" : "claude",
       sessionId: b.sessionId,
       cwd: b.cwd,
       model: b.model && b.model !== "default" ? b.model : undefined,
+      effort: b.effort && b.effort !== "default" ? b.effort : undefined,
       prompt: b.prompt,
       nextRunAt: b.nextRunAt,
       recurrence,

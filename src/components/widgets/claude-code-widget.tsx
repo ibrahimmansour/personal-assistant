@@ -1,14 +1,19 @@
 "use client";
 
 /**
- * Claude Code Widget — Terminal-driven, JSONL-tailed chat interface.
+ * Claude Code Widget — Terminal-driven, log-tailed chat interface for two
+ * coding agents: Claude Code (`claude`) and OpenCode (`opencode`). Each
+ * session belongs to one agent, chosen when it is created; the session list,
+ * chat view and terminal are shared.
  *
  * Architecture:
- * - Each Claude session = one PTY terminal running `claude --dangerously-skip-permissions`
- *   (or `claude --resume <id> ...` when resuming). Terminals are stored in a module-level
- *   Map so they survive React remounts.
- * - The chat UI is a clean view of the session JSONL file, tailed via SSE
- *   (/api/claude-sessions/messages?sessionId=...). Tool uses are summarized as compact pills.
+ * - Each interactive session = one PTY terminal running
+ *   `claude --dangerously-skip-permissions` / `opencode --auto` (or the
+ *   `--resume <id>` / `--session <id>` form when resuming). Terminals are
+ *   stored in a module-level Map so they survive React remounts.
+ * - The chat UI is a clean view of the session's store, tailed via SSE
+ *   (/api/claude-sessions/messages?sessionId=...): Claude's JSONL log, or
+ *   OpenCode's SQLite database. Tool uses are summarized as compact pills.
  * - Submitting from chat pastes the prompt + ENTER into the live terminal.
  * - Default view is the chat. A toggle reveals the raw terminal. Both views target the
  *   same underlying session.
@@ -63,6 +68,12 @@ import { useIsMobile } from "@/hooks/use-swipe";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
+/** Which CLI owns a session. */
+type AgentKind = "claude" | "opencode";
+
+const AGENT_LABEL: Record<AgentKind, string> = { claude: "Claude Code", opencode: "OpenCode" };
+const AGENT_SHORT: Record<AgentKind, string> = { claude: "Claude", opencode: "OpenCode" };
+
 interface ChatMessage {
   id: string;
   role: "user" | "assistant";
@@ -80,6 +91,9 @@ interface ChatMessage {
   };
   /** end_turn | tool_use | max_tokens | stop_sequence | null */
   stopReason?: string | null;
+  /** Reported cost in USD for this turn (OpenCode records it per message;
+   *  Claude turns are estimated from tokens instead). */
+  cost?: number;
   timestamp: string;
 }
 
@@ -104,9 +118,13 @@ interface ScheduleEntry {
   createdAt: string;
   label?: string;
   model?: string;
+  agent?: AgentKind;
+  effort?: string;
 }
 
 interface ClaudeSessionInfo {
+  /** Owning CLI. Missing on older API payloads means "claude". */
+  agent?: AgentKind;
   sessionId: string;
   summary: string;
   firstPrompt: string;
@@ -121,6 +139,10 @@ interface ClaudeSessionInfo {
    *  resumed (CLI re-creates the log) but the chat view will be empty until
    *  the next prompt. */
   hasLog?: boolean;
+  /** OpenCode only: `provider/model` the session last used. */
+  model?: string;
+  /** OpenCode only: model variant the session last used. */
+  variant?: string;
 }
 
 interface SessionState {
@@ -157,8 +179,14 @@ interface SessionState {
   pendingPrompts: string[];
   /** True while a terminal is being created (avoid double-spawn). */
   spawningTerminal: boolean;
-  /** Model alias to pass via `--model` when spawning a fresh CLI (ignored for resumes). */
+  /** Which CLI runs this session. Fixed at creation. */
+  agent: AgentKind;
+  /** Model to pass via `--model`. Claude: an alias (`opus`, `fable`…), applied
+   *  only when spawning a fresh CLI. OpenCode: a `provider/model` id, sent
+   *  with every background run (OpenCode picks the model per message). */
   model: string | null;
+  /** Reasoning effort: Claude `--effort` level, or OpenCode `--variant`. */
+  effort: string | null;
   /** How this session runs:
    *  - "interactive": a persistent `claude` PTY the chat pastes into (Terminal view available).
    *  - "background": headless `claude -p` runs per prompt via /api/claude-sessions/run
@@ -672,8 +700,12 @@ interface OpenSessionOpts {
   /** When set, run `claude --resume <id>` instead of a fresh session. */
   resumeId?: string;
   label?: string;
-  /** Model alias for the new session (`opus`, `sonnet`, `haiku`, ...). Ignored for resumes. */
+  /** Which CLI runs the session. Defaults to "claude". */
+  agent?: AgentKind;
+  /** Model for the new session (Claude alias or OpenCode `provider/model`). */
   model?: string;
+  /** Reasoning effort (Claude `--effort` / OpenCode `--variant`). */
+  effort?: string;
   /** How the session runs. Defaults to "background". */
   mode?: "background" | "interactive";
   /** Background NEW sessions pre-generate their session UUID so the SSE tail
@@ -712,7 +744,9 @@ function openSession(opts: OpenSessionOpts): SessionState {
     sse: null,
     pendingPrompts: [],
     spawningTerminal: false,
+    agent: opts.agent || "claude",
     model: opts.model && opts.model !== "default" ? opts.model : null,
+    effort: opts.effort && opts.effort !== "default" ? opts.effort : null,
     mode,
     // Resumed sessions already exist on disk. Fresh sessions (background
     // preset or interactive) don't until the CLI creates the log.
@@ -770,14 +804,26 @@ async function spawnTerminal(state: SessionState): Promise<boolean> {
     //     background session switched to interactive before its first run),
     //   - or start a fresh session (no id yet — interactive new).
     // The model override only applies when creating a session, not on resume.
-    const modelArg = state.model ? ` --model ${state.model}` : "";
+    const modelArg = state.model ? ` --model ${shellQuote(state.model)}` : "";
     let claudeCmd: string;
-    if (state.sessionId && state.exists) {
-      claudeCmd = `claude --dangerously-skip-permissions --resume ${state.sessionId}`;
-    } else if (state.sessionId && !state.exists) {
-      claudeCmd = `claude --dangerously-skip-permissions --session-id ${state.sessionId}${modelArg}`;
+    if (state.agent === "opencode") {
+      // OpenCode mints its own ids, so there is no "known-but-uncreated"
+      // form: either resume an existing session or start fresh. The TUI has
+      // no --variant flag; effort applies to background runs only.
+      if (state.sessionId) {
+        claudeCmd = `opencode --auto -s ${shellQuote(state.sessionId)}`;
+      } else {
+        claudeCmd = `opencode --auto${modelArg}`;
+      }
     } else {
-      claudeCmd = `claude --dangerously-skip-permissions${modelArg}`;
+      const effortArg = state.effort ? ` --effort ${state.effort}` : "";
+      if (state.sessionId && state.exists) {
+        claudeCmd = `claude --dangerously-skip-permissions${effortArg} --resume ${state.sessionId}`;
+      } else if (state.sessionId && !state.exists) {
+        claudeCmd = `claude --dangerously-skip-permissions${effortArg} --session-id ${state.sessionId}${modelArg}`;
+      } else {
+        claudeCmd = `claude --dangerously-skip-permissions${effortArg}${modelArg}`;
+      }
     }
     // Once we launch with a known id, the CLI creates/opens that log.
     if (state.sessionId) state.exists = true;
@@ -937,9 +983,11 @@ async function pollForNewSessionId(state: SessionState) {
       if (!res.ok) return;
       const data = await res.json();
       const sessions = (data.sessions || []) as ClaudeSessionInfo[];
-      // Find newest sessionId not in `before`
+      // Find newest sessionId not in `before` — from the same agent, since
+      // the list carries both Claude and OpenCode sessions for this folder.
       let found: ClaudeSessionInfo | null = null;
       for (const s of sessions) {
+        if ((s.agent || "claude") !== state.agent) continue;
         if (!before.has(s.sessionId)) {
           if (!found || (s.modified || "").localeCompare(found.modified || "") > 0) {
             found = s;
@@ -1006,6 +1054,11 @@ function attachSse(state: SessionState) {
         } else if (last.role === "assistant") {
           const stop = last.stopReason || "";
           if (stop === "tool_use") {
+            state.waitingForReply = true;
+          } else if (!stop && state.agent === "opencode") {
+            // OpenCode rewrites the assistant message in place while it
+            // streams and only sets `finish` at the end — no finish means
+            // it is still working.
             state.waitingForReply = true;
           } else if (stop && stop !== "tool_use") {
             // end_turn / max_tokens / stop_sequence → done.
@@ -1092,8 +1145,9 @@ async function submitPrompt(state: SessionState, text: string): Promise<boolean>
  * Output lands in the JSONL log, which the chat view is already tailing.
  */
 async function submitBackgroundPrompt(state: SessionState, promptText: string): Promise<boolean> {
-  if (!state.sessionId) {
-    // Should never happen — background sessions always have a pre-set id.
+  if (!state.sessionId && state.agent !== "opencode") {
+    // Should never happen — Claude background sessions always have a pre-set
+    // id. (OpenCode mints its own on the first run, so null is expected there.)
     console.error("[claude-code] background session has no sessionId");
     return false;
   }
@@ -1114,7 +1168,9 @@ async function submitBackgroundPrompt(state: SessionState, promptText: string): 
         prompt: promptText,
         sessionId: state.sessionId,
         isNew,
+        agent: state.agent,
         model: state.model,
+        effort: state.effort,
       }),
     });
     if (!res.ok) {
@@ -1126,12 +1182,26 @@ async function submitBackgroundPrompt(state: SessionState, promptText: string): 
       showBackgroundError(state, detail);
       return false;
     }
+    let data: { sessionId?: string; running?: boolean } = {};
+    try { data = await res.json(); } catch {}
+    // A new OpenCode session reports the id it was given. Re-key the store
+    // under it (keeping the pending key as an alias) so the SSE tail can
+    // attach — the React layer does that when it sees the id change.
+    if (!state.sessionId && data.sessionId) {
+      state.sessionId = data.sessionId;
+      if (state.key !== data.sessionId) {
+        state.key = data.sessionId;
+        sessionStore.set(data.sessionId, state);
+      }
+    }
     // The run succeeded and the session now exists on disk; future prompts
     // must resume it rather than re-create it.
     state.exists = true;
-    // The reply is already in the JSONL (the SSE tail surfaces it); make sure
-    // the thinking indicator clears even if the SSE hasn't ticked yet.
-    state.waitingForReply = false;
+    // The reply is already in the log (the SSE tail surfaces it); make sure
+    // the thinking indicator clears even if the SSE hasn't ticked yet. An
+    // OpenCode run that is still going (`running`) keeps the indicator — the
+    // tail clears it once the assistant message finishes.
+    if (!data.running) state.waitingForReply = false;
     notifySubscribers(state);
   } catch (err) {
     showBackgroundError(state, err instanceof Error ? err.message : "request failed");
@@ -1414,24 +1484,49 @@ function ThemePicker({
   );
 }
 
-// ─── Model picker ────────────────────────────────────────────────────────────
+// ─── Model / effort pickers ──────────────────────────────────────────────────
 
-const MODEL_OPTIONS: { value: string; label: string; description: string }[] = [
-  { value: "default", label: "Default", description: "Recommended — Opus 4.8 with 1M context" },
-  { value: "opus", label: "Opus", description: "Opus 4.8 — most capable for complex work" },
-  { value: "sonnet", label: "Sonnet", description: "Sonnet 4.6 — best for everyday tasks" },
-  { value: "sonnet[1m]", label: "Sonnet (1M)", description: "Sonnet 4.6 with 1M context — uses credits" },
+interface PickerOption { value: string; label: string; description?: string }
+
+/** Claude Code model aliases (`claude --model`). "default" leaves the CLI's
+ *  own saved default in place. */
+const CLAUDE_MODEL_OPTIONS: PickerOption[] = [
+  { value: "default", label: "Default", description: "The CLI's saved default model" },
+  { value: "fable", label: "Fable", description: "Fable 5.1 — Mythos-class, the most capable Claude" },
+  { value: "opus", label: "Opus", description: "Opus — most capable of the standard tier" },
+  { value: "opus[1m]", label: "Opus (1M)", description: "Opus with 1M context — uses credits" },
+  { value: "sonnet", label: "Sonnet", description: "Sonnet — best for everyday tasks" },
+  { value: "sonnet[1m]", label: "Sonnet (1M)", description: "Sonnet with 1M context — uses credits" },
   { value: "haiku", label: "Haiku", description: "Haiku 4.5 — fastest for quick answers" },
 ];
 
-function ModelPicker({
+/** Claude Code `--effort` levels. */
+const CLAUDE_EFFORT_OPTIONS: PickerOption[] = [
+  { value: "default", label: "Default", description: "The CLI's own effort setting" },
+  { value: "low", label: "Low", description: "Quick, minimal reasoning" },
+  { value: "medium", label: "Medium", description: "Balanced" },
+  { value: "high", label: "High", description: "Deeper reasoning" },
+  { value: "xhigh", label: "X-High", description: "Extended reasoning" },
+  { value: "max", label: "Max", description: "Maximum reasoning — slowest, most thorough" },
+];
+
+/** Generic compact dropdown used for model, effort and variant. */
+function OptionPicker({
   value,
+  options,
   onChange,
-  sessionAlive,
+  icon,
+  title,
+  footnote,
+  width = "w-64",
 }: {
   value: string;
+  options: PickerOption[];
   onChange: (v: string) => void;
-  sessionAlive: boolean;
+  icon: React.ReactNode;
+  title: string;
+  footnote?: string;
+  width?: string;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -1444,24 +1539,28 @@ function ModelPicker({
     return () => document.removeEventListener("mousedown", onClick);
   }, [open]);
 
-  const current = MODEL_OPTIONS.find((m) => m.value === value) || MODEL_OPTIONS[0];
+  const current = options.find((m) => m.value === value) || options[0];
 
   return (
-    <div className="relative" ref={ref}>
+    <div
+      className="relative"
+      ref={ref}
+      onKeyDown={(e) => { if (e.key === "Escape" && open) { e.preventDefault(); e.stopPropagation(); setOpen(false); } }}
+    >
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         className="flex items-center gap-1 px-2 h-11 md:h-7 text-xs rounded-md hover:bg-muted text-muted-foreground hover:text-foreground"
-        title={sessionAlive ? `Model: ${current.label}` : `Model: ${current.label} — applies on next session start`}
-        aria-label={sessionAlive ? `Model: ${current.label}` : `Model: ${current.label} — applies on next session start`}
+        title={`${title}: ${current.label}`}
+        aria-label={`${title}: ${current.label}`}
       >
-        <Sparkles className="h-3 w-3" />
+        {icon}
         <span>{current.label}</span>
         <ChevronDown className="h-3 w-3" />
       </button>
       {open && (
-        <div className="absolute right-0 top-full mt-1 z-20 w-64 rounded-md border border-border bg-popover shadow-md py-1">
-          {MODEL_OPTIONS.map((m) => (
+        <div className={cn("absolute right-0 top-full mt-1 z-20 rounded-md border border-border bg-popover shadow-md py-1", width)}>
+          {options.map((m) => (
             <button
               key={m.value}
               type="button"
@@ -1472,12 +1571,12 @@ function ModelPicker({
               )}
             >
               <span className="text-xs font-medium">{m.label}</span>
-              <span className="text-[0.625rem] text-muted-foreground">{m.description}</span>
+              {m.description && <span className="text-[0.625rem] text-muted-foreground">{m.description}</span>}
             </button>
           ))}
-          {!sessionAlive && (
+          {footnote && (
             <div className="px-2 pt-1 mt-1 border-t border-border text-[0.625rem] text-muted-foreground">
-              Applies on next session start
+              {footnote}
             </div>
           )}
         </div>
@@ -1486,11 +1585,258 @@ function ModelPicker({
   );
 }
 
+// ─── OpenCode model catalogue ────────────────────────────────────────────────
+
+interface OpenCodeModel {
+  id: string;
+  provider: string;
+  model: string;
+  name: string;
+  variants: string[];
+  reasoning: boolean;
+  free: boolean;
+}
+
+// Module-level cache: the catalogue is one `opencode models --verbose` call
+// server-side and every picker instance wants the same list.
+let openCodeModelsCache: OpenCodeModel[] | null = null;
+let openCodeModelsPromise: Promise<OpenCodeModel[]> | null = null;
+const openCodeModelsSubscribers = new Set<() => void>();
+
+function loadOpenCodeModels(force = false): Promise<OpenCodeModel[]> {
+  if (openCodeModelsCache && !force) return Promise.resolve(openCodeModelsCache);
+  if (openCodeModelsPromise && !force) return openCodeModelsPromise;
+  openCodeModelsPromise = fetch(`/api/claude-sessions/models${force ? "?refresh=1" : ""}`)
+    .then((r) => (r.ok ? r.json() : { models: [] }))
+    .then((d: { models?: OpenCodeModel[] }) => {
+      openCodeModelsCache = Array.isArray(d.models) ? d.models : [];
+      for (const fn of openCodeModelsSubscribers) fn();
+      return openCodeModelsCache;
+    })
+    .catch(() => openCodeModelsCache || [])
+    .finally(() => { openCodeModelsPromise = null; });
+  return openCodeModelsPromise;
+}
+
+function useOpenCodeModels(): OpenCodeModel[] {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const fn = () => setTick((t) => t + 1);
+    openCodeModelsSubscribers.add(fn);
+    if (!openCodeModelsCache) loadOpenCodeModels();
+    return () => { openCodeModelsSubscribers.delete(fn); };
+  }, []);
+  return openCodeModelsCache || [];
+}
+
+/** Variants a given OpenCode model accepts, as picker options. */
+function openCodeVariantOptions(models: OpenCodeModel[], modelId: string): PickerOption[] {
+  const m = models.find((x) => x.id === modelId);
+  const variants = m?.variants || [];
+  return [
+    { value: "default", label: "Default", description: "The model's default variant" },
+    ...variants.map((v) => ({ value: v, label: v })),
+  ];
+}
+
+/** Searchable `provider/model` dropdown fed by /api/claude-sessions/models. */
+function OpenCodeModelPicker({
+  value,
+  onChange,
+  footnote,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  footnote?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const ref = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const models = useOpenCodeModels();
+  const close = useCallback(() => { setOpen(false); setQuery(""); }, []);
+
+  useEffect(() => {
+    const onClick = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) close();
+    };
+    if (open) document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, [open, close]);
+
+  useEffect(() => {
+    if (open) setTimeout(() => inputRef.current?.focus(), 0);
+  }, [open]);
+
+  const currentLabel = value === "default"
+    ? "Default"
+    : (models.find((m) => m.id === value)?.name || value.split("/").pop() || value);
+
+  const q = query.trim().toLowerCase();
+  const filtered = q
+    ? models.filter((m) => m.id.toLowerCase().includes(q) || m.name.toLowerCase().includes(q))
+    : models;
+  // Group by provider, keeping catalogue order within each.
+  const groups = new Map<string, OpenCodeModel[]>();
+  for (const m of filtered) {
+    const list = groups.get(m.provider);
+    if (list) list.push(m);
+    else groups.set(m.provider, [m]);
+  }
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1 px-2 h-11 md:h-7 text-xs rounded-md hover:bg-muted text-muted-foreground hover:text-foreground max-w-[12rem]"
+        title={`Model: ${value === "default" ? "OpenCode default" : value}`}
+        aria-label={`Model: ${value === "default" ? "OpenCode default" : value}`}
+      >
+        <Sparkles className="h-3 w-3 shrink-0" />
+        <span className="truncate">{currentLabel}</span>
+        <ChevronDown className="h-3 w-3 shrink-0" />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 z-20 w-80 rounded-md border border-border bg-popover shadow-md flex flex-col max-h-[24rem]">
+          <div className="p-1.5 border-b border-border flex items-center gap-1">
+            <Search className="h-3 w-3 text-muted-foreground shrink-0" />
+            <input
+              ref={inputRef}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); close(); } }}
+              placeholder="Search models"
+              className="flex-1 min-w-0 bg-transparent text-xs outline-none placeholder:text-muted-foreground"
+              aria-label="Search models"
+            />
+            <button
+              type="button"
+              onClick={() => loadOpenCodeModels(true)}
+              className="text-muted-foreground hover:text-foreground p-0.5"
+              title="Refresh model list"
+              aria-label="Refresh model list"
+            >
+              <RefreshCw className="h-3 w-3" />
+            </button>
+          </div>
+          <div className="overflow-y-auto py-1 flex-1 min-h-0">
+            <button
+              type="button"
+              onClick={() => { onChange("default"); close(); }}
+              className={cn(
+                "w-full min-h-11 md:min-h-0 text-left px-2 py-1.5 hover:bg-accent flex flex-col gap-0.5",
+                value === "default" && "bg-accent",
+              )}
+            >
+              <span className="text-xs font-medium">Default</span>
+              <span className="text-[0.625rem] text-muted-foreground">OpenCode&apos;s configured default model</span>
+            </button>
+            {models.length === 0 && (
+              <div className="px-2 py-2 text-[0.625rem] text-muted-foreground">
+                Loading models from <code>opencode models</code>…
+              </div>
+            )}
+            {models.length > 0 && filtered.length === 0 && (
+              <div className="px-2 py-2 text-[0.625rem] text-muted-foreground">No models match</div>
+            )}
+            {Array.from(groups.entries()).map(([provider, list]) => (
+              <div key={provider}>
+                <div className="px-2 pt-1.5 pb-0.5 text-[0.625rem] font-semibold uppercase tracking-wide text-muted-foreground">
+                  {provider}
+                </div>
+                {list.map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => { onChange(m.id); close(); }}
+                    className={cn(
+                      "w-full min-h-11 md:min-h-0 text-left px-2 py-1 hover:bg-accent flex items-center gap-1.5",
+                      m.id === value && "bg-accent",
+                    )}
+                  >
+                    <span className="text-xs font-medium truncate">{m.name}</span>
+                    <span className="text-[0.625rem] text-muted-foreground truncate">{m.model}</span>
+                    {m.free && <span className="ml-auto text-[0.625rem] px-1 rounded bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 shrink-0">free</span>}
+                  </button>
+                ))}
+              </div>
+            ))}
+          </div>
+          {footnote && (
+            <div className="px-2 py-1 border-t border-border text-[0.625rem] text-muted-foreground">
+              {footnote}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Agent (Claude Code vs OpenCode) ─────────────────────────────────────────
+
+const AGENT_OPTIONS: { value: AgentKind; label: string; description: string }[] = [
+  { value: "claude", label: "Claude Code", description: "Anthropic's claude CLI" },
+  { value: "opencode", label: "OpenCode", description: "opencode CLI — any configured provider" },
+];
+
+/** Segmented toggle choosing which CLI the NEXT new session runs on. */
+function AgentToggle({
+  value,
+  onChange,
+  className,
+}: {
+  value: AgentKind;
+  onChange: (a: AgentKind) => void;
+  className?: string;
+}) {
+  return (
+    <div className={cn("flex items-center bg-muted rounded-md p-0.5", className)} role="group" aria-label="Agent">
+      {AGENT_OPTIONS.map((a) => (
+        <button
+          key={a.value}
+          type="button"
+          onClick={() => onChange(a.value)}
+          aria-pressed={a.value === value}
+          title={a.description}
+          className={cn(
+            "flex-1 px-2 h-10 md:h-6 text-xs rounded transition-colors flex items-center justify-center gap-1 whitespace-nowrap",
+            a.value === value ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          {a.value === "claude" ? <ClaudeIcon className="h-3 w-3" /> : <Bot className="h-3 w-3" />}
+          {a.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** Small inline chip naming a session's agent. */
+function AgentBadge({ agent, className }: { agent: AgentKind; className?: string }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-0.5 rounded px-1 text-[0.625rem] font-medium leading-4 shrink-0",
+        agent === "opencode"
+          ? "bg-sky-500/15 text-sky-700 dark:text-sky-300"
+          : "bg-orange-500/15 text-orange-700 dark:text-orange-300",
+        className,
+      )}
+      title={AGENT_LABEL[agent]}
+    >
+      {agent === "opencode" ? <Bot className="h-2.5 w-2.5" /> : <ClaudeIcon className="h-2.5 w-2.5" />}
+      {AGENT_SHORT[agent]}
+    </span>
+  );
+}
+
 // ─── Session mode (background vs interactive) ────────────────────────────────
 
 const MODE_OPTIONS: { value: "background" | "interactive"; label: string; description: string }[] = [
-  { value: "background", label: "Background", description: "Headless — runs claude -p, chat only (no terminal)" },
-  { value: "interactive", label: "Interactive", description: "Live claude session with a usable terminal view" },
+  { value: "background", label: "Background", description: "Headless — one CLI run per prompt, chat only (no terminal)" },
+  { value: "interactive", label: "Interactive", description: "Live CLI session with a usable terminal view" },
 ];
 
 /** Compact segmented toggle for choosing the mode of the NEXT new session.
@@ -1514,7 +1860,7 @@ function ModeToggle({
           onClick={() => onChange(m.value)}
           title={m.description}
           className={cn(
-            "flex-1 px-2 py-0.5 text-[0.6875rem] rounded transition-colors flex items-center justify-center gap-1",
+            "flex-1 px-2 py-0.5 text-[0.6875rem] rounded transition-colors flex items-center justify-center gap-1 whitespace-nowrap",
             value === m.value
               ? "bg-background shadow-sm text-foreground"
               : "text-muted-foreground hover:text-foreground",
@@ -1794,6 +2140,36 @@ export function ClaudeCodeWidget() {
     return localStorage.getItem("claude-code-model") || "default";
   });
 
+  // Which CLI the NEXT new session runs on. Existing sessions keep the agent
+  // they were created with; this only seeds new ones.
+  const [selectedAgent, setSelectedAgentState] = useState<AgentKind>(() => {
+    if (typeof window === "undefined") return "claude";
+    return localStorage.getItem("claude-code-agent") === "opencode" ? "opencode" : "claude";
+  });
+  const setSelectedAgent = useCallback((a: AgentKind) => {
+    setSelectedAgentState(a);
+    try { localStorage.setItem("claude-code-agent", a); } catch {}
+  }, []);
+
+  // Claude `--effort` for new sessions (and every background run).
+  const [claudeEffort, setClaudeEffortState] = useState<string>(() => {
+    if (typeof window === "undefined") return "default";
+    return localStorage.getItem("claude-code-effort") || "default";
+  });
+
+  // OpenCode `provider/model` + `--variant` defaults for new sessions. Both
+  // are per-message in OpenCode, so the header pickers also change them on
+  // the active OpenCode session.
+  const [opencodeModel, setOpencodeModelState] = useState<string>(() => {
+    if (typeof window === "undefined") return "default";
+    return localStorage.getItem("opencode-model") || "default";
+  });
+  const [opencodeVariant, setOpencodeVariantState] = useState<string>(() => {
+    if (typeof window === "undefined") return "default";
+    return localStorage.getItem("opencode-variant") || "default";
+  });
+  const openCodeModels = useOpenCodeModels();
+
   // Session mode for NEW sessions. "background" (headless claude -p, chat only)
   // is the default; "interactive" spawns a live PTY with a usable terminal.
   // Fixed per-session at creation; the picker sets the default for the next one.
@@ -1989,13 +2365,51 @@ export function ClaudeCodeWidget() {
     setSelectedModelState(model);
     try { localStorage.setItem("claude-code-model", model); } catch {}
     const state = activeKey ? sessionStore.get(activeKey) : null;
-    if (state && state.alive && state.ws && state.ws.readyState === WebSocket.OPEN) {
+    if (state && state.agent === "claude" && state.alive && state.ws && state.ws.readyState === WebSocket.OPEN) {
       // Send directly via the PTY WebSocket so we don't trigger the
       // "thinking" indicator (this isn't a user prompt, just a CLI command).
       // Split text + Enter so bracketed-paste mode doesn't swallow the submit.
       sendPromptAndEnter(state.ws, `/model ${model}`);
     }
   }, [activeKey]);
+
+  // Claude effort has no live slash command — it is a launch flag, so it
+  // applies to the next background run or the next terminal spawn.
+  const setClaudeEffort = useCallback((effort: string) => {
+    setClaudeEffortState(effort);
+    try { localStorage.setItem("claude-code-effort", effort); } catch {}
+    const state = activeKey ? sessionStore.get(activeKey) : null;
+    if (state && state.agent === "claude") {
+      state.effort = effort !== "default" ? effort : null;
+      notifySubscribers(state);
+    }
+  }, [activeKey]);
+
+  // OpenCode picks model and variant per message, so changing them on an
+  // active OpenCode session takes effect on its next background run. A live
+  // TUI keeps whatever it was launched with until it is respawned.
+  const setOpencodeModel = useCallback((model: string) => {
+    setOpencodeModelState(model);
+    try { localStorage.setItem("opencode-model", model); } catch {}
+    const state = activeKey ? sessionStore.get(activeKey) : null;
+    if (state && state.agent === "opencode") {
+      state.model = model !== "default" ? model : null;
+      notifySubscribers(state);
+    }
+  }, [activeKey]);
+  const setOpencodeVariant = useCallback((variant: string) => {
+    setOpencodeVariantState(variant);
+    try { localStorage.setItem("opencode-variant", variant); } catch {}
+    const state = activeKey ? sessionStore.get(activeKey) : null;
+    if (state && state.agent === "opencode") {
+      state.effort = variant !== "default" ? variant : null;
+      notifySubscribers(state);
+    }
+  }, [activeKey]);
+
+  // Variant list for the header picker depends on the model actually in use.
+  const activeOpencodeModelId = active?.agent === "opencode" ? (active.model || opencodeModel) : opencodeModel;
+  const opencodeVariantOptions = openCodeVariantOptions(openCodeModels, activeOpencodeModelId);
 
   // ── Start a new session in a chosen folder ─────────────────────────────
   const startNewSession = useCallback(async (cwd: string) => {
@@ -2005,15 +2419,21 @@ export function ClaudeCodeWidget() {
       // Make this the active folder for the worktrees panel
       setActiveFolder(cwd);
       try { localStorage.setItem("claude-code-active-folder", cwd); } catch {}
+      const agent = selectedAgent;
+      const model = agent === "opencode" ? opencodeModel : selectedModel;
+      const effort = agent === "opencode" ? opencodeVariant : claudeEffort;
       if (effectiveMode === "background") {
-        // Headless session — no PTY. Pre-generate the session UUID so the SSE
-        // tail can attach immediately and `claude -p --session-id` can create
-        // the log. The first submitted prompt kicks off the actual run.
-        const presetSessionId = generateSessionId();
+        // Headless session — no PTY. For Claude, pre-generate the session UUID
+        // so the SSE tail can attach immediately and `claude -p --session-id`
+        // can create the log. OpenCode mints its own id on the first run, so
+        // it starts without one. The first submitted prompt kicks off the run.
+        const presetSessionId = agent === "claude" ? generateSessionId() : undefined;
         const state = openSession({
           cwd,
           label: "New session",
-          model: selectedModel,
+          agent,
+          model,
+          effort,
           mode: "background",
           presetSessionId,
         });
@@ -2022,7 +2442,7 @@ export function ClaudeCodeWidget() {
         setShowFolderPicker(false);
         if (isMobile) setSidebarOpen(false);
       } else {
-        const state = openSession({ cwd, label: "New session", model: selectedModel, mode: "interactive" });
+        const state = openSession({ cwd, label: "New session", agent, model, effort, mode: "interactive" });
         // For brand-new interactive sessions we spawn the terminal eagerly so
         // the CLI is up and the JSONL gets created.
         spawnTerminal(state);
@@ -2034,7 +2454,7 @@ export function ClaudeCodeWidget() {
     } finally {
       setCreating(false);
     }
-  }, [persistRecentFolder, selectedModel, effectiveMode, isMobile]);
+  }, [persistRecentFolder, selectedAgent, selectedModel, claudeEffort, opencodeModel, opencodeVariant, effectiveMode, isMobile]);
 
   // ── Set active folder (persist to localStorage) ────────────────────────
   const selectActiveFolder = useCallback((folder: string | null) => {
@@ -2096,7 +2516,20 @@ export function ClaudeCodeWidget() {
 
     const customName = getSessionMeta(s.sessionId).customName;
     const label = customName || s.summary || s.firstPrompt?.slice(0, 30) || s.sessionId.slice(0, 8);
-    const state = openSession({ cwd, resumeId: s.sessionId, label, hasLog: s.hasLog !== false, mode: effectiveMode });
+    const agent: AgentKind = s.agent || "claude";
+    const state = openSession({
+      cwd,
+      resumeId: s.sessionId,
+      label,
+      hasLog: s.hasLog !== false,
+      mode: effectiveMode,
+      agent,
+      // OpenCode chooses the model per message: prefer the user's current
+      // pick, else keep what the session last ran with. Claude resumes
+      // inherit their model from the log and take only the effort flag.
+      model: agent === "opencode" ? (opencodeModel !== "default" ? opencodeModel : s.model) : undefined,
+      effort: agent === "opencode" ? (opencodeVariant !== "default" ? opencodeVariant : s.variant) : claudeEffort,
+    });
     // The API gives us the canonical project dir name; openSession's default
     // (encoded from cwd) may not match if the path or session moved. Set it
     // before SSE attaches.
@@ -2106,7 +2539,7 @@ export function ClaudeCodeWidget() {
     setActiveKey(state.key);
     setView("chat");
     if (isMobile) setSidebarOpen(false);
-  }, [effectiveMode, isMobile]);
+  }, [effectiveMode, isMobile, opencodeModel, opencodeVariant, claudeEffort]);
 
   const closeActiveSession = useCallback(() => {
     if (!activeKey) return;
@@ -2131,8 +2564,9 @@ export function ClaudeCodeWidget() {
       // visible — the user can open the Terminal tab when they want it.
       if (!state.alive && !state.spawningTerminal) spawnTerminal(state);
     } else {
-      // → background
-      if (!state.sessionId) {
+      // → background. Claude needs an id to create the log under; OpenCode
+      // mints its own on the first run.
+      if (!state.sessionId && state.agent === "claude") {
         state.sessionId = generateSessionId();
         state.exists = false;
       }
@@ -2248,6 +2682,9 @@ export function ClaudeCodeWidget() {
                 New Session
               </Button>
 
+              {/* Which CLI the next new session runs on. */}
+              <AgentToggle value={selectedAgent} onChange={setSelectedAgent} />
+
               {/* Active folder picker */}
               <FolderSection
                 activeFolder={activeFolder}
@@ -2356,10 +2793,13 @@ export function ClaudeCodeWidget() {
             </Button>
 
             <div className="flex-1 min-w-0">
-              <div className="text-xs font-medium truncate">
-                {active
-                  ? (active.sessionId && sessionMetaMap[active.sessionId]?.customName) || active.label
-                  : "No session"}
+              <div className="text-xs font-medium truncate flex items-center gap-1.5">
+                {active && <AgentBadge agent={active.agent} />}
+                <span className="truncate">
+                  {active
+                    ? (active.sessionId && sessionMetaMap[active.sessionId]?.customName) || active.label
+                    : "No session"}
+                </span>
               </div>
               {active && (
                 <div className="text-[0.625rem] text-muted-foreground truncate">
@@ -2374,12 +2814,47 @@ export function ClaudeCodeWidget() {
                   <ThemePicker value={chatTheme} onChange={updateChatTheme} />
                 )}
 
-                {view === "chat" && (
-                  <ModelPicker
-                    value={selectedModel}
-                    onChange={setSelectedModel}
-                    sessionAlive={!!active.alive}
-                  />
+                {view === "chat" && active.agent === "claude" && (
+                  <>
+                    <OptionPicker
+                      value={selectedModel}
+                      options={CLAUDE_MODEL_OPTIONS}
+                      onChange={setSelectedModel}
+                      icon={<Sparkles className="h-3 w-3" />}
+                      title="Model"
+                      footnote={active.alive ? undefined : "Applies on next session start"}
+                    />
+                    <OptionPicker
+                      value={active.effort || "default"}
+                      options={CLAUDE_EFFORT_OPTIONS}
+                      onChange={setClaudeEffort}
+                      icon={<Zap className="h-3 w-3" />}
+                      title="Effort"
+                      footnote={active.mode === "background" ? "Applies to the next prompt" : "Applies on next session start"}
+                      width="w-52"
+                    />
+                  </>
+                )}
+
+                {view === "chat" && active.agent === "opencode" && (
+                  <>
+                    <OpenCodeModelPicker
+                      value={active.model || "default"}
+                      onChange={setOpencodeModel}
+                      footnote={active.mode === "background" ? "Applies to the next prompt" : "Applies on next session start"}
+                    />
+                    {opencodeVariantOptions.length > 1 && (
+                      <OptionPicker
+                        value={active.effort || "default"}
+                        options={opencodeVariantOptions}
+                        onChange={setOpencodeVariant}
+                        icon={<Zap className="h-3 w-3" />}
+                        title="Variant"
+                        footnote={active.mode === "background" ? "Applies to the next prompt" : "Background runs only"}
+                        width="w-44"
+                      />
+                    )}
+                  </>
                 )}
 
                 {view === "chat" && !isMobile && (
@@ -2460,6 +2935,17 @@ export function ClaudeCodeWidget() {
                 onClose={() => setShowFolderPicker(false)}
                 mode={selectedMode}
                 onModeChange={setSelectedMode}
+                agent={selectedAgent}
+                onAgentChange={setSelectedAgent}
+                claudeModel={selectedModel}
+                onClaudeModelChange={setSelectedModel}
+                claudeEffort={claudeEffort}
+                onClaudeEffortChange={setClaudeEffort}
+                opencodeModel={opencodeModel}
+                onOpencodeModelChange={setOpencodeModel}
+                opencodeVariant={opencodeVariant}
+                onOpencodeVariantChange={setOpencodeVariant}
+                opencodeVariantOptions={openCodeVariantOptions(openCodeModels, opencodeModel)}
               />
             ) : !active ? (
               <EmptyState onNew={() => setShowFolderPicker(true)} />
@@ -2608,8 +3094,9 @@ function SessionListItem({
             </span>
           )}
         </div>
-        <div className="text-[0.625rem] text-muted-foreground truncate mt-0.5">
-          {session.projectPath || session.projectDirName}
+        <div className="text-[0.625rem] text-muted-foreground truncate mt-0.5 flex items-center gap-1">
+          <AgentBadge agent={session.agent || "claude"} />
+          <span className="truncate">{session.projectPath || session.projectDirName}</span>
         </div>
       </div>
 
@@ -2941,9 +3428,25 @@ interface FolderPickerProps {
   onClose: () => void;
   mode: "background" | "interactive";
   onModeChange: (m: "background" | "interactive") => void;
+  agent: AgentKind;
+  onAgentChange: (a: AgentKind) => void;
+  claudeModel: string;
+  onClaudeModelChange: (v: string) => void;
+  claudeEffort: string;
+  onClaudeEffortChange: (v: string) => void;
+  opencodeModel: string;
+  onOpencodeModelChange: (v: string) => void;
+  opencodeVariant: string;
+  onOpencodeVariantChange: (v: string) => void;
+  opencodeVariantOptions: PickerOption[];
 }
 
-function FolderPickerPanel({ value, onChange, recent, onPick, onClose, mode, onModeChange }: FolderPickerProps) {
+function FolderPickerPanel({
+  value, onChange, recent, onPick, onClose, mode, onModeChange,
+  agent, onAgentChange,
+  claudeModel, onClaudeModelChange, claudeEffort, onClaudeEffortChange,
+  opencodeModel, onOpencodeModelChange, opencodeVariant, onOpencodeVariantChange, opencodeVariantOptions,
+}: FolderPickerProps) {
   const isMobile = useIsMobile();
   const [browsing, setBrowsing] = useState(false);
   const [browsePath, setBrowsePath] = useState<string>("");
@@ -3010,9 +3513,48 @@ function FolderPickerPanel({ value, onChange, recent, onPick, onClose, mode, onM
           </Button>
         </div>
 
-        {/* Session mode: background (headless claude -p, chat only) vs
-            interactive (live terminal). Chosen here so it applies to the
-            session being created. Hidden on mobile, which is background-only. */}
+        {/* Agent + model + effort for the session being created. */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-[0.625rem] uppercase font-semibold text-muted-foreground">Agent</span>
+          <AgentToggle value={agent} onChange={onAgentChange} />
+          {agent === "claude" ? (
+            <>
+              <OptionPicker
+                value={claudeModel}
+                options={CLAUDE_MODEL_OPTIONS}
+                onChange={onClaudeModelChange}
+                icon={<Sparkles className="h-3 w-3" />}
+                title="Model"
+              />
+              <OptionPicker
+                value={claudeEffort}
+                options={CLAUDE_EFFORT_OPTIONS}
+                onChange={onClaudeEffortChange}
+                icon={<Zap className="h-3 w-3" />}
+                title="Effort"
+                width="w-52"
+              />
+            </>
+          ) : (
+            <>
+              <OpenCodeModelPicker value={opencodeModel} onChange={onOpencodeModelChange} />
+              {opencodeVariantOptions.length > 1 && (
+                <OptionPicker
+                  value={opencodeVariant}
+                  options={opencodeVariantOptions}
+                  onChange={onOpencodeVariantChange}
+                  icon={<Zap className="h-3 w-3" />}
+                  title="Variant"
+                  width="w-44"
+                />
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Session mode: background (headless, one CLI run per prompt, chat
+            only) vs interactive (live terminal). Chosen here so it applies to
+            the session being created. Hidden on mobile, which is background-only. */}
         {!isMobile && (
           <div className="flex items-center gap-2">
             <span className="text-[0.625rem] uppercase font-semibold text-muted-foreground">Mode</span>
@@ -3383,6 +3925,7 @@ function ChatView({
                   theme={theme}
                   showAvatar={showAvatar}
                   toolResultMap={toolResultMap}
+                  assistantName={AGENT_SHORT[state.agent]}
                 />
               );
             })}
@@ -3390,8 +3933,8 @@ function ChatView({
               <ThinkingIndicator
                 theme={theme}
                 label={state.spawningTerminal || (!state.alive && state.pendingPrompts.length > 0)
-                  ? "Starting Claude…"
-                  : undefined}
+                  ? `Starting ${AGENT_SHORT[state.agent]}…`
+                  : `${AGENT_SHORT[state.agent]} is thinking…`}
               />
             )}
           </div>
@@ -3572,7 +4115,7 @@ function ChatView({
         </div>
         {state.ws !== null && !state.alive && !state.spawningTerminal && (
           <div className="text-[0.625rem] text-muted-foreground">
-            The Claude process exited. Close and start a new session.
+            The {AGENT_SHORT[state.agent]} process exited. Close and start a new session.
           </div>
         )}
       </div>
@@ -3581,6 +4124,9 @@ function ChatView({
         <ScheduleModal
           sessionId={state.sessionId}
           cwd={state.cwd}
+          agent={state.agent}
+          model={state.agent === "opencode" ? state.model : null}
+          effort={state.effort}
           prompt={schedulingPrompt}
           onSaved={() => {
             setSchedulingPrompt(null);
@@ -3634,10 +4180,16 @@ function SessionUsageBar({ messages }: { messages: ChatMessage[] }) {
     let writes = 0;
     let firstTimestamp = "";
     let lastTimestamp = "";
+    let reportedCost = 0;
+    let hasReportedCost = false;
     for (const m of messages) {
       if (m.timestamp) {
         if (!firstTimestamp) firstTimestamp = m.timestamp;
         lastTimestamp = m.timestamp;
+      }
+      if (typeof m.cost === "number") {
+        reportedCost += m.cost;
+        hasReportedCost = true;
       }
       if (m.usage) {
         inputTokens += m.usage.inputTokens;
@@ -3656,7 +4208,7 @@ function SessionUsageBar({ messages }: { messages: ChatMessage[] }) {
     }
     return {
       inputTokens, outputTokens, cacheReadInputTokens, cacheCreationInputTokens,
-      turns, edits, writes, firstTimestamp, lastTimestamp,
+      turns, edits, writes, firstTimestamp, lastTimestamp, reportedCost, hasReportedCost,
     };
   }, [messages]);
 
@@ -3664,7 +4216,9 @@ function SessionUsageBar({ messages }: { messages: ChatMessage[] }) {
   if (totals.turns === 0) return null;
 
   const totalTokens = totals.inputTokens + totals.outputTokens + totals.cacheReadInputTokens + totals.cacheCreationInputTokens;
-  const cost = estimateCost(totals);
+  // Prefer the cost the CLI itself recorded (OpenCode) over the Claude-priced
+  // estimate, which would be wrong for a non-Anthropic model.
+  const cost = totals.hasReportedCost ? totals.reportedCost : estimateCost(totals);
 
   // Wall-clock duration between first and last message timestamp.
   const wallMs = totals.firstTimestamp && totals.lastTimestamp
@@ -3837,10 +4391,13 @@ function ChatBubble({
   theme,
   showAvatar,
   toolResultMap,
+  assistantName = "Claude",
 }: {
   message: ChatMessage;
   showToolCalls: boolean;
   theme: ChatTheme;
+  /** Display name for assistant turns (the session's agent). */
+  assistantName?: string;
   /** When false, avatar is hidden (used by themes that group consecutive same-role messages). */
   showAvatar: boolean;
   /** Map of tool_use_id → result for pairing tool uses with their outputs. */
@@ -3935,7 +4492,7 @@ function ChatBubble({
             "text-[0.625rem] font-semibold uppercase tracking-wider mb-1",
             isUser ? "text-primary" : "text-muted-foreground"
           )}>
-            {isUser ? "You" : "Claude"}
+            {isUser ? "You" : assistantName}
           </div>
         )}
         <div className={cn(
@@ -4094,6 +4651,7 @@ function SchedulesPanel({
                     <div className="flex items-start gap-2">
                       <div className="flex-1 min-w-0">
                         {s.label && <div className="text-xs font-semibold truncate">{s.label}</div>}
+                        {s.agent === "opencode" && <AgentBadge agent="opencode" className="mb-0.5" />}
                         <button
                           onClick={() => onOpenSession(s.sessionId)}
                           className="text-[0.625rem] text-muted-foreground hover:text-foreground hover:underline truncate text-left block max-w-full"
@@ -4214,12 +4772,19 @@ function fromLocalInputValue(v: string): Date | null {
 function ScheduleModal({
   sessionId,
   cwd,
+  agent,
+  model,
+  effort,
   prompt,
   onSaved,
   onCancel,
 }: {
   sessionId: string;
   cwd: string;
+  agent: AgentKind;
+  /** OpenCode `provider/model` to run with; Claude resumes keep their own model. */
+  model: string | null;
+  effort: string | null;
   prompt: string;
   onSaved: () => void;
   onCancel: () => void;
@@ -4246,6 +4811,9 @@ function ScheduleModal({
           action: "create",
           sessionId,
           cwd,
+          agent,
+          model: model || undefined,
+          effort: effort || undefined,
           prompt,
           nextRunAt: when.toISOString(),
           recurrence,

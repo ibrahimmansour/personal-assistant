@@ -10,14 +10,22 @@ export type RecurrenceKind =
   | { type: "daily"; hour: number; minute: number }
   | { type: "weekly"; weekdays: number[]; hour: number; minute: number };
 
+export type ScheduleAgent = "claude" | "opencode";
+
 export interface Schedule {
   id: string;
-  /** The session this prompt should resume (`claude --resume <sessionId>`). */
+  /** Which CLI runs the prompt. Missing means "claude" (pre-OpenCode entries). */
+  agent?: ScheduleAgent;
+  /** The session this prompt should resume (`claude --resume <sessionId>` or
+   *  `opencode run --session <sessionId>`). */
   sessionId: string;
   /** The cwd to spawn the CLI in — typically the session's projectPath. */
   cwd: string;
-  /** Optional model alias to pass via --model on each run (defaults to the user's default). */
+  /** Optional model to pass via --model on each run (defaults to the user's default).
+   *  A Claude alias (`opus`, `fable`…) or an OpenCode `provider/model` id. */
   model?: string;
+  /** Optional reasoning effort: Claude `--effort` level or OpenCode `--variant`. */
+  effort?: string;
   /** The prompt to deliver. */
   prompt: string;
   /** ISO timestamp of the next scheduled run. */

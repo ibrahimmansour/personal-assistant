@@ -3,6 +3,12 @@ import { watch as fsWatch } from "fs";
 import { promises as fsp } from "fs";
 import { join } from "path";
 import { homedir } from "os";
+import {
+  isOpenCodeSessionId,
+  openCodeSessionExists,
+  openCodeSessionSignature,
+  readOpenCodeMessages,
+} from "@/lib/opencode-store";
 
 export const dynamic = "force-dynamic";
 
@@ -237,6 +243,11 @@ export async function GET(request: NextRequest) {
     return Response.json({ error: "sessionId required" }, { status: 400 });
   }
 
+  // OpenCode sessions have no log file — poll its SQLite store instead.
+  if (isOpenCodeSessionId(sessionId)) {
+    return streamOpenCodeSession(request, sessionId);
+  }
+
   const filePath = await locateSessionFile(sessionId, projectDir);
 
   const encoder = new TextEncoder();
@@ -383,6 +394,89 @@ export async function GET(request: NextRequest) {
         };
         request.signal.addEventListener("abort", onAbort);
       }
+    },
+    cancel() {
+      closed = true;
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+    },
+  });
+}
+
+/**
+ * SSE tail for an OpenCode session. OpenCode streams assistant output by
+ * rewriting message parts in place, so instead of appending new lines we
+ * re-read the whole conversation whenever its change signature (row counts +
+ * newest `time_updated`) moves and send it as a `replace` event — the same
+ * event the JSONL tail uses for its initial replay, which the widget already
+ * handles.
+ */
+function streamOpenCodeSession(request: NextRequest, sessionId: string): Response {
+  const encoder = new TextEncoder();
+  let closed = false;
+
+  const stream = new ReadableStream({
+    async start(controller) {
+      const send = (event: string, data: unknown) => {
+        if (closed) return;
+        try {
+          controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+        } catch {
+          closed = true;
+        }
+      };
+
+      let lastSig: string | null = null;
+      let inFlight = false;
+      const poll = async (initial: boolean) => {
+        if (closed || inFlight) return;
+        inFlight = true;
+        try {
+          const exists = await openCodeSessionExists(sessionId);
+          if (!exists) {
+            if (initial) send("messages", { messages: [], replace: true, note: "no session yet" });
+            return;
+          }
+          const sig = (await openCodeSessionSignature(sessionId)) ?? String(Date.now());
+          if (!initial && sig === lastSig) return;
+          lastSig = sig;
+          const messages = await readOpenCodeMessages(sessionId);
+          send("messages", { messages, replace: true });
+        } catch {
+        } finally {
+          inFlight = false;
+        }
+      };
+
+      await poll(true);
+
+      const pollInterval = setInterval(() => {
+        if (closed) { clearInterval(pollInterval); return; }
+        poll(false);
+      }, 750);
+
+      const heartbeat = setInterval(() => {
+        if (closed) { clearInterval(heartbeat); return; }
+        try {
+          controller.enqueue(encoder.encode(`: ping\n\n`));
+        } catch {
+          closed = true;
+          clearInterval(heartbeat);
+        }
+      }, 15000);
+
+      request.signal.addEventListener("abort", () => {
+        closed = true;
+        clearInterval(pollInterval);
+        clearInterval(heartbeat);
+        try { controller.close(); } catch {}
+      });
     },
     cancel() {
       closed = true;

@@ -3,7 +3,8 @@
  *
  * On first import (lazily, once across the Next.js process), starts a
  * one-minute ticker that scans schedules.json for due entries and runs them
- * via `claude --resume <sid> --dangerously-skip-permissions -p <prompt>`.
+ * via `claude --resume <sid> --dangerously-skip-permissions -p <prompt>` (or
+ * `opencode run --session <sid> --auto <prompt>` for OpenCode sessions).
  *
  * Each completed run advances the schedule's nextRunAt (or, for once-only
  * schedules, disables it) and records last-run status.
@@ -14,6 +15,7 @@ import { homedir } from "os";
 import { join } from "path";
 import { readFile, mkdir, writeFile } from "fs/promises";
 import type { Schedule, RecurrenceKind } from "@/lib/claude-schedule-types";
+import { buildAgentPath } from "@/lib/opencode-store";
 
 const SCHEDULES_FILE = join(homedir(), ".personal-assistant", "claude-schedules.json");
 
@@ -78,16 +80,28 @@ interface RunResult {
 
 async function runSchedule(s: Schedule): Promise<RunResult> {
   return new Promise((resolve) => {
-    const args = ["--dangerously-skip-permissions", "--resume", s.sessionId, "-p"];
-    if (s.model) args.unshift("--model", s.model);
-    args.push(s.prompt);
+    let bin: string;
+    let args: string[];
+    if (s.agent === "opencode") {
+      bin = "opencode";
+      args = ["run", "--auto", "--session", s.sessionId];
+      if (s.model) args.push("--model", s.model);
+      if (s.effort) args.push("--variant", s.effort);
+      args.push(s.prompt);
+    } else {
+      bin = "claude";
+      args = ["--dangerously-skip-permissions", "--resume", s.sessionId, "-p"];
+      if (s.effort) args.unshift("--effort", s.effort);
+      if (s.model) args.unshift("--model", s.model);
+      args.push(s.prompt);
+    }
 
     let cwd = s.cwd;
     if (cwd && cwd.startsWith("~")) cwd = join(homedir(), cwd.slice(1));
 
-    const child = spawn("claude", args, {
+    const child = spawn(bin, args, {
       cwd,
-      env: { ...process.env, NODE_TLS_REJECT_UNAUTHORIZED: "0" },
+      env: { ...process.env, PATH: buildAgentPath(), NODE_TLS_REJECT_UNAUTHORIZED: "0" },
       stdio: ["ignore", "pipe", "pipe"],
     });
 
