@@ -56,6 +56,7 @@ import {
   AlertCircle,
   CheckCircle2,
   Zap,
+  ArrowUp,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
@@ -65,6 +66,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useRefreshOnVisible } from "@/hooks/use-refresh-on-visible";
 import { useWidgetNavFor } from "@/components/widget-nav-context";
 import { useIsMobile } from "@/hooks/use-swipe";
+import { useBackHandler } from "@/hooks/use-back-handler";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -2187,6 +2189,27 @@ export function ClaudeCodeWidget() {
   // applies on desktop — mobile is pinned to "background".
   const effectiveMode: "background" | "interactive" = isMobile ? "background" : selectedMode;
 
+  // The folder picker renders in the main pane. On a phone the session
+  // sidebar is a full-width overlay *above* that pane, so opening the picker
+  // from the sidebar ("Browse…", "New Session") used to put it underneath
+  // the sidebar — invisible, with no way to reach it. Close the sidebar first
+  // on mobile, and hand back to it when the picker is dismissed with nothing
+  // else to show.
+  const openFolderPicker = useCallback(() => {
+    setShowFolderPicker(true);
+    if (isMobile) setSidebarOpen(false);
+  }, [isMobile]);
+  const closeFolderPicker = useCallback(() => {
+    setShowFolderPicker(false);
+    if (isMobile && !activeKey) setSidebarOpen(true);
+  }, [isMobile, activeKey]);
+
+  // Both mobile surfaces are full-viewport and dismissible, so they take a
+  // back layer: back closes the picker (or the session list when a session
+  // is behind it) before it closes the widget.
+  useBackHandler(isMobile && showFolderPicker, closeFolderPicker);
+  useBackHandler(isMobile && sidebarOpen && !showFolderPicker && !!activeKey, () => setSidebarOpen(false));
+
   // Chat UI theme. Pure visual preference, persisted locally.
   const [chatTheme, setChatTheme] = useState<ChatTheme>(() => {
     if (typeof window === "undefined") return "default";
@@ -2673,7 +2696,7 @@ export function ClaudeCodeWidget() {
                   // immediately. Only show the picker when there's nothing
                   // to default to.
                   if (activeFolder) startNewSession(activeFolder);
-                  else setShowFolderPicker(true);
+                  else openFolderPicker();
                 }}
                 disabled={creating}
                 title={activeFolder ? `New session in ${activeFolder}` : "Pick a folder"}
@@ -2690,7 +2713,7 @@ export function ClaudeCodeWidget() {
                 activeFolder={activeFolder}
                 recentFolders={recentFolders}
                 onSelect={selectActiveFolder}
-                onBrowse={() => setShowFolderPicker(true)}
+                onBrowse={openFolderPicker}
               />
 
               {/* Worktrees for active folder */}
@@ -2785,9 +2808,10 @@ export function ClaudeCodeWidget() {
             <Button
               size="sm"
               variant="ghost"
-              className="h-7 w-7 p-0"
+              className="h-10 w-10 md:h-7 md:w-7 p-0"
               onClick={() => setSidebarOpen((v) => !v)}
               title={sidebarOpen ? "Hide sessions" : "Show sessions"}
+              aria-label={sidebarOpen ? "Hide sessions" : "Show sessions"}
             >
               {sidebarOpen ? <PanelLeftClose className="h-3.5 w-3.5" /> : <PanelLeftOpen className="h-3.5 w-3.5" />}
             </Button>
@@ -2932,7 +2956,7 @@ export function ClaudeCodeWidget() {
                 onChange={setFolderInput}
                 recent={recentFolders}
                 onPick={(p) => startNewSession(p)}
-                onClose={() => setShowFolderPicker(false)}
+                onClose={closeFolderPicker}
                 mode={selectedMode}
                 onModeChange={setSelectedMode}
                 agent={selectedAgent}
@@ -2948,7 +2972,7 @@ export function ClaudeCodeWidget() {
                 opencodeVariantOptions={openCodeVariantOptions(openCodeModels, opencodeModel)}
               />
             ) : !active ? (
-              <EmptyState onNew={() => setShowFolderPicker(true)} />
+              <EmptyState onNew={openFolderPicker} />
             ) : view === "chat" || active.mode === "background" ? (
               <ChatView
                 state={active}
@@ -3155,7 +3179,7 @@ function FolderSection({
       <div className="flex items-center justify-between">
         <span className="text-[0.625rem] font-semibold text-muted-foreground uppercase tracking-wide">Folder</span>
         <button
-          className="text-[0.625rem] text-muted-foreground hover:text-foreground"
+          className="text-[0.625rem] text-muted-foreground hover:text-foreground min-h-11 md:min-h-0 px-2 -mr-2 md:px-0 md:mr-0"
           onClick={onBrowse}
           title="Browse for folder"
         >
@@ -3451,7 +3475,6 @@ function FolderPickerPanel({
   const [browsing, setBrowsing] = useState(false);
   const [browsePath, setBrowsePath] = useState<string>("");
   const [entries, setEntries] = useState<{ name: string; isDir: boolean }[]>([]);
-  const initialLoadRef = useRef(false);
 
   const loadDir = useCallback(async (path: string) => {
     setBrowsing(true);
@@ -3461,23 +3484,34 @@ function FolderPickerPanel({
         const data = await res.json();
         setBrowsePath(data.path || path);
         const items = (data.entries || data.items || []) as { name: string; type?: string; isDirectory?: boolean }[];
+        // Dot-directories are hidden: a home directory is dozens of
+        // tool caches before the first project, which on a phone is a
+        // screenful of scrolling per level. Type the path for one of those.
         setEntries(
           items
-            .filter((e) => e.isDirectory || e.type === "directory" || e.type === "dir")
+            .filter((e) => (e.isDirectory || e.type === "directory" || e.type === "dir") && !e.name.startsWith("."))
             .map((e) => ({ name: e.name, isDir: true }))
+            .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }))
         );
       }
     } catch {}
     setBrowsing(false);
   }, []);
 
+  // Load the home directory on mount. Deferred a tick so the effect body
+  // doesn't set state synchronously. No "already loaded" ref here: under
+  // StrictMode's double effect run the cleanup cancelled the timer and the
+  // ref then blocked the rerun, so the list stayed empty in dev.
   useEffect(() => {
-    if (initialLoadRef.current) return;
-    initialLoadRef.current = true;
-    // Defer to next tick so we don't trigger setState within the effect body synchronously.
     const t = setTimeout(() => loadDir("~"), 0);
     return () => clearTimeout(t);
   }, [loadDir]);
+
+  // Split the path so the leaf can stay visible when the prefix truncates.
+  const shownPath = browsePath || "~";
+  const lastSlash = shownPath.lastIndexOf("/");
+  const browseParent = lastSlash > 0 ? shownPath.slice(0, lastSlash + 1) : lastSlash === 0 && shownPath.length > 1 ? "/" : "";
+  const browseLeaf = lastSlash >= 0 ? shownPath.slice(lastSlash + 1) || "/" : shownPath;
 
   const goUp = () => {
     if (!browsePath || browsePath === "/") return;
@@ -3492,12 +3526,15 @@ function FolderPickerPanel({
         <FolderOpen className="h-4 w-4 text-muted-foreground" />
         <div className="text-sm font-medium">Choose project folder</div>
         <div className="flex-1" />
-        <Button size="sm" variant="ghost" onClick={onClose}>
+        <Button size="sm" variant="ghost" className="h-11 w-11 md:h-8 md:w-auto p-0 md:px-2" onClick={onClose} aria-label="Close folder picker">
           <X className="h-3.5 w-3.5" />
         </Button>
       </div>
 
-      <div className="p-3 space-y-3 flex-1 min-h-0 flex flex-col">
+      {/* Scrolls as a whole on a phone: with 44px controls the rows above the
+          browser can outgrow a short viewport, and a flex-1 browser squeezed
+          to zero height is what "can't browse folders on mobile" looked like. */}
+      <div className="p-3 space-y-3 flex-1 min-h-0 flex flex-col overflow-y-auto md:overflow-hidden">
         <div className="flex gap-2">
           <Input
             placeholder="/path/to/project"
@@ -3566,29 +3603,45 @@ function FolderPickerPanel({
         )}
 
         {recent.length > 0 && (
-          <div>
+          <div className="shrink-0">
             <div className="text-[0.625rem] uppercase font-semibold text-muted-foreground mb-1">Recent</div>
-            <div className="space-y-0.5">
+            {/* A horizontal chip strip on a phone — ten 44px rows would push
+                the folder browser off the bottom of the pane. */}
+            <div className="flex gap-1.5 overflow-x-auto pb-1 md:block md:space-y-0.5 md:pb-0 md:overflow-visible">
               {recent.map((p) => (
                 <button
                   key={p}
-                  className="w-full min-h-11 md:min-h-0 text-left text-xs px-2 py-1 rounded hover:bg-muted truncate"
+                  className="shrink-0 max-w-[70vw] md:max-w-none md:w-full min-h-11 md:min-h-0 text-left text-xs px-2.5 md:px-2 py-1 rounded-md md:rounded border border-border md:border-0 bg-muted/40 md:bg-transparent hover:bg-muted active:bg-muted truncate"
                   onClick={() => onPick(p)}
+                  title={p}
                 >
-                  {p}
+                  {isMobile ? shortenFolder(p) : p}
                 </button>
               ))}
             </div>
           </div>
         )}
 
-        <div className="flex-1 min-h-0 flex flex-col border border-border rounded-md">
+        <div className="flex-1 min-h-64 md:min-h-0 flex flex-col border border-border rounded-md">
           <div className="flex items-center gap-2 px-2 py-1.5 border-b border-border bg-muted/30">
-            <Button size="sm" variant="ghost" className="h-6 px-1.5 text-xs" onClick={goUp}>
-              ..
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-11 w-11 md:h-6 md:w-auto p-0 md:px-1.5 text-xs shrink-0"
+              onClick={goUp}
+              disabled={!browsePath || browsePath === "/"}
+              aria-label="Up one folder"
+              title="Up one folder"
+            >
+              <ArrowUp className="h-3.5 w-3.5" />
             </Button>
-            <div className="flex-1 text-xs font-mono truncate text-muted-foreground">{browsePath || "~"}</div>
-            <Button size="sm" disabled={!browsePath} onClick={() => onPick(browsePath)}>
+            <div className="flex-1 min-w-0 text-xs font-mono text-muted-foreground flex items-center">
+              {/* Keep the current folder's own name visible; a plain truncate
+                  shows only the "/home/user" prefix on a narrow screen. */}
+              <span className="truncate">{browseParent}</span>
+              <span className="shrink-0 font-medium text-foreground">{browseLeaf}</span>
+            </div>
+            <Button size="sm" className="h-11 md:h-8 shrink-0" disabled={!browsePath} onClick={() => onPick(browsePath)}>
               Use this folder
             </Button>
           </div>
@@ -3600,11 +3653,12 @@ function FolderPickerPanel({
                 entries.map((e) => (
                   <button
                     key={e.name}
-                    className="w-full min-h-11 md:min-h-0 text-left text-xs px-2 py-1 rounded hover:bg-muted flex items-center gap-1.5"
+                    className="w-full min-h-11 md:min-h-0 text-left text-xs px-2 py-1 rounded hover:bg-muted active:bg-muted flex items-center gap-1.5"
                     onClick={() => loadDir(`${browsePath}/${e.name}`.replace(/\/+/g, "/"))}
                   >
-                    <FolderOpen className="h-3 w-3 text-muted-foreground" />
-                    {e.name}
+                    <FolderOpen className="h-3 w-3 text-muted-foreground shrink-0" />
+                    <span className="flex-1 truncate">{e.name}</span>
+                    <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0 md:hidden" />
                   </button>
                 ))
               )}
