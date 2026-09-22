@@ -13,6 +13,7 @@ import {
   ListTodo,
   Loader2,
   Inbox,
+  Flame,
 } from "lucide-react";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -23,6 +24,28 @@ type InboxFilter = "all" | "email" | "prs" | "jira" | "calendar" | "tasks";
 interface InboxItem extends DetailItem {
   read?: boolean;
   priority?: string;
+  /** Jev urgency, 0 (can wait) … 3 (time-critical). Absent until triage answers. */
+  urgency?: number;
+}
+
+type SortMode = "time" | "urgency";
+
+/** Urgency at or above this reads as "needs attention today". */
+const URGENT_THRESHOLD = 1.75;
+/** At or above this: "time-critical". */
+const CRITICAL_THRESHOLD = 2.5;
+
+function urgencyLabel(u: number): string {
+  if (u >= CRITICAL_THRESHOLD) return "Time-critical";
+  if (u >= URGENT_THRESHOLD) return "Needs attention today";
+  return "";
+}
+
+/** A short text preview for the triage judgment, per source. */
+function previewOf(item: InboxItem): string {
+  const d = item.data;
+  const raw = d.preview || d.bodyPreview || d.snippet || d.description || d.body || "";
+  return typeof raw === "string" ? raw.replace(/\s+/g, " ").slice(0, 400) : "";
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -65,6 +88,9 @@ export function InboxView() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<InboxFilter>("all");
   const [selectedItem, setSelectedItem] = useState<InboxItem | null>(null);
+  const [sortMode, setSortMode] = useState<SortMode>("time");
+  /** null = not asked yet, false = Jev not configured, true = scores available. */
+  const [triageOn, setTriageOn] = useState<boolean | null>(null);
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -162,6 +188,33 @@ export function InboxView() {
     allItems.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
     setItems(allItems);
     setLoading(false);
+
+    // Jev triage: score urgency per item, then merge in. Cached server-side,
+    // so the 3-minute refresh only bills items that changed.
+    if (allItems.length === 0) return;
+    try {
+      const res = await fetch("/api/ai/triage", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items: allItems.map((i) => ({
+            id: i.id,
+            type: i.type,
+            title: i.title,
+            subtitle: i.subtitle,
+            time: i.time,
+            preview: previewOf(i),
+          })),
+        }),
+      });
+      const data = await res.json();
+      if (!data.jev) { setTriageOn(false); return; }
+      const scores: Record<string, { urgency: number }> = data.scores || {};
+      setTriageOn(true);
+      setItems((prev) => prev.map((i) => (scores[i.id] ? { ...i, urgency: scores[i.id].urgency } : i)));
+    } catch {
+      setTriageOn(false);
+    }
   }, [activeProfile]);
 
   useEffect(() => {
@@ -171,7 +224,11 @@ export function InboxView() {
     return () => clearInterval(interval);
   }, [fetchAll]);
 
-  const filteredItems = filter === "all" ? items : items.filter((i) => i.type === filter);
+  const filteredByType = filter === "all" ? items : items.filter((i) => i.type === filter);
+  const filteredItems = sortMode === "urgency" && triageOn
+    ? [...filteredByType].sort((a, b) => (b.urgency ?? -1) - (a.urgency ?? -1) || new Date(b.time).getTime() - new Date(a.time).getTime())
+    : filteredByType;
+  const urgentCount = items.filter((i) => (i.urgency ?? 0) >= URGENT_THRESHOLD).length;
   const availableFilters = filterConfig.filter(
     (f) => f.id === "all" || items.some((i) => i.type === f.id)
   );
@@ -211,6 +268,22 @@ export function InboxView() {
               </button>
             );
           })}
+          {triageOn && (
+            <button
+              onClick={() => setSortMode((m) => (m === "urgency" ? "time" : "urgency"))}
+              className={cn(
+                "ml-auto flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors shrink-0",
+                sortMode === "urgency"
+                  ? "bg-orange-500/10 text-orange-600 dark:text-orange-400"
+                  : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+              )}
+              title="Sort by Jev urgency instead of time"
+            >
+              <Flame className="h-3 w-3" />
+              Urgent first
+              {urgentCount > 0 && <span className="text-[0.625rem] opacity-60">{urgentCount}</span>}
+            </button>
+          )}
         </div>
 
         {/* Item list */}
@@ -257,8 +330,22 @@ export function InboxView() {
                           {timeAgo(item.time)}
                         </span>
                       </div>
-                      <div className="text-xs text-muted-foreground truncate mt-0.5">
-                        {item.subtitle}
+                      <div className="text-xs text-muted-foreground truncate mt-0.5 flex items-center gap-1.5">
+                        {item.urgency !== undefined && item.urgency >= URGENT_THRESHOLD && (
+                          <span
+                            className={cn(
+                              "inline-flex items-center gap-0.5 rounded px-1 py-px text-[0.625rem] font-medium shrink-0",
+                              item.urgency >= CRITICAL_THRESHOLD
+                                ? "bg-red-500/10 text-red-600 dark:text-red-400"
+                                : "bg-orange-500/10 text-orange-600 dark:text-orange-400"
+                            )}
+                            title={`${urgencyLabel(item.urgency)} · Jev urgency ${item.urgency.toFixed(1)}/3`}
+                          >
+                            <Flame className="h-2.5 w-2.5" />
+                            {item.urgency >= CRITICAL_THRESHOLD ? "critical" : "today"}
+                          </span>
+                        )}
+                        <span className="truncate">{item.subtitle}</span>
                       </div>
                     </div>
                   </button>

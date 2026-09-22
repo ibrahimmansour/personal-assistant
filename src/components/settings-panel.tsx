@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, FormEvent } from "react";
-import { Settings, Save, Eye, EyeOff, CheckCircle, GitBranch, Mail, Brain, MapPin, TicketCheck, Shield, Download, RefreshCw, LayoutGrid, RotateCcw, Lock, LockOpen, Maximize } from "lucide-react";
+import { Settings, Save, Eye, EyeOff, CheckCircle, GitBranch, Mail, Brain, Sparkles, MapPin, TicketCheck, Shield, Download, RefreshCw, LayoutGrid, RotateCcw, Lock, LockOpen, Maximize } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDashboard } from "@/components/dashboard-context";
 import { useAppearance } from "@/components/appearance-context";
@@ -13,8 +13,33 @@ interface AppConfig {
   google: { clientId: string; clientSecret: string; redirectUri: string };
   jira: { baseUrl: string; cookies: string };
   ollama: { url: string; model: string };
+  ai: { provider: string; claudeModel: string; claudeEffort: string };
+  typesafe: { apiKey: string };
   weather: { location: string };
 }
+
+type FieldDef =
+  | { key: string; label: string; secret: boolean; hint?: string }
+  | { key: string; label: string; select: readonly { value: string; label: string }[]; hint?: string };
+
+const CLAUDE_MODEL_CHOICES = [
+  { value: "default", label: "Default (CLI's saved model)" },
+  { value: "fable", label: "Fable 5.1" },
+  { value: "opus", label: "Opus" },
+  { value: "opus[1m]", label: "Opus (1M context)" },
+  { value: "sonnet", label: "Sonnet" },
+  { value: "sonnet[1m]", label: "Sonnet (1M context)" },
+  { value: "haiku", label: "Haiku 4.5" },
+] as const;
+
+const CLAUDE_EFFORT_CHOICES = [
+  { value: "default", label: "Default (CLI setting)" },
+  { value: "low", label: "Low — fastest, best for chat" },
+  { value: "medium", label: "Medium" },
+  { value: "high", label: "High" },
+  { value: "xhigh", label: "X-High" },
+  { value: "max", label: "Max" },
+] as const;
 
 const SECTIONS = [
   { key: "github", label: "GitHub Enterprise", icon: GitBranch, fields: [
@@ -35,14 +60,25 @@ const SECTIONS = [
     { key: "baseUrl", label: "Base URL", secret: false },
     { key: "cookies", label: "Cookies", secret: true },
   ]},
-  { key: "ollama", label: "AI / Ollama", icon: Brain, fields: [
+  { key: "ai", label: "AI Assistant", icon: Brain, fields: [
+    { key: "provider", label: "Provider", select: [
+      { value: "claude", label: "Claude — your Claude Code subscription" },
+      { value: "ollama", label: "Ollama — local model" },
+    ], hint: "Who writes the assistant's replies. Claude runs through the Claude Code CLI login, no API key needed." },
+    { key: "claudeModel", label: "Claude model", select: CLAUDE_MODEL_CHOICES },
+    { key: "claudeEffort", label: "Claude effort", select: CLAUDE_EFFORT_CHOICES },
+  ]},
+  { key: "ollama", label: "Ollama", icon: Brain, fields: [
     { key: "url", label: "URL", secret: false },
     { key: "model", label: "Model", secret: false },
+  ]},
+  { key: "typesafe", label: "Jev (TypeSafe)", icon: Sparkles, fields: [
+    { key: "apiKey", label: "API key", secret: true, hint: "Typed judgments next to the chat model: intent routing, inbox urgency, file search ranking, cleanup buckets, news genres. Leave empty to disable." },
   ]},
   { key: "weather", label: "Weather", icon: MapPin, fields: [
     { key: "location", label: "Location", secret: false },
   ]},
-] as const;
+] as const satisfies readonly { key: string; label: string; icon: unknown; fields: readonly FieldDef[] }[];
 
 export default function SettingsPanel() {
   const [config, setConfig] = useState<AppConfig | null>(null);
@@ -134,32 +170,50 @@ export default function SettingsPanel() {
               {section.label}
             </div>
             <div className="space-y-2 pl-6">
-              {section.fields.map((field) => {
+              {(section.fields as readonly FieldDef[]).map((field) => {
                 const fieldKey = `${section.key}.${field.key}`;
                 const isVisible = visibleSecrets.has(fieldKey);
+                const isSecret = "secret" in field && field.secret;
                 return (
-                  <div key={field.key} className="flex items-center gap-2">
-                    <label className="text-xs text-muted-foreground w-28 shrink-0">
-                      {field.label}
-                    </label>
-                    <div className="relative flex-1">
-                      <input
-                        type={field.secret && !isVisible ? "password" : "text"}
-                        value={sectionData[field.key] || ""}
-                        onChange={(e) => handleChange(section.key, field.key, e.target.value)}
-                        className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        placeholder={field.secret ? "••••••••" : ""}
-                      />
-                      {field.secret && (
-                        <button
-                          type="button"
-                          onClick={() => toggleSecret(fieldKey)}
-                          className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                        >
-                          {isVisible ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                        </button>
-                      )}
+                  <div key={field.key} className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <label className="text-xs text-muted-foreground w-28 shrink-0">
+                        {field.label}
+                      </label>
+                      <div className="relative flex-1">
+                        {"select" in field ? (
+                          <select
+                            value={sectionData[field.key] || field.select[0].value}
+                            onChange={(e) => handleChange(section.key, field.key, e.target.value)}
+                            className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          >
+                            {field.select.map((opt) => (
+                              <option key={opt.value} value={opt.value}>{opt.label}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <input
+                            type={isSecret && !isVisible ? "password" : "text"}
+                            value={sectionData[field.key] || ""}
+                            onChange={(e) => handleChange(section.key, field.key, e.target.value)}
+                            className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            placeholder={isSecret ? "••••••••" : ""}
+                          />
+                        )}
+                        {isSecret && (
+                          <button
+                            type="button"
+                            onClick={() => toggleSecret(fieldKey)}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                          >
+                            {isVisible ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                          </button>
+                        )}
+                      </div>
                     </div>
+                    {field.hint && (
+                      <p className="text-[0.6875rem] text-muted-foreground/70 pl-30">{field.hint}</p>
+                    )}
                   </div>
                 );
               })}

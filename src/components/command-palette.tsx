@@ -1,5 +1,7 @@
 "use client";
 
+import { fetchRouting, type AiStatus } from "@/components/ai-chat-context";
+
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useTheme } from "next-themes";
 import {
@@ -529,6 +531,7 @@ export function CommandPalette() {
   const [aiAction, setAiAction] = useState<AIAction | null>(null);
   const [aiStreaming, setAiStreaming] = useState(false);
   const [aiAvailable, setAiAvailable] = useState<boolean | null>(null);
+  const [aiStatus, setAiStatus] = useState<AiStatus | null>(null);
   const aiAbortRef = useRef<AbortController | null>(null);
   const aiResponseRef = useRef<HTMLDivElement>(null);
   const cacheRef = useRef<CachedData | null>(null);
@@ -569,7 +572,7 @@ export function CommandPalette() {
   useEffect(() => {
     fetch("/api/ai")
       .then((r) => r.json())
-      .then((d) => setAiAvailable(d.available))
+      .then((d: AiStatus) => { setAiStatus(d); setAiAvailable(d.available); })
       .catch(() => setAiAvailable(false));
   }, []);
 
@@ -621,12 +624,21 @@ export function CommandPalette() {
       ? `Jira issues (${jiraItems.length}):\n${jiraItems.map((j) => `- ${j.title} [${j.subtitle}]`).join("\n")}`
       : undefined;
 
+    // Jev routing: a confident, text-free decision becomes the action button
+    // straight away; otherwise it rides along as a hint for the writer.
+    const routing = aiStatus?.jev
+      ? await fetchRouting(aiQuery, [], activeProfile, widgets.filter((w) => w.visible).map((w) => w.type), abortController.signal)
+      : null;
+    if (abortController.signal.aborted) return;
+    if (routing?.direct && routing.action) setAiAction(routing.action);
+
     try {
       const res = await fetch("/api/ai", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           query: aiQuery,
+          routing: routing || undefined,
           profile: activeProfile,
           context: {
             time: new Date().toLocaleString(),
@@ -695,12 +707,12 @@ export function CommandPalette() {
       }
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") return;
-      setAiResponse("Failed to connect to AI. Is Ollama running?");
+      setAiResponse("Failed to reach the AI provider. Check Settings → AI Assistant.");
     } finally {
       setAiStreaming(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [aiQuery, aiStreaming, activeProfile, activeWorkspace.id, widgets, aiAction]);
+  }, [aiQuery, aiStreaming, activeProfile, activeWorkspace.id, widgets, aiAction, aiStatus?.jev]);
 
   // Execute an AI action
   const executeAiAction = useCallback((action: AIAction) => {
@@ -1188,7 +1200,7 @@ export function CommandPalette() {
                   <p>&quot;open the dev workspace&quot; &middot; &quot;create a task to review PRs&quot;</p>
                 </div>
                 {aiAvailable === false && (
-                  <p className="text-destructive text-[0.6875rem] mt-2">Ollama is not running. Start it with: ollama serve</p>
+                  <p className="text-destructive text-[0.6875rem] mt-2">{aiStatus?.reason || "AI provider is offline. Check Settings → AI Assistant."}</p>
                 )}
               </div>
             )}
@@ -1590,7 +1602,7 @@ export function CommandPalette() {
             {aiAvailable === true && (
               <div className="text-[0.625rem] text-emerald-500/60 flex items-center gap-1">
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-500/60" />
-                AI ready
+                {aiStatus?.label || "AI ready"}{aiStatus?.jev ? " · Jev" : ""}
               </div>
             )}
           </div>

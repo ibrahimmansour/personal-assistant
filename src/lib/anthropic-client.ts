@@ -1,12 +1,18 @@
 /**
- * Anthropic API client for Claude.
+ * Claude text completions for one-shot tasks (file summaries, extraction).
  *
- * Reads ANTHROPIC_API_KEY from .env.local. Uses Messages API directly via
- * fetch (no SDK dependency). Supports both buffered and streaming responses.
+ * Two transports, chosen automatically:
+ *  - ANTHROPIC_API_KEY set → the Messages API directly via fetch.
+ *  - otherwise → the Claude Code CLI on the user's subscription
+ *    (claude-cli-client.ts), the same login the Claude Code widget uses.
  *
- * Default model: claude-haiku-4-5 (fast + cheap, plenty for the file
- * explorer's small extraction/summarization tasks).
+ * Default API model: claude-haiku-4-5 (fast + cheap, plenty for the file
+ * explorer's small extraction/summarization tasks). The CLI path uses the
+ * model chosen in Settings → AI.
  */
+
+import { claudeCliStatus, completeClaudeCli, ClaudeCliError } from "@/lib/claude-cli-client";
+import { getAiSelection } from "@/lib/ai-provider";
 
 const API_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION = "2023-06-01";
@@ -54,8 +60,10 @@ function getApiKey(): string {
   return key;
 }
 
-export function isAnthropicConfigured(): boolean {
-  return !!process.env.ANTHROPIC_API_KEY;
+/** True when either transport can serve a request. */
+export async function isAnthropicConfigured(): Promise<boolean> {
+  if (process.env.ANTHROPIC_API_KEY) return true;
+  return (await claudeCliStatus()).available;
 }
 
 interface CompletionOptions {
@@ -72,6 +80,7 @@ export async function complete(
   messages: AnthropicMessage[],
   options: CompletionOptions = {}
 ): Promise<string> {
+  if (!process.env.ANTHROPIC_API_KEY) return completeViaCli(messages, options);
   const apiKey = getApiKey();
   const res = await fetch(API_URL, {
     method: "POST",
@@ -102,6 +111,31 @@ export async function complete(
     .filter((block) => block.type === "text")
     .map((block) => block.text)
     .join("");
+}
+
+/**
+ * Subscription path: render the turns into one prompt for `claude -p`.
+ * Errors surface as AnthropicError so callers keep one catch.
+ */
+async function completeViaCli(
+  messages: AnthropicMessage[],
+  options: CompletionOptions
+): Promise<string> {
+  const prompt = messages.length === 1
+    ? messages[0].content
+    : messages.map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`).join("\n\n");
+  const selection = await getAiSelection();
+  try {
+    return await completeClaudeCli({
+      system: options.system || "You are a helpful assistant.",
+      prompt,
+      model: selection.claudeModel,
+      effort: selection.claudeEffort,
+    });
+  } catch (err) {
+    if (err instanceof ClaudeCliError) throw new AnthropicError(err.message, err.status);
+    throw err;
+  }
 }
 
 /**

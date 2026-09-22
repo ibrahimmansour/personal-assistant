@@ -11,7 +11,11 @@ import {
   StopCircle,
   Sparkles,
   User,
+  Cpu,
+  Gauge,
+  Server,
 } from "lucide-react";
+import { OptionPicker } from "@/components/ui/option-picker";
 import { cn } from "@/lib/utils";
 import {
   useAIChat,
@@ -36,12 +40,19 @@ export function AIChatPanel() {
     isOpen,
     isStreaming,
     aiAvailable,
+    aiStatus,
+    setSelection,
     open,
     close,
     sendMessage,
     clearSession,
     abort,
   } = useAIChat();
+
+  const providerOptions = [
+    { value: "claude", label: "Claude", description: aiStatus?.providers.claude.available ? "Your Claude Code subscription" : aiStatus?.providers.claude.reason || "Not available" },
+    { value: "ollama", label: "Ollama", description: aiStatus?.providers.ollama.available ? `${aiStatus.providers.ollama.model} · local` : "Not running" },
+  ];
 
   const [input, setInput] = useState("");
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -281,11 +292,47 @@ export function AIChatPanel() {
             <div>
               <h2 className="text-sm font-semibold leading-none">AI Assistant</h2>
               <p className="text-[0.625rem] text-muted-foreground mt-0.5">
-                {aiAvailable === false ? "Ollama offline" : "gemma3:4b · local"}
+                {aiStatus
+                  ? aiAvailable === false
+                    ? aiStatus.reason || "Provider offline"
+                    : `${aiStatus.label}${aiStatus.jev ? " · Jev routing" : ""}`
+                  : "…"}
               </p>
             </div>
           </div>
           <div className="flex items-center gap-1">
+            {aiStatus && (
+              <OptionPicker
+                value={aiStatus.provider}
+                options={providerOptions}
+                onChange={(v) => setSelection({ provider: v as "claude" | "ollama" })}
+                icon={<Server className="h-3 w-3" />}
+                title="Provider"
+                width="w-56"
+                disabled={isStreaming}
+              />
+            )}
+            {aiStatus?.provider === "claude" && (
+              <>
+                <OptionPicker
+                  value={aiStatus.claudeModel}
+                  options={aiStatus.providers.claude.models}
+                  onChange={(v) => setSelection({ claudeModel: v })}
+                  icon={<Cpu className="h-3 w-3" />}
+                  title="Model"
+                  disabled={isStreaming}
+                />
+                <OptionPicker
+                  value={aiStatus.claudeEffort}
+                  options={aiStatus.providers.claude.efforts}
+                  onChange={(v) => setSelection({ claudeEffort: v })}
+                  icon={<Gauge className="h-3 w-3" />}
+                  title="Effort"
+                  width="w-56"
+                  disabled={isStreaming}
+                />
+              </>
+            )}
             {messages.length > 0 && (
               <button
                 onClick={clearSession}

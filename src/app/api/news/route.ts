@@ -3,6 +3,7 @@ import { readFile, writeFile, mkdir } from "fs/promises";
 import { join } from "path";
 import { homedir } from "os";
 import { createHash } from "crypto";
+import { isJevConfigured, jevBatched } from "@/lib/jev-client";
 
 export const dynamic = "force-dynamic";
 
@@ -532,6 +533,132 @@ function detectGenre({
   }
 
   return best;
+}
+
+// ─── Jev genre refinement ───────────────────────────────────────────────────
+//
+// The keyword regexes above are fast but shallow, and a mixed feed leaves a
+// fifth of its items in "general". When Jev (TypeSafe) is configured, those
+// leftovers get one Choice question each — "which genre is this story?" —
+// judged on the title, categories, description and URL path. Answers are
+// cached on disk by article id so a story is billed once, not on every
+// widget refresh. Jev's confidence gates the override: below the bar the
+// article stays "general" rather than being laundered into a wrong genre.
+
+const GENRE_CACHE_FILE = join(DATA_DIR, "news-genre-cache.json");
+const GENRE_CONFIDENCE_MIN = 0.55;
+const GENRE_CACHE_MAX = 6000;
+
+let genreCache: Map<string, Genre> | null = null;
+let genreCacheDirty = false;
+let genreCacheWriteTimer: NodeJS.Timeout | null = null;
+
+async function loadGenreCache(): Promise<Map<string, Genre>> {
+  if (genreCache) return genreCache;
+  genreCache = new Map();
+  try {
+    const raw = await readFile(GENRE_CACHE_FILE, "utf-8");
+    const parsed = JSON.parse(raw) as Record<string, string>;
+    for (const [id, g] of Object.entries(parsed)) {
+      if (VALID_GENRES.has(g as Genre)) genreCache.set(id, g as Genre);
+    }
+  } catch {
+    // no cache yet
+  }
+  return genreCache;
+}
+
+function scheduleGenreCacheWrite() {
+  genreCacheDirty = true;
+  if (genreCacheWriteTimer) return;
+  genreCacheWriteTimer = setTimeout(async () => {
+    genreCacheWriteTimer = null;
+    if (!genreCacheDirty || !genreCache) return;
+    genreCacheDirty = false;
+    // Keep the newest entries when the file grows past the cap.
+    if (genreCache.size > GENRE_CACHE_MAX) {
+      const entries = Array.from(genreCache.entries()).slice(-GENRE_CACHE_MAX);
+      genreCache = new Map(entries);
+    }
+    try {
+      await mkdir(DATA_DIR, { recursive: true });
+      await writeFile(GENRE_CACHE_FILE, JSON.stringify(Object.fromEntries(genreCache)), "utf-8");
+    } catch {
+      // ignore cache write failures
+    }
+  }, 2000);
+}
+
+const GENRE_CRITERIA: Record<Genre, string> = {
+  world: "International news and foreign affairs.",
+  politics: "Government, elections, parties, policy, diplomacy.",
+  business: "Economy, markets, companies, finance, trade.",
+  technology: "Tech companies, software, hardware, AI, gadgets, internet.",
+  science: "Research, space, climate, discoveries.",
+  sports: "Any sport, match, league, athlete, tournament.",
+  entertainment: "Film, TV, music, celebrities, streaming, festivals.",
+  health: "Medicine, disease, hospitals, wellness, public health.",
+  opinion: "Editorials, columns, commentary, analysis pieces.",
+  lifestyle: "Food, travel, fashion, home, relationships, culture of daily life.",
+  general: "None of the above fits clearly, or the story spans several.",
+};
+
+/** Mixed-feed sources: the only ones whose "general" is a detection miss. */
+function isMixedFeedSource(sourceId: string): boolean {
+  const src = AVAILABLE_SOURCES.find((s) => s.id === sourceId);
+  return !!src && src.feeds.all !== undefined && Object.keys(src.feeds).length === 1;
+}
+
+/** In place: reclassify "general" articles from mixed feeds with Jev. */
+async function refineGenresWithJev(articles: NewsArticle[]): Promise<void> {
+  const targets = articles.filter((a) => a.genre === "general" && isMixedFeedSource(a.sourceId));
+  if (targets.length === 0) return;
+  const cache = await loadGenreCache();
+  const pending: NewsArticle[] = [];
+  for (const a of targets) {
+    const hit = cache.get(a.id);
+    if (hit) a.genre = hit;
+    else pending.push(a);
+  }
+  if (pending.length === 0 || !(await isJevConfigured())) return;
+
+  await jevBatched(
+    pending,
+    15,
+    (chunk) => ({
+      state: {
+        articles: chunk.map((a) => ({
+          source: a.source,
+          title: a.title,
+          description: a.description.slice(0, 300),
+          url_path: linkPathText(a.link).slice(0, 200),
+        })),
+      },
+      questions: Object.fromEntries(
+        chunk.map((_, i) => [
+          `g${i}`,
+          {
+            type: "choice" as const,
+            instructions: `Which news genre does \`articles[${i}]\` belong to? Judge from the title first, then the description and URL path. The text may be Arabic, German, French or English.`,
+            criteria: GENRE_CRITERIA,
+          },
+        ]),
+      ),
+    }),
+    (result, chunk) => {
+      chunk.forEach((a, i) => {
+        const ans = result.answers[`g${i}`] as { choice: string; confidence: number } | undefined;
+        if (!ans || !VALID_GENRES.has(ans.choice as Genre)) return;
+        // Cache every answer (so a low-confidence story is not re-billed) but
+        // only override the bucket when Jev is reasonably sure.
+        const genre = ans.confidence >= GENRE_CONFIDENCE_MIN ? (ans.choice as Genre) : "general";
+        cache.set(a.id, genre);
+        a.genre = genre;
+      });
+      scheduleGenreCacheWrite();
+    },
+    { timeout: 12_000, concurrency: 3 },
+  );
 }
 
 function parseFeed(xml: string, source: NewsSource, genre: Genre): NewsArticle[] {
@@ -1227,6 +1354,10 @@ export async function GET(request: NextRequest) {
     seen.add(a.link);
     return true;
   });
+
+  // Second pass for the mixed-feed leftovers that the regexes could not
+  // place: Jev picks a genre when it is confident, cache-backed.
+  await refineGenresWithJev(deduped);
 
   // After per-article genre detection, drop articles whose detected genre is
   // not in the effective set (the chip when one is active, otherwise the

@@ -71,7 +71,8 @@ personal-assistant/
 │   │       ├── google/            # OAuth, Gmail (get/reply/search), Calendar
 │   │       ├── github/prs/, jira/, jira/[key]/, jira/auth/
 │   │       ├── claude-sessions/   # list, messages, meta, run, schedules, upload, models (Claude Code + OpenCode)
-│   │       ├── ai/, ai/context/   # Chat assistant + dashboard context injection
+│   │       ├── ai/, ai/context/   # Chat assistant (Claude CLI or Ollama) + dashboard context injection
+│   │       ├── ai/intent/, ai/triage/  # Jev (TypeSafe) routing + inbox urgency
 │   │       ├── files/, files-ai/  # File browser + AI file ops
 │   │       ├── database/          # Postgres connections + queries (pg)
 │   │       ├── vps/               # Remote host management over ssh

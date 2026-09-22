@@ -1,5 +1,14 @@
-import { type ChatMessage, chatCompletionStream, isOllamaAvailable } from "@/lib/ai-client";
+import { NextRequest } from "next/server";
 import { readFile } from "fs/promises";
+import {
+  getAiSelection,
+  getAiStatus,
+  applyOverrides,
+  saveAiSelection,
+  streamChat,
+  type ChatTurn,
+} from "@/lib/ai-provider";
+import type { RoutingDecision } from "@/app/api/ai/intent/route";
 import { join } from "path";
 import { homedir } from "os";
 
@@ -176,15 +185,32 @@ async function getNotesSummary(profile: string): Promise<string | null> {
 
 // ─── Handler ─────────────────────────────────────────────────────────────────
 
-export async function POST(request: Request) {
+/** Turn a Jev routing decision into a system-context line the writer follows. */
+function routingHint(routing: RoutingDecision | undefined): string | null {
+  if (!routing?.action) return null;
+  const pct = Math.round(routing.confidence * 100);
+  const action = JSON.stringify(routing.action);
+  if (routing.needsText) {
+    return `Routing layer (calibrated classifier, ${pct}% confident): the user wants the action ${action}. Emit exactly this action, filling in the missing text field(s) (query/title) from the user's message, unless the message clearly asks for something else.`;
+  }
+  return `Routing layer (calibrated classifier, ${pct}% confident): the right action for the latest message is ${action}. Emit exactly this action block unless the message clearly asks for something else.`;
+}
+
+export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { query, messages: clientMessages, profile, context } = body as {
+    const { query, messages: clientMessages, profile, context, routing } = body as {
       /** Single query (command palette mode) */
       query?: string;
       /** Multi-turn message history (chat panel mode) */
       messages?: { role: "user" | "assistant"; content: string }[];
       profile?: string;
+      /** Per-request provider overrides (the chat panel's pickers). */
+      provider?: unknown;
+      claudeModel?: unknown;
+      claudeEffort?: unknown;
+      /** Optional decision from POST /api/ai/intent (Jev). */
+      routing?: RoutingDecision;
       context?: {
         time?: string;
         workspace?: string;
@@ -205,13 +231,16 @@ export async function POST(request: Request) {
       return Response.json({ error: "No query provided" }, { status: 400 });
     }
 
-    // Check Ollama connectivity
-    const available = await isOllamaAvailable();
-    if (!available) {
-      return Response.json(
-        { error: "AI model unavailable. Is Ollama running?" },
-        { status: 503 }
-      );
+    const selection = applyOverrides(await getAiSelection(), body);
+    const status = await getAiStatus();
+    const providerUp = selection.provider === "claude"
+      ? status.providers.claude.available
+      : status.providers.ollama.available;
+    if (!providerUp) {
+      const reason = selection.provider === "claude"
+        ? status.providers.claude.reason || "Claude Code is not available."
+        : "AI model unavailable. Is Ollama running?";
+      return Response.json({ error: reason }, { status: 503 });
     }
 
     const activeProfile = profile || "work";
@@ -246,39 +275,23 @@ export async function POST(request: Request) {
       contextParts.push("Private profile services: Gmail (email), Google Calendar, GitHub.com (PRs). No Jira.");
     }
 
-    // Build the message array for Ollama
-    const chatMessages: ChatMessage[] = [
-      { role: "system", content: SYSTEM_PROMPT },
-      {
-        role: "system",
-        content: `Current dashboard state:\n${contextParts.join("\n")}`,
-      },
-    ];
+    const hint = routingHint(routing);
+    if (hint) contextParts.push(hint);
 
-    if (hasMessages) {
-      // Multi-turn: append the full conversation history
-      for (const msg of clientMessages!) {
-        chatMessages.push({
-          role: msg.role,
-          content: msg.content,
-        });
-      }
-    } else {
-      // Single query: just one user message
-      chatMessages.push({ role: "user", content: query! });
-    }
+    const system = `${SYSTEM_PROMPT}\n\nCurrent dashboard state:\n${contextParts.join("\n")}`;
 
-    // Stream the response
-    const stream = chatCompletionStream(chatMessages, {
-      temperature: 0.3,
-      num_predict: 800,
-    });
+    const history: ChatTurn[] = hasMessages
+      ? clientMessages!.map((m) => ({ role: m.role, content: m.content }))
+      : [{ role: "user", content: query! }];
+
+    const stream = streamChat(selection, system, history, request.signal);
 
     return new Response(stream, {
       headers: {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
         Connection: "keep-alive",
+        "X-AI-Provider": selection.provider,
       },
     });
   } catch (err) {
@@ -289,8 +302,19 @@ export async function POST(request: Request) {
   }
 }
 
-// Health check
+/** Health + current selection: which provider is active, what it can do, and whether Jev is on. */
 export async function GET() {
-  const available = await isOllamaAvailable();
-  return Response.json({ available, model: process.env.OLLAMA_MODEL || "gemma3:4b" });
+  return Response.json(await getAiStatus());
+}
+
+/** Update the saved provider / Claude model / effort (the chat panel's pickers). */
+export async function PATCH(request: NextRequest) {
+  let body: Record<string, unknown>;
+  try {
+    body = await request.json();
+  } catch {
+    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+  await saveAiSelection(body);
+  return Response.json(await getAiStatus());
 }

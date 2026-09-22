@@ -29,6 +29,19 @@ export interface AppConfig {
     url: string;
     model: string;
   };
+  /** Chat assistant provider selection (chat panel + command palette). */
+  ai: {
+    /** Which engine writes the assistant's replies. */
+    provider: "claude" | "ollama";
+    /** Claude Code model alias for `claude --model` ("default" = the CLI's saved default). */
+    claudeModel: string;
+    /** Claude Code `--effort` level ("default" = the CLI's own setting). */
+    claudeEffort: string;
+  };
+  /** TypeSafe (Jev) — typed judgments used alongside the chat model. */
+  typesafe: {
+    apiKey: string;
+  };
   weather: {
     location: string;
   };
@@ -40,6 +53,8 @@ const DEFAULT_CONFIG: AppConfig = {
   google: { clientId: "", clientSecret: "", redirectUri: "http://localhost:4444/api/google/auth/callback" },
   jira: { baseUrl: "", cookies: "" },
   ollama: { url: "http://localhost:11434", model: "llama3.2" },
+  ai: { provider: "claude", claudeModel: "default", claudeEffort: "low" },
+  typesafe: { apiKey: "" },
   weather: { location: "" },
 };
 
@@ -81,6 +96,7 @@ export async function getConfigEnv(key: string): Promise<string> {
     JIRA_COOKIES: config.jira.cookies,
     OLLAMA_URL: config.ollama.url,
     OLLAMA_MODEL: config.ollama.model,
+    TYPESAFE_API_KEY: config.typesafe.apiKey,
   };
 
   return map[key] || process.env[key] || "";

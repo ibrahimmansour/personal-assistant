@@ -75,6 +75,7 @@ Open [http://localhost:4444](http://localhost:4444) in your browser.
 - **Notes** - Rich text editor (Tiptap)
 - **GitHub PRs** - Pull request overview (GitHub Enterprise + github.com)
 - **Jira** - Ticket tracking
+- **AI assistant** - Chat panel + `>` in the command palette; replies from Claude (your Claude Code subscription, model/effort pickers) or a local Ollama model, with Jev (TypeSafe) routing intents, triaging the inbox, ranking file searches and sorting news genres alongside it
 - **Terminal** - Full xterm.js terminal with node-pty backend
 - **Weather** - Current conditions widget
 - **Bookmarks** - Chrome/Arc bookmark browser

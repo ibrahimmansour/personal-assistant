@@ -1,6 +1,29 @@
 # 11 — AI Assistant System
 
-> Complete specification of the local AI chat system powered by Ollama, including context injection, streaming, action parsing, and UI.
+> Complete specification of the AI chat system: two interchangeable writers (Claude via the Claude Code CLI, or a local Ollama model), a Jev (TypeSafe) judgment layer that routes, triages and ranks alongside them, context injection, streaming, action parsing, and UI.
+
+## Providers and the judgment layer (2026-09)
+
+| Role | Engine | Where |
+|---|---|---|
+| Writes replies (chat panel, command palette) | **Claude** through `claude -p` on the user's Claude Code subscription — default — or **Ollama** | `src/lib/ai-provider.ts`, `src/lib/claude-cli-client.ts`, `src/lib/ai-client.ts` |
+| One-shot prose (file summaries) and the fallback for search/cleanup | Claude (CLI, or the Messages API when `ANTHROPIC_API_KEY` is set) | `src/lib/anthropic-client.ts` |
+| Typed judgments: intent + topics, inbox urgency, file relevance, cleanup buckets, news genres | **Jev** (TypeSafe System One) | `src/lib/jev-client.ts` + the routes below |
+
+Selection lives in `config.json` → `ai: { provider, claudeModel, claudeEffort }` (Settings → AI Assistant, or the pickers in the chat panel header, which `PATCH /api/ai`). Jev is enabled by `typesafe.apiKey` (or `TYPESAFE_API_KEY`). Every Jev call degrades to `null` on failure, so each feature keeps a code-only or Claude fallback.
+
+The Claude CLI is spawned with `--tools ""`, an empty `--mcp-config` under `--strict-mcp-config`, `--disable-slash-commands`, `--setting-sources ""`, `--no-session-persistence` and a `--system-prompt`, which keeps a chat turn at ~400 input tokens. `CLAUDECODE*` env vars are stripped so the child starts even when the app was launched from inside a Claude Code session. Multi-turn history is rendered into the single `-p` prompt as a quoted transcript.
+
+### Jev routes
+
+| Route | Judgment | Consumer |
+|---|---|---|
+| `POST /api/ai/intent` | 6 Nouls (which topics the reply needs) + Choices for action / widget / workspace / theme / profile / focus combo / priority, fanned out in one request | Chat panel + palette call it before `/api/ai`; topics drive the context fetch, a decision with confidence ≥ 0.6 and no text field is attached directly, otherwise it is passed as `routing` and becomes a hint in the system context |
+| `POST /api/ai/triage` | Score 0–3 urgency per inbox item, 20 items per request, 6 h in-memory cache | Inbox view: "Urgent first" sort + Today/Critical badge (thresholds 1.75 / 2.5) |
+| `POST /api/files-ai` `nl-search` | Code shortlists ≤60 candidates (token/year/recency), Jev scores relevance 0–3 per candidate; nothing ≥1.5 → Claude reads the full index | Files widget AI search (`engine` field says which answered) |
+| `POST /api/files-ai` `cleanup-suggest` | Per item: Choice bucket + Noul "safe to remove"; low-risk buckets ≥0.7 pre-checked; important-name regex always wins | Files widget cleanup |
+| `GET /api/news` | Choice genre for mixed-feed articles the regexes left in "general"; confidence ≥0.55 overrides; cached in `news-genre-cache.json` | News widget genre chips |
+
 
 ## Architecture
 

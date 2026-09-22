@@ -11,6 +11,10 @@ import {
 import { useProfile } from "@/components/profile-context";
 import { useWorkspace } from "@/components/workspace-context";
 import { useDashboard } from "@/components/dashboard-context";
+import type { AiStatus, AiSelection } from "@/lib/ai-provider";
+import type { RoutingDecision } from "@/app/api/ai/intent/route";
+
+export type { AiStatus, AiSelection };
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -45,8 +49,14 @@ interface AIChatContextType {
   isOpen: boolean;
   /** Whether the AI is currently generating a response */
   isStreaming: boolean;
-  /** Whether Ollama is available */
+  /** Whether the selected provider can answer (null = not checked yet) */
   aiAvailable: boolean | null;
+  /** Provider status: selection, availability per provider, Jev on/off */
+  aiStatus: AiStatus | null;
+  /** Re-check provider status */
+  refreshStatus: () => void;
+  /** Change provider / Claude model / effort (persisted to config.json) */
+  setSelection: (patch: Partial<AiSelection>) => Promise<void>;
   /** Toggle the chat panel */
   toggle: () => void;
   /** Open the chat panel */
@@ -67,6 +77,54 @@ const AIChatContext = createContext<AIChatContextType | null>(null);
 
 function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+// ─── Topic detection (fallback when Jev is not configured) ──────────────────
+
+const TOPIC_KEYWORDS: Record<string, string[]> = {
+  calendar: ["meeting", "meetings", "calendar", "schedule", "event", "events", "today", "tomorrow", "agenda", "standup", "1:1", "sync", "review"],
+  tasks: ["task", "tasks", "todo", "to-do", "priority", "overdue", "pending", "completed", "done"],
+  prs: ["pr", "prs", "pull request", "pull requests", "review", "merge", "github", "code review", "ci", "pipeline"],
+  email: ["email", "emails", "mail", "inbox", "unread", "sent", "message", "from", "emailed"],
+  jira: ["jira", "ticket", "tickets", "issue", "issues", "sprint", "backlog", "story", "bug"],
+  notes: ["note", "notes", "document", "write", "memo"],
+};
+
+/** Keyword topic detection over the recent conversation. */
+export function detectTopicsByKeyword(texts: string[]): string[] {
+  const haystack = texts.map((t) => t.toLowerCase()).join(" ");
+  const topics: string[] = [];
+  for (const [topic, keywords] of Object.entries(TOPIC_KEYWORDS)) {
+    if (keywords.some((kw) => haystack.includes(kw))) topics.push(topic);
+  }
+  return topics;
+}
+
+/**
+ * Ask the Jev routing layer which topics the reply needs and which action
+ * the user wants. Returns null when Jev is off or the call fails, so the
+ * caller falls back to keywords.
+ */
+export async function fetchRouting(
+  message: string,
+  history: { role: string; content: string }[],
+  profile: string,
+  widgets: string[],
+  signal?: AbortSignal,
+): Promise<RoutingDecision | null> {
+  try {
+    const res = await fetch("/api/ai/intent", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message, history, profile, widgets }),
+      signal,
+    });
+    if (!res.ok) return null;
+    const decision = (await res.json()) as RoutingDecision;
+    return decision.jev ? decision : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Extract a JSON action block from AI response text */
@@ -127,7 +185,8 @@ export function AIChatProvider({ children }: { children: ReactNode }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
-  const [aiAvailable, setAiAvailable] = useState<boolean | null>(null);
+  const [aiStatus, setAiStatus] = useState<AiStatus | null>(null);
+  const aiAvailable = aiStatus ? aiStatus.available : null;
   const abortRef = useRef<AbortController | null>(null);
   const { activeProfile } = useProfile();
   const { activeWorkspace } = useWorkspace();
@@ -137,8 +196,23 @@ export function AIChatProvider({ children }: { children: ReactNode }) {
   const checkAvailability = useCallback(() => {
     fetch("/api/ai")
       .then((r) => r.json())
-      .then((d) => setAiAvailable(d.available))
-      .catch(() => setAiAvailable(false));
+      .then((d: AiStatus) => setAiStatus(d))
+      .catch(() => setAiStatus((prev) => (prev ? { ...prev, available: false } : null)));
+  }, []);
+
+  const setSelection = useCallback(async (patch: Partial<AiSelection>) => {
+    // Optimistic: flip the label immediately, then trust the server's answer.
+    setAiStatus((prev) => (prev ? { ...prev, ...patch } : prev));
+    try {
+      const res = await fetch("/api/ai", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      if (res.ok) setAiStatus(await res.json());
+    } catch {
+      // keep the optimistic state; the next status check corrects it
+    }
   }, []);
 
   const toggle = useCallback(() => {
@@ -202,26 +276,15 @@ export function AIChatProvider({ children }: { children: ReactNode }) {
       let accumulated = "";
 
       try {
-        // ─── Topic detection: scan user message + recent history for relevant topics ──
-        const recentText = [...messages.slice(-6), userMsg]
-          .map((m) => m.content.toLowerCase())
-          .join(" ");
+        // ─── Routing: Jev decides topics + action; keywords when Jev is off ──
+        const visibleWidgets = widgets.filter((w) => w.visible).map((w) => w.type);
+        const routing = aiStatus?.jev
+          ? await fetchRouting(trimmed, historyForApi.slice(0, -1), activeProfile, visibleWidgets, abortController.signal)
+          : null;
 
-        const topicKeywords: Record<string, string[]> = {
-          calendar: ["meeting", "meetings", "calendar", "schedule", "event", "events", "today", "tomorrow", "agenda", "standup", "1:1", "sync", "review"],
-          tasks: ["task", "tasks", "todo", "to-do", "priority", "overdue", "pending", "completed", "done"],
-          prs: ["pr", "prs", "pull request", "pull requests", "review", "merge", "github", "code review", "ci", "pipeline"],
-          email: ["email", "emails", "mail", "inbox", "unread", "sent", "message", "from", "emailed"],
-          jira: ["jira", "ticket", "tickets", "issue", "issues", "sprint", "backlog", "story", "bug"],
-          notes: ["note", "notes", "document", "write", "memo"],
-        };
-
-        const detectedTopics: string[] = [];
-        for (const [topic, keywords] of Object.entries(topicKeywords)) {
-          if (keywords.some((kw) => recentText.includes(kw))) {
-            detectedTopics.push(topic);
-          }
-        }
+        const detectedTopics: string[] = routing
+          ? [...routing.topics]
+          : detectTopicsByKeyword([...messages.slice(-6), userMsg].map((m) => m.content));
 
         // If first message or general question, fetch calendar + tasks as baseline
         if (detectedTopics.length === 0 && messages.length <= 2) {
@@ -247,7 +310,7 @@ export function AIChatProvider({ children }: { children: ReactNode }) {
         const contextObj: Record<string, unknown> = {
           time: new Date().toLocaleString(),
           workspace: activeWorkspace.id,
-          widgets: widgets.filter((w) => w.visible).map((w) => w.type),
+          widgets: visibleWidgets,
         };
 
         // Inject topic summaries as named fields
@@ -265,6 +328,7 @@ export function AIChatProvider({ children }: { children: ReactNode }) {
             messages: historyForApi,
             profile: activeProfile,
             context: contextObj,
+            routing: routing || undefined,
           }),
           signal: abortController.signal,
         });
@@ -324,8 +388,9 @@ export function AIChatProvider({ children }: { children: ReactNode }) {
           }
         }
 
-        // Finalize: parse action, mark as done
-        const action = parseAIAction(accumulated);
+        // Finalize: the writer's own action block wins; otherwise a confident
+        // Jev decision that needed no text is attached directly.
+        const action = parseAIAction(accumulated) ?? (routing?.direct ? routing.action : null);
         setMessages((prev) =>
           prev.map((m) =>
             m.id === assistantMsg.id
@@ -355,7 +420,7 @@ export function AIChatProvider({ children }: { children: ReactNode }) {
         setIsStreaming(false);
       }
     },
-    [isStreaming, messages, activeProfile, activeWorkspace.id, widgets]
+    [isStreaming, messages, activeProfile, activeWorkspace.id, widgets, aiStatus]
   );
 
   return (
@@ -365,6 +430,9 @@ export function AIChatProvider({ children }: { children: ReactNode }) {
         isOpen,
         isStreaming,
         aiAvailable,
+        aiStatus,
+        refreshStatus: checkAvailability,
+        setSelection,
         toggle,
         open,
         close,

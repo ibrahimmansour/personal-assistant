@@ -6,8 +6,15 @@
  *  - "summarize-file":    summarize a text or PDF file in plain English
  *  - "cleanup-suggest":   analyze a folder, propose cleanup categories
  *
- * Uses Anthropic Claude (claude-haiku-4-5 by default). All actions return
- * compact JSON the widget can render directly.
+ * Two engines work together:
+ *  - Jev (TypeSafe) makes the typed judgments — how relevant a candidate file
+ *    is to a query, which cleanup bucket an item belongs to and whether it is
+ *    safe to remove. Its answers are calibrated probabilities, so there is no
+ *    JSON to parse and no invented paths.
+ *  - Claude writes prose (file summaries) and is the fallback for search and
+ *    cleanup when Jev is unconfigured or finds nothing.
+ *
+ * All actions return compact JSON the widget can render directly.
  */
 
 import { NextRequest } from "next/server";
@@ -21,6 +28,7 @@ import {
   isAnthropicConfigured,
   AnthropicError,
 } from "@/lib/anthropic-client";
+import { isJevConfigured, jevAsk, jevBatched } from "@/lib/jev-client";
 
 export const dynamic = "force-dynamic";
 
@@ -224,12 +232,136 @@ function buildIndexLines(files: FileSummary[], rootDisplay: string): string {
   return lines.join("\n");
 }
 
+const STOPWORDS = new Set([
+  "the", "a", "an", "of", "for", "from", "in", "on", "at", "to", "my", "me", "i", "and", "or",
+  "with", "that", "this", "file", "files", "find", "show", "get", "about", "last", "some", "any",
+  "is", "are", "was", "were", "it", "its", "into", "by", "all", "one",
+]);
+
+const RELEVANCE_LEVELS = [
+  "Unrelated to the query.",
+  "Weakly related: shares a word or a rough time frame but is probably not what the user means.",
+  "Likely what the user means: the name, type, or date fits the query well.",
+  "Clearly the file the user is asking for.",
+] as const;
+
+/** Query terms: lower-cased words of 3+ chars minus stopwords, plus 4-digit years. */
+function queryTerms(query: string): string[] {
+  const words = query.toLowerCase().match(/[\p{L}\p{N}][\p{L}\p{N}_-]{1,}/gu) || [];
+  return Array.from(new Set(words.filter((w) => w.length >= 3 && !STOPWORDS.has(w))));
+}
+
+/**
+ * Cheap code-side shortlist for Jev: name/path token overlap, year match,
+ * recency. Keeps at most `limit` files; pads with the most recent ones when
+ * the query matches few names so "something from last week" still has
+ * candidates.
+ */
+function shortlistForJev(query: string, files: FileSummary[], limit: number): FileSummary[] {
+  const terms = queryTerms(query);
+  const years = terms.filter((t) => /^(19|20)\d{2}$/.test(t));
+  const now = Date.now();
+  const scored = files.map((f) => {
+    const name = f.name.toLowerCase();
+    const dir = f.path.toLowerCase();
+    let score = 0;
+    for (const t of terms) {
+      if (name.includes(t)) score += 3;
+      else if (dir.includes(t)) score += 1;
+    }
+    const year = f.modified.slice(0, 4);
+    if (years.includes(year)) score += 2;
+    const ageDays = (now - new Date(f.modified).getTime()) / 86_400_000;
+    const recency = ageDays < 7 ? 1 : ageDays < 90 ? 0.5 : 0;
+    return { f, score, recency };
+  });
+  const matched = scored.filter((x) => x.score > 0).sort((a, b) => b.score - a.score || b.recency - a.recency);
+  const picked = matched.slice(0, limit).map((x) => x.f);
+  if (picked.length < limit) {
+    const seen = new Set(picked.map((f) => f.path));
+    const recent = scored
+      .filter((x) => !seen.has(x.f.path) && !x.f.isDirectory)
+      .sort((a, b) => new Date(b.f.modified).getTime() - new Date(a.f.modified).getTime())
+      .slice(0, limit - picked.length)
+      .map((x) => x.f);
+    picked.push(...recent);
+  }
+  return picked;
+}
+
+interface JevRankedFile extends FileSummary {
+  reason: string;
+  confidence: "high" | "medium" | "low";
+  relevance: number;
+}
+
+/** Ask Jev how relevant each shortlisted file is; returns ≤10 above the bar or null on failure. */
+async function jevRerank(query: string, files: FileSummary[], absRoot: string): Promise<JevRankedFile[] | null> {
+  const candidates = shortlistForJev(query, files, 60);
+  if (candidates.length === 0) return null;
+  const today = new Date().toISOString().slice(0, 10);
+  const terms = queryTerms(query);
+
+  const state = {
+    query,
+    today,
+    folder: absRoot.replace(os.homedir(), "~"),
+    candidates: candidates.map((f) => ({
+      path: f.path.startsWith(absRoot) ? "." + f.path.slice(absRoot.length) : f.path,
+      kind: f.isDirectory ? "folder" : f.extension || "file",
+      size: f.isDirectory ? "" : formatSize(f.size),
+      modified: f.modified.slice(0, 10),
+    })),
+  };
+  const questions = Object.fromEntries(
+    candidates.map((_, i) => [
+      `r${i}`,
+      {
+        type: "score" as const,
+        instructions: `How well does \`candidates[${i}]\` match what the user is looking for in \`query\`? Judge by name, type, folder and modified date relative to \`today\`.`,
+        criteria: RELEVANCE_LEVELS,
+      },
+    ]),
+  );
+
+  const result = await jevAsk(state, questions, { timeout: 15_000 });
+  if (!result) return null;
+
+  const ranked: JevRankedFile[] = [];
+  candidates.forEach((f, i) => {
+    const ans = result.answers[`r${i}`] as { score: number; confidence: number } | undefined;
+    if (!ans || ans.score < 1.5) return;
+    const hits = terms.filter((t) => f.name.toLowerCase().includes(t));
+    const why = hits.length > 0 ? `name matches "${hits.join('", "')}"` : `dated ${f.modified.slice(0, 10)}`;
+    ranked.push({
+      ...f,
+      relevance: ans.score,
+      confidence: ans.score >= 2.5 ? "high" : ans.score >= 2 ? "medium" : "low",
+      reason: `${why} · relevance ${ans.score.toFixed(1)}/3`,
+    });
+  });
+  ranked.sort((a, b) => b.relevance - a.relevance);
+  return ranked.slice(0, 10);
+}
+
 async function nlSearch(query: string, root: string): Promise<Response> {
   const absRoot = resolvePath(root);
   const files = await shallowWalk(absRoot, 5, 1500);
 
   if (files.length === 0) {
     return Response.json({ results: [], note: "No files found in this folder." });
+  }
+
+  // ─── Jev path: code shortlists, Jev judges relevance ───────────────────
+  // The full index can be 1500 lines; Jev evaluates one state per request, so
+  // code narrows it to the files that share a token, a year, or recency with
+  // the query, then Jev scores each candidate on a 4-level relevance rubric.
+  // Nothing above the bar → fall through to Claude reading the whole index.
+  if (await isJevConfigured()) {
+    const jevResults = await jevRerank(query, files, absRoot);
+    if (jevResults && jevResults.length > 0) {
+      return Response.json({ results: jevResults, total: jevResults.length, engine: "jev" });
+    }
   }
 
   const index = buildIndexLines(files, absRoot);
@@ -409,6 +541,14 @@ async function cleanupSuggest(folderPath: string): Promise<Response> {
     items.splice(500);
   }
 
+  // ─── Jev path: per-item bucket + "safe to remove" probability ──────────
+  if (await isJevConfigured()) {
+    const jevCategories = await jevCleanup(items, absPath);
+    if (jevCategories) {
+      return finishCleanup(jevCategories, items, absPath, "jev");
+    }
+  }
+
   // Build a compact listing for Claude
   const listing = items
     .map((f) => {
@@ -463,16 +603,24 @@ ${listing}`;
     return Response.json({ categories: [], note: "AI response could not be parsed." });
   }
 
-  // Validate paths
+  return finishCleanup(parsed.categories, items, absPath, "claude");
+}
+
+/** Drop invented paths, empty buckets, and total up the default-checked bytes. */
+function finishCleanup(
+  categories: CleanupCategory[],
+  items: FileSummary[],
+  absPath: string,
+  engine: "jev" | "claude",
+): Response {
   const pathSet = new Set(items.map((f) => f.path));
-  const validCategories = parsed.categories
+  const validCategories = categories
     .map((cat) => ({
       ...cat,
       items: cat.items.filter((it) => pathSet.has(it.path)),
     }))
     .filter((cat) => cat.items.length > 0);
 
-  // Compute total potential savings
   let bytesSaved = 0;
   for (const cat of validCategories) {
     for (const it of cat.items) {
@@ -486,15 +634,148 @@ ${listing}`;
     folder: absPath,
     totalItems: items.length,
     bytesSaved,
+    engine,
   });
+}
+
+/** Names that must never be proposed for removal, whatever the model thinks. */
+const IMPORTANT_NAME = /passport|contract|tax|w-?2|signed|invoice|receipt|\bid\b|certificate|resume|\bcv\b/i;
+
+const CLEANUP_BUCKETS = {
+  duplicate: {
+    label: "Likely duplicates",
+    description: "Copies of another file in this folder, e.g. \"X (1).pdf\", \"X copy.pdf\".",
+    lowRisk: true,
+  },
+  screenshot: {
+    label: "Temporary screenshots",
+    description: "Screenshot / Screen Shot captures that are rarely needed later.",
+    lowRisk: true,
+  },
+  installer: {
+    label: "Old installers",
+    description: ".dmg / .pkg / .exe / .msi installers older than about six months.",
+    lowRisk: true,
+  },
+  archive: {
+    label: "Old archives",
+    description: ".zip / .tar / .gz archives that look extracted and forgotten.",
+    lowRisk: false,
+  },
+  stale: {
+    label: "Stale downloads",
+    description: "Transient-looking files older than six months.",
+    lowRisk: false,
+  },
+  keep: { label: "Probably keep", description: "Looks important or in use.", lowRisk: false },
+} as const;
+
+type CleanupBucket = keyof typeof CLEANUP_BUCKETS;
+
+/**
+ * Jev cleanup: for each item, one Choice (which bucket) and one Noul (is it
+ * safe to remove). Twenty items per request. Low-risk buckets with a high
+ * safe-to-remove probability are pre-checked; everything else is opt-in.
+ */
+async function jevCleanup(items: FileSummary[], absPath: string): Promise<CleanupCategory[] | null> {
+  const today = new Date().toISOString().slice(0, 10);
+  const buckets: Record<CleanupBucket, CleanupItem[]> = {
+    duplicate: [], screenshot: [], installer: [], archive: [], stale: [], keep: [],
+  };
+  const siblings = items.map((f) => f.name);
+
+  const ok = await jevBatched(
+    items,
+    20,
+    (chunk) => ({
+      state: {
+        today,
+        folder: absPath.replace(os.homedir(), "~"),
+        all_names_in_folder: siblings.slice(0, 500),
+        items: chunk.map((f) => ({
+          name: f.name,
+          kind: f.isDirectory ? "folder" : f.extension || "file",
+          size: f.isDirectory ? "" : formatSize(f.size),
+          modified: f.modified.slice(0, 10),
+        })),
+      },
+      questions: Object.fromEntries(
+        chunk.flatMap((_, i) => [
+          [
+            `b${i}`,
+            {
+              type: "choice" as const,
+              instructions: `Which cleanup bucket does \`items[${i}]\` belong to? Use \`all_names_in_folder\` to spot duplicates and \`today\` for age.`,
+              criteria: {
+                duplicate: CLEANUP_BUCKETS.duplicate.description,
+                screenshot: CLEANUP_BUCKETS.screenshot.description,
+                installer: CLEANUP_BUCKETS.installer.description,
+                archive: CLEANUP_BUCKETS.archive.description,
+                stale: CLEANUP_BUCKETS.stale.description,
+                keep: "Documents, projects, media, recent work, or anything that looks important (passport, contract, tax, invoice, receipt, certificate, resume).",
+              },
+            },
+          ],
+          [
+            `s${i}`,
+            {
+              type: "noul" as const,
+              instructions: `Would a careful person be comfortable deleting \`items[${i}]\` without opening it first?`,
+              criteria: {
+                true: "Clearly disposable: a duplicate, an old installer, a throwaway screenshot, or an extracted archive.",
+                false: "Could hold something the user still needs, or its purpose is unclear.",
+              },
+            },
+          ],
+        ]),
+      ),
+    }),
+    (result, chunk) => {
+      chunk.forEach((f, i) => {
+        const bucketAns = result.answers[`b${i}`] as { choice: string; confidence: number } | undefined;
+        const safeAns = result.answers[`s${i}`] as { noul: number } | undefined;
+        if (!bucketAns || !safeAns) return;
+        let bucket = (bucketAns.choice in CLEANUP_BUCKETS ? bucketAns.choice : "keep") as CleanupBucket;
+        if (IMPORTANT_NAME.test(f.name)) bucket = "keep";
+        const safe = safeAns.noul;
+        const lowRisk = CLEANUP_BUCKETS[bucket].lowRisk;
+        buckets[bucket].push({
+          name: f.name,
+          path: f.path,
+          reason: bucket === "keep"
+            ? "Looks important or in use"
+            : `${CLEANUP_BUCKETS[bucket].label.toLowerCase()} · ${Math.round(safe * 100)}% safe to remove`,
+          defaultChecked: lowRisk && safe >= 0.7,
+        });
+      });
+    },
+    { timeout: 15_000, concurrency: 3 },
+  );
+  if (!ok) return null;
+
+  const categories: CleanupCategory[] = [];
+  for (const key of ["duplicate", "installer", "screenshot", "archive", "stale"] as CleanupBucket[]) {
+    if (buckets[key].length > 0) {
+      categories.push({ category: CLEANUP_BUCKETS[key].label, description: CLEANUP_BUCKETS[key].description, items: buckets[key] });
+    }
+  }
+  // "Probably keep" is informational: a few examples, never proposed for deletion.
+  if (buckets.keep.length > 0) {
+    categories.push({
+      category: CLEANUP_BUCKETS.keep.label,
+      description: CLEANUP_BUCKETS.keep.description,
+      items: buckets.keep.slice(0, 3).map((it) => ({ ...it, defaultChecked: false })),
+    });
+  }
+  return categories;
 }
 
 // ─── POST handler (action dispatcher) ────────────────────────────────────────
 
 export async function POST(request: NextRequest) {
-  if (!isAnthropicConfigured()) {
+  if (!(await isAnthropicConfigured())) {
     return Response.json(
-      { error: "ANTHROPIC_API_KEY is not set in .env.local" },
+      { error: "Claude is not available: log in to Claude Code (claude /login) or set ANTHROPIC_API_KEY." },
       { status: 503 }
     );
   }
@@ -544,8 +825,10 @@ export async function POST(request: NextRequest) {
 
 // Health check
 export async function GET() {
+  const [claude, jev] = await Promise.all([isAnthropicConfigured(), isJevConfigured()]);
   return Response.json({
-    available: isAnthropicConfigured(),
-    model: process.env.ANTHROPIC_MODEL || "claude-haiku-4-5",
+    available: claude,
+    model: process.env.ANTHROPIC_API_KEY ? process.env.ANTHROPIC_MODEL || "claude-haiku-4-5" : "claude-code",
+    jev,
   });
 }
