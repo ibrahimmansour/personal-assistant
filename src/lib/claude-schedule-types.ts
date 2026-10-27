@@ -16,6 +16,8 @@ export interface Schedule {
   id: string;
   /** Which CLI runs the prompt. Missing means "claude" (pre-OpenCode entries). */
   agent?: ScheduleAgent;
+  /** Claude only: logged-in account id the session belongs to. Missing = default. */
+  account?: string;
   /** The session this prompt should resume (`claude --resume <sessionId>` or
    *  `opencode run --session <sessionId>`). */
   sessionId: string;

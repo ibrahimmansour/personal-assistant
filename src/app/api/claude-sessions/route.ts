@@ -5,6 +5,7 @@ import { join } from "path";
 import { homedir } from "os";
 import { execFile } from "child_process";
 import { promisify } from "util";
+import { isSafePathSegment, listClaudeAccounts, projectsDirOf } from "@/lib/claude-accounts";
 import { deleteOpenCodeSession, isOpenCodeSessionId, listOpenCodeSessions } from "@/lib/opencode-store";
 
 const execFileAsync = promisify(execFile);
@@ -14,8 +15,6 @@ export const dynamic = "force-dynamic";
 const DATA_DIR = join(homedir(), ".personal-assistant");
 const CONNECTIONS_FILE = join(DATA_DIR, "vps-connections.json");
 
-const CLAUDE_PROJECTS_DIR = join(homedir(), ".claude", "projects");
-
 /** Which CLI owns a session. Claude sessions live in ~/.claude/projects as
  *  JSONL logs; OpenCode sessions live in its SQLite store. */
 type AgentKind = "claude" | "opencode";
@@ -23,6 +22,8 @@ type AgentKind = "claude" | "opencode";
 interface ClaudeSession {
   /** Owning CLI. Defaults to "claude" for every legacy consumer. */
   agent: AgentKind;
+  /** Claude only: id of the logged-in account (config dir) that owns the log. */
+  account?: string;
   sessionId: string;
   summary: string;
   firstPrompt: string;
@@ -54,8 +55,11 @@ export async function GET(request: NextRequest) {
   const projectFilter = request.nextUrl.searchParams.get("project");
 
   try {
-    const projects = await readdir(CLAUDE_PROJECTS_DIR);
     const allSessions: ClaudeSession[] = [];
+
+    for (const account of await listClaudeAccounts()) {
+    const CLAUDE_PROJECTS_DIR = projectsDirOf(account);
+    const projects = await readdir(CLAUDE_PROJECTS_DIR).catch(() => [] as string[]);
 
     for (const projectDir of projects) {
       if (projectFilter && projectDir !== projectFilter) continue;
@@ -87,6 +91,7 @@ export async function GET(request: NextRequest) {
             const usableSummary = isErrorSummary(rawSummary) ? "" : rawSummary;
             allSessions.push({
               agent: "claude",
+              account: account.id,
               sessionId: entry.sessionId,
               summary: cleanTitle(usableSummary),
               firstPrompt: cleanTitle(entry.firstPrompt || ""),
@@ -160,6 +165,7 @@ export async function GET(request: NextRequest) {
           const rawTitle = customTitle || aiTitle || legacySummary;
           allSessions.push({
             agent: "claude",
+            account: account.id,
             sessionId,
             summary: isErrorSummary(rawTitle) ? "" : cleanTitle(rawTitle),
             firstPrompt: cleanTitle(firstPrompt),
@@ -176,6 +182,7 @@ export async function GET(request: NextRequest) {
           });
         } catch {}
       }
+    }
     }
 
     // OpenCode sessions join the same list, tagged by agent. They have no
@@ -448,16 +455,23 @@ export async function POST(request: NextRequest) {
       return Response.json({ success: ok });
     }
 
+    if (!isSafePathSegment(sessionId) || (projectDir && !isSafePathSegment(projectDir))) {
+      return Response.json({ error: "invalid id" }, { status: 400 });
+    }
+
     try {
       // Search across all project dirs (or just the hinted one)
-      const dirs = projectDir ? [projectDir] : await readdir(CLAUDE_PROJECTS_DIR);
       let deleted = false;
-      for (const dir of dirs) {
-        const jsonl = join(CLAUDE_PROJECTS_DIR, dir, `${sessionId}.jsonl`);
-        try {
-          await unlink(jsonl);
-          deleted = true;
-        } catch {}
+      for (const account of await listClaudeAccounts()) {
+        const projectsDir = projectsDirOf(account);
+        const dirs = projectDir ? [projectDir] : await readdir(projectsDir).catch(() => [] as string[]);
+        for (const dir of dirs) {
+          const jsonl = join(projectsDir, dir, `${sessionId}.jsonl`);
+          try {
+            await unlink(jsonl);
+            deleted = true;
+          } catch {}
+        }
       }
       return Response.json({ success: deleted });
     } catch (err) {
@@ -470,18 +484,25 @@ export async function POST(request: NextRequest) {
     const { sessionId, projectDir } = body as { sessionId?: string; projectDir?: string };
     if (!sessionId) return Response.json({ error: "sessionId required" }, { status: 400 });
 
+    if (!isSafePathSegment(sessionId) || (projectDir && !isSafePathSegment(projectDir))) {
+      return Response.json({ error: "invalid id" }, { status: 400 });
+    }
+
     try {
-      const dirs = projectDir ? [projectDir] : await readdir(CLAUDE_PROJECTS_DIR);
       let archived = false;
-      for (const dir of dirs) {
-        const src = join(CLAUDE_PROJECTS_DIR, dir, `${sessionId}.jsonl`);
-        try {
-          await stat(src);
-          const archiveDir = join(CLAUDE_PROJECTS_DIR, dir, ".archive");
-          await mkdir(archiveDir, { recursive: true });
-          await rename(src, join(archiveDir, `${sessionId}.jsonl`));
-          archived = true;
-        } catch {}
+      for (const account of await listClaudeAccounts()) {
+        const projectsDir = projectsDirOf(account);
+        const dirs = projectDir ? [projectDir] : await readdir(projectsDir).catch(() => [] as string[]);
+        for (const dir of dirs) {
+          const src = join(projectsDir, dir, `${sessionId}.jsonl`);
+          try {
+            await stat(src);
+            const archiveDir = join(projectsDir, dir, ".archive");
+            await mkdir(archiveDir, { recursive: true });
+            await rename(src, join(archiveDir, `${sessionId}.jsonl`));
+            archived = true;
+          } catch {}
+        }
       }
       return Response.json({ success: archived });
     } catch (err) {

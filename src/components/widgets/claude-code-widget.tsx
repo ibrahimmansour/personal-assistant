@@ -128,6 +128,8 @@ interface ScheduleEntry {
 interface ClaudeSessionInfo {
   /** Owning CLI. Missing on older API payloads means "claude". */
   agent?: AgentKind;
+  /** Claude only: id of the logged-in account that owns the log. */
+  account?: string;
   sessionId: string;
   summary: string;
   firstPrompt: string;
@@ -184,6 +186,8 @@ interface SessionState {
   spawningTerminal: boolean;
   /** Which CLI runs this session. Fixed at creation. */
   agent: AgentKind;
+  /** Claude only: logged-in account id (`"default"` = ~/.claude). Fixed at creation. */
+  account: string;
   /** Model to pass via `--model`. Claude: an alias (`opus`, `fable`…), applied
    *  only when spawning a fresh CLI. OpenCode: a `provider/model` id, sent
    *  with every background run (OpenCode picks the model per message). */
@@ -698,6 +702,41 @@ function recordTerminalChunk(state: SessionState, chunk: string) {
   }, TERMINAL_IDLE_MS);
 }
 
+const DEFAULT_ACCOUNT_ID = "default";
+const ACCOUNT_ID_RE = /^[A-Za-z0-9_.-]{1,64}$/;
+
+interface ClaudeAccountInfo {
+  id: string;
+  label: string;
+  email: string | null;
+  isDefault: boolean;
+}
+
+let claudeAccountsPromise: Promise<ClaudeAccountInfo[]> | null = null;
+function loadClaudeAccounts(force = false): Promise<ClaudeAccountInfo[]> {
+  if (!claudeAccountsPromise || force) {
+    claudeAccountsPromise = fetch("/api/claude-sessions/accounts")
+      .then((r) => (r.ok ? r.json() : { accounts: [] }))
+      .then((d) => (Array.isArray(d.accounts) ? (d.accounts as ClaudeAccountInfo[]) : []))
+      .catch(() => {
+        claudeAccountsPromise = null;
+        return [];
+      });
+  }
+  return claudeAccountsPromise;
+}
+
+/** Logged-in Claude accounts on the server (`~/.claude` + `~/.claude-<name>`). */
+function useClaudeAccounts(): ClaudeAccountInfo[] {
+  const [accounts, setAccounts] = useState<ClaudeAccountInfo[]>([]);
+  useEffect(() => {
+    let alive = true;
+    loadClaudeAccounts().then((a) => { if (alive) setAccounts(a); });
+    return () => { alive = false; };
+  }, []);
+  return accounts;
+}
+
 interface OpenSessionOpts {
   cwd: string;
   /** When set, run `claude --resume <id>` instead of a fresh session. */
@@ -705,6 +744,8 @@ interface OpenSessionOpts {
   label?: string;
   /** Which CLI runs the session. Defaults to "claude". */
   agent?: AgentKind;
+  /** Claude account id. Defaults to "default". */
+  account?: string;
   /** Model for the new session (Claude alias or OpenCode `provider/model`). */
   model?: string;
   /** Reasoning effort (Claude `--effort` / OpenCode `--variant`). */
@@ -748,6 +789,7 @@ function openSession(opts: OpenSessionOpts): SessionState {
     pendingPrompts: [],
     spawningTerminal: false,
     agent: opts.agent || "claude",
+    account: opts.account || DEFAULT_ACCOUNT_ID,
     model: opts.model && opts.model !== "default" ? opts.model : null,
     effort: opts.effort && opts.effort !== "default" ? opts.effort : null,
     mode,
@@ -820,12 +862,16 @@ async function spawnTerminal(state: SessionState): Promise<boolean> {
       }
     } else {
       const effortArg = state.effort ? ` --effort ${state.effort}` : "";
+      // Extra accounts are separate config dirs (~/.claude-<id>).
+      const acct = state.account !== DEFAULT_ACCOUNT_ID && ACCOUNT_ID_RE.test(state.account)
+        ? `CLAUDE_CONFIG_DIR="$HOME/.claude-${state.account}" `
+        : "env -u CLAUDE_CONFIG_DIR ";
       if (state.sessionId && state.exists) {
-        claudeCmd = `claude --dangerously-skip-permissions${effortArg} --resume ${state.sessionId}`;
+        claudeCmd = `${acct}claude --dangerously-skip-permissions${effortArg} --resume ${state.sessionId}`;
       } else if (state.sessionId && !state.exists) {
-        claudeCmd = `claude --dangerously-skip-permissions${effortArg} --session-id ${state.sessionId}${modelArg}`;
+        claudeCmd = `${acct}claude --dangerously-skip-permissions${effortArg} --session-id ${state.sessionId}${modelArg}`;
       } else {
-        claudeCmd = `claude --dangerously-skip-permissions${effortArg}${modelArg}`;
+        claudeCmd = `${acct}claude --dangerously-skip-permissions${effortArg}${modelArg}`;
       }
     }
     // Once we launch with a known id, the CLI creates/opens that log.
@@ -991,6 +1037,7 @@ async function pollForNewSessionId(state: SessionState) {
       let found: ClaudeSessionInfo | null = null;
       for (const s of sessions) {
         if ((s.agent || "claude") !== state.agent) continue;
+        if (state.agent === "claude" && (s.account || DEFAULT_ACCOUNT_ID) !== state.account) continue;
         if (!before.has(s.sessionId)) {
           if (!found || (s.modified || "").localeCompare(found.modified || "") > 0) {
             found = s;
@@ -1172,6 +1219,7 @@ async function submitBackgroundPrompt(state: SessionState, promptText: string): 
         sessionId: state.sessionId,
         isNew,
         agent: state.agent,
+        account: state.account,
         model: state.model,
         effort: state.effort,
       }),
@@ -1741,6 +1789,40 @@ function AgentToggle({
   );
 }
 
+/** Chooses which logged-in Claude account the NEXT new session runs as.
+ *  Hidden when the machine has a single login. */
+function AccountPicker({
+  accounts,
+  value,
+  onChange,
+  className,
+}: {
+  accounts: ClaudeAccountInfo[];
+  value: string;
+  onChange: (id: string) => void;
+  className?: string;
+}) {
+  if (accounts.length < 2) return null;
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      aria-label="Claude account"
+      title="Claude account for new sessions"
+      className={cn(
+        "w-full h-10 md:h-7 rounded-md border bg-background px-2 text-xs truncate",
+        className,
+      )}
+    >
+      {accounts.map((a) => (
+        <option key={a.id} value={a.id}>
+          {a.label}{a.isDefault ? " (default)" : ""}
+        </option>
+      ))}
+    </select>
+  );
+}
+
 /** Small inline chip naming a session's agent. */
 function AgentBadge({ agent, className }: { agent: AgentKind; className?: string }) {
   return (
@@ -2079,6 +2161,21 @@ export function ClaudeCodeWidget() {
     try { localStorage.setItem("claude-code-agent", a); } catch {}
   }, []);
 
+  // Which logged-in Claude account NEW sessions run as. Existing sessions keep
+  // theirs; a saved id that no longer exists falls back to the default.
+  const claudeAccounts = useClaudeAccounts();
+  const [selectedAccountId, setSelectedAccountState] = useState<string>(() => {
+    if (typeof window === "undefined") return DEFAULT_ACCOUNT_ID;
+    return localStorage.getItem("claude-code-account") || DEFAULT_ACCOUNT_ID;
+  });
+  const selectedAccount = claudeAccounts.some((a) => a.id === selectedAccountId)
+    ? selectedAccountId
+    : DEFAULT_ACCOUNT_ID;
+  const setSelectedAccount = useCallback((id: string) => {
+    setSelectedAccountState(id);
+    try { localStorage.setItem("claude-code-account", id); } catch {}
+  }, []);
+
   // Claude `--effort` for new sessions (and every background run).
   const [claudeEffort, setClaudeEffortState] = useState<string>(() => {
     if (typeof window === "undefined") return "default";
@@ -2381,6 +2478,7 @@ export function ClaudeCodeWidget() {
           cwd,
           label: "New session",
           agent,
+          account: selectedAccount,
           model,
           effort,
           mode: "background",
@@ -2391,7 +2489,7 @@ export function ClaudeCodeWidget() {
         setShowFolderPicker(false);
         if (isMobile) setSidebarOpen(false);
       } else {
-        const state = openSession({ cwd, label: "New session", agent, model, effort, mode: "interactive" });
+        const state = openSession({ cwd, label: "New session", agent, account: selectedAccount, model, effort, mode: "interactive" });
         // For brand-new interactive sessions we spawn the terminal eagerly so
         // the CLI is up and the JSONL gets created.
         spawnTerminal(state);
@@ -2403,7 +2501,7 @@ export function ClaudeCodeWidget() {
     } finally {
       setCreating(false);
     }
-  }, [persistRecentFolder, selectedAgent, selectedModel, claudeEffort, opencodeModel, opencodeVariant, effectiveMode, isMobile]);
+  }, [persistRecentFolder, selectedAgent, selectedAccount, selectedModel, claudeEffort, opencodeModel, opencodeVariant, effectiveMode, isMobile]);
 
   // ── Set active folder (persist to localStorage) ────────────────────────
   const selectActiveFolder = useCallback((folder: string | null) => {
@@ -2473,6 +2571,7 @@ export function ClaudeCodeWidget() {
       hasLog: s.hasLog !== false,
       mode: effectiveMode,
       agent,
+      account: s.account,
       // OpenCode chooses the model per message: prefer the user's current
       // pick, else keep what the session last ran with. Claude resumes
       // inherit their model from the log and take only the effort flag.
@@ -2633,6 +2732,9 @@ export function ClaudeCodeWidget() {
 
               {/* Which CLI the next new session runs on. */}
               <AgentToggle value={selectedAgent} onChange={setSelectedAgent} />
+              {selectedAgent === "claude" && (
+                <AccountPicker accounts={claudeAccounts} value={selectedAccount} onChange={setSelectedAccount} />
+              )}
 
               {/* Active folder picker */}
               <FolderSection
@@ -3046,6 +3148,14 @@ function SessionListItem({
         </div>
         <div className="text-[0.625rem] text-muted-foreground truncate mt-0.5 flex items-center gap-1">
           <AgentBadge agent={session.agent || "claude"} />
+          {session.agent !== "opencode" && session.account && session.account !== DEFAULT_ACCOUNT_ID && (
+            <span
+              className="rounded px-1 text-[0.625rem] font-medium leading-4 shrink-0 bg-violet-500/15 text-violet-700 dark:text-violet-300"
+              title={`Claude account: ${session.account}`}
+            >
+              {session.account}
+            </span>
+          )}
           <span className="truncate">{session.projectPath || session.projectDirName}</span>
         </div>
       </div>
@@ -4105,6 +4215,7 @@ function ChatView({
           sessionId={state.sessionId}
           cwd={state.cwd}
           agent={state.agent}
+          account={state.account}
           model={state.agent === "opencode" ? state.model : null}
           effort={state.effort}
           prompt={schedulingPrompt}
@@ -4753,6 +4864,7 @@ function ScheduleModal({
   sessionId,
   cwd,
   agent,
+  account,
   model,
   effort,
   prompt,
@@ -4762,6 +4874,7 @@ function ScheduleModal({
   sessionId: string;
   cwd: string;
   agent: AgentKind;
+  account: string;
   /** OpenCode `provider/model` to run with; Claude resumes keep their own model. */
   model: string | null;
   effort: string | null;
@@ -4792,6 +4905,7 @@ function ScheduleModal({
           sessionId,
           cwd,
           agent,
+          account,
           model: model || undefined,
           effort: effort || undefined,
           prompt,

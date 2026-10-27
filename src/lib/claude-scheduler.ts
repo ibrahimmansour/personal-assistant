@@ -11,6 +11,7 @@
  */
 
 import { spawn } from "child_process";
+import { applyAccountEnv, resolveClaudeAccount } from "@/lib/claude-accounts";
 import { homedir } from "os";
 import { join } from "path";
 import { readFile, mkdir, writeFile } from "fs/promises";
@@ -79,6 +80,7 @@ interface RunResult {
 }
 
 async function runSchedule(s: Schedule): Promise<RunResult> {
+  const account = await resolveClaudeAccount(s.account);
   return new Promise((resolve) => {
     let bin: string;
     let args: string[];
@@ -101,7 +103,7 @@ async function runSchedule(s: Schedule): Promise<RunResult> {
 
     const child = spawn(bin, args, {
       cwd,
-      env: { ...process.env, PATH: buildAgentPath(), NODE_TLS_REJECT_UNAUTHORIZED: "0" },
+      env: applyAccountEnv({ ...process.env, PATH: buildAgentPath(), NODE_TLS_REJECT_UNAUTHORIZED: "0" }, account),
       stdio: ["ignore", "pipe", "pipe"],
     });
 

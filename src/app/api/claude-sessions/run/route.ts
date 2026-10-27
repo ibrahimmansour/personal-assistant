@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { spawn } from "child_process";
 import { homedir } from "os";
 import { join } from "path";
+import { applyAccountEnv, resolveClaudeAccount } from "@/lib/claude-accounts";
 import {
   buildAgentPath,
   isOpenCodeSessionId,
@@ -47,6 +48,8 @@ export async function POST(request: NextRequest) {
     isNew?: boolean;
     model?: string | null;
     agent?: "claude" | "opencode";
+    /** Claude only: which logged-in account (config dir) to run as. */
+    account?: string | null;
     /** Claude: `--effort`. OpenCode: `--variant`. */
     effort?: string | null;
   };
@@ -108,7 +111,11 @@ export async function POST(request: NextRequest) {
   else args.push("--resume", sessionId);
   args.push("-p", prompt);
 
-  const result = await runToCompletion("claude", args, cwd || homedir(), env, 20 * 60_000);
+  const account = await resolveClaudeAccount(body.account);
+  if (body.account && body.account !== account.id) {
+    return Response.json({ error: `Claude account "${body.account}" is not logged in on this machine` }, { status: 400 });
+  }
+  const result = await runToCompletion("claude", args, cwd || homedir(), applyAccountEnv(env, account), 20 * 60_000);
   if (!result.ok) {
     console.error(`[claude-run] ${sessionId} failed: ${result.error}`);
     return Response.json({ error: result.error }, { status: 500 });

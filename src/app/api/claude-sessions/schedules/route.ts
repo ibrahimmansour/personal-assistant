@@ -88,6 +88,7 @@ export async function POST(request: NextRequest) {
   if (action === "create") {
     const b = body as {
       agent?: string;
+      account?: string;
       sessionId?: string;
       cwd?: string;
       model?: string;
@@ -104,6 +105,7 @@ export async function POST(request: NextRequest) {
     const schedule: Schedule = {
       id: randomUUID(),
       agent: b.agent === "opencode" ? "opencode" : "claude",
+      account: b.agent !== "opencode" && b.account && b.account !== "default" ? b.account : undefined,
       sessionId: b.sessionId,
       cwd: b.cwd,
       model: b.model && b.model !== "default" ? b.model : undefined,

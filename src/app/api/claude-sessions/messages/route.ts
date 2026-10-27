@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { watch as fsWatch } from "fs";
 import { promises as fsp } from "fs";
 import { join } from "path";
-import { homedir } from "os";
+import { isSafePathSegment, listClaudeAccounts, projectsDirOf } from "@/lib/claude-accounts";
 import {
   isOpenCodeSessionId,
   openCodeSessionExists,
@@ -12,7 +12,6 @@ import {
 
 export const dynamic = "force-dynamic";
 
-const CLAUDE_PROJECTS_DIR = join(homedir(), ".claude", "projects");
 
 // Structured chat message shape sent to the client
 export interface ChatMessage {
@@ -212,25 +211,31 @@ function extractToolResults(content: unknown): { toolUseId: string; content: str
 // Find the JSONL path for a sessionId. The sessionId may live in any project dir
 // (the user might switch projects), so search.
 async function locateSessionFile(sessionId: string, hintProjectDir?: string): Promise<string | null> {
-  // Quick path: check the hinted project dir first
-  if (hintProjectDir) {
-    const direct = join(CLAUDE_PROJECTS_DIR, hintProjectDir, `${sessionId}.jsonl`);
-    try {
-      await fsp.access(direct);
-      return direct;
-    } catch {}
-  }
-
-  try {
-    const projects = await fsp.readdir(CLAUDE_PROJECTS_DIR);
-    for (const dir of projects) {
-      const candidate = join(CLAUDE_PROJECTS_DIR, dir, `${sessionId}.jsonl`);
+  if (!isSafePathSegment(sessionId)) return null;
+  if (hintProjectDir && !isSafePathSegment(hintProjectDir)) hintProjectDir = undefined;
+  // The log lives under whichever account's config dir created the session.
+  for (const account of await listClaudeAccounts()) {
+    const projectsDir = projectsDirOf(account);
+    // Quick path: check the hinted project dir first
+    if (hintProjectDir) {
+      const direct = join(projectsDir, hintProjectDir, `${sessionId}.jsonl`);
       try {
-        await fsp.access(candidate);
-        return candidate;
+        await fsp.access(direct);
+        return direct;
       } catch {}
     }
-  } catch {}
+
+    try {
+      const projects = await fsp.readdir(projectsDir);
+      for (const dir of projects) {
+        const candidate = join(projectsDir, dir, `${sessionId}.jsonl`);
+        try {
+          await fsp.access(candidate);
+          return candidate;
+        } catch {}
+      }
+    } catch {}
+  }
 
   return null;
 }
